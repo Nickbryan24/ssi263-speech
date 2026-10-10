@@ -3,7 +3,8 @@
  *   test_bns models BL2000.BNS BNS2000.BNS... [OTHER...]
  *       bl_create tells each image's unit (bl_model): the Braille Lite 2000's, the Braille 'n Speak 2000's (each
  *       BNS2000 argument up to "--"), and after "--" images of other units, which it must refuse (a Type 'n Speak);
- *       the voice's import (bl_firmware.h) still refuses the Braille 'n Speak 2000: it is not a voice yet.
+ *       the voices' import (bl_firmware.h) refuses the English Braille 'n Speak 2000 images (they ship in the
+ *       emulator only) and takes the Slovak one, BS2SLL.BNS, as the Slovak voice's (0.8).
  *   test_bns speech FIRMWARE STATE en|sk
  *       the unit switched on from its factory state, and the chip's phonemes as the firmware writes them (R0 with
  *       R3's control bit clear; PA left out): its words at power-on, then o-chord t (the time) answered -- against
@@ -75,7 +76,7 @@ static void models(int argc, char **argv)
         snprintf(d, sizeof d, "%s: %s", argv[i], !u ? err : got == BL_MODEL_BNS2000 ? "Braille 'n Speak 2000"
                  : got == BL_MODEL_BRAILLE_LITE ? "Braille Lite 2000" : "?");
         check(want == BL_MODEL_BNS2000 ? "a Braille 'n Speak 2000" : "a Braille Lite 2000", u && got == want, d);
-        if (want == BL_MODEL_BNS2000) {   /* the voice's import: not a voice yet, refused as before */
+        if (want == BL_MODEL_BNS2000) {   /* the voices' import: the Slovak release is a voice, the rest refused */
             long n = 0;
             unsigned char *data = read_all(argv[i], &n);
             char out[64], msg[256];
@@ -86,7 +87,10 @@ static void models(int argc, char **argv)
             free(data);
             remove(out);
             snprintf(d, sizeof d, "%s: %d (%s)", argv[i], r, msg);
-            check("the voice's import refuses it", r == BLV_FW_REFUSED, d);
+            if (strstr(argv[i], "BS2SLL") || strstr(argv[i], "bs2sll"))
+                check("the Slovak voice's import takes it", r == BLV_FW_SLOVAK, d);
+            else
+                check("the voice's import refuses it", r == BLV_FW_REFUSED, d);
         }
     }
 }

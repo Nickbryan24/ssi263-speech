@@ -1,6 +1,8 @@
 /* flash29.h -- an AMD 29Fxxx-style flash chip: its command cycles (program, sector and chip erase, autoselect), as
  * the Blazie boards' file flash answers them.  Used by bl_board.c and tns_board.c, each a 29F016 (2 MB, 32 sectors of
- * 64 KB) behind a window the board pages (the Type 'n Speak's window reaches 4 MB; its firmware uses the first 2).
+ * 64 KB) behind a window the board pages (the Type 'n Speak's window reaches 4 MB; its firmware uses the first 2);
+ * and by bl_board.c for the Braille Lite 2000's program flash, an Am29F040 (512 KB, 8 sectors of 64 KB, two 256 KB
+ * banks), which only the firmware update writes.
  *
  * Timing (flash29.hz > 0): an erase or a program runs for the chip's typical time, the Am29F016 data sheet's (sector
  * erase 1 s, chip erase 32 s, a byte 7 us), counted in the board's CPU cycles.  An erase also takes its embedded
@@ -11,6 +13,12 @@
  * DQ5 0 (no time-out), DQ3 1 while erasing; writes are ignored.  The firmware polls DQ7 and keeps its user informed
  * while it waits (the Blazie units chirp through the speech chip during an erase).  hz = 0: every operation is done
  * at once (the screen-reader drivers and their state recipes, which press keys at fixed instruction counts).
+ *
+ * Multi-sector erase (both data sheets): after a sector erase's 30h, more 30h writes within the sector erase
+ * time-out (FLASH29_SECTOR_WINDOW_S, from the last one) add their sectors to the same erase; the status reads DQ3 = 0 while that
+ * window is open, 1 once the erase runs.  The Braille Lite 2000's firmware update erases its program bank's four
+ * sectors so.  With hz = 0 the window stays open until any other write.  (A command other than 30h inside the window
+ * aborts the erase on the real chip; here the sectors are already erased and the write is ignored.)
  */
 #ifndef BLAZIE_FLASH29_H
 #define BLAZIE_FLASH29_H
@@ -24,6 +32,7 @@ typedef struct {
     double hz;                     /* the CPU clock the `now` arguments count; 0: no busy time (the default) */
     /* the operation in progress (hz > 0): busy until that cycle; its status's DQ7 and DQ3 */
     unsigned long long busy_until;
+    unsigned long long window_until;   /* a sector erase's time-out for more sectors (state 7), from the last 30h */
     unsigned char busy_status;
     int toggle;
     /* counters (tests): chip and sector erases begun, bytes programmed */
@@ -34,6 +43,11 @@ typedef struct {
 #define FLASH29_SECTOR_ERASE_S 1.0
 #define FLASH29_CHIP_ERASE_S 32.0
 #define FLASH29_PROGRAM_S 7e-6
+/* The sector erase time-out: more sectors may be added within it.  The data sheets give 50 us; the Braille Lite's
+   update writes its four 30h 457 cycles apart (74.4 us on this board's 6.144 MHz, measured) and works on real units,
+   so the real window is longer than that, or the real loop faster: 100 us here (with 50, its update erased one
+   sector and failed at 10000h -- test_update.c). */
+#define FLASH29_SECTOR_WINDOW_S 100e-6
 #define FLASH29_CHIP_PROGRAM_S 14.4        /* the whole 2 MB, typical: the erase's preprogramming, pro rata per byte */
 #define FLASH29_CHIP_BYTES 0x200000UL
 

@@ -98,6 +98,11 @@ int  bl_save_state(const bl_unit *u, const char *path);
    wanted). */
 void bl_flash_timed(bl_unit *u, int on);
 int  bl_flash_busy(const bl_unit *u, unsigned long *chip_erases, unsigned long *sector_erases);
+/* The program flash (bl_board.c: an Am29F040, two 256 KB banks, E0h bit 4 picking one; the same timing switch as
+   the file flash's): its contents, bank a then bank b, and the size (512 KB); writes = the bytes programmed and the
+   erases so far -- 0 until a firmware update has run.  The contents may be changed before the CPU runs (an updated
+   bank put back: the emulator's own business; the state does not hold the firmware). */
+long bl_program_flash(bl_unit *u, unsigned char **data, unsigned long *writes);
 
 /* The clock controller on the Z180's CSI/O (bl_clock.h): the time and date the firmware reads and sets.  Off by
    default (the screen-reader drivers' path: the firmware then finds no clock, as it always did).  bl_clock_on

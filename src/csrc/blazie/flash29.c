@@ -42,8 +42,11 @@ static void begin(flash29 *f, unsigned long long now, double seconds, unsigned c
 unsigned char flash29_read(flash29 *f, unsigned long off, unsigned long long now)
 {
     if (flash29_busy(f, now)) {                  /* the embedded algorithm's status, at any address */
+        unsigned char st = f->busy_status;
+        if (f->state == 7 && now < f->window_until)
+            st &= (unsigned char)~DQ3;           /* a sector erase still taking more sectors */
         f->toggle ^= DQ6;
-        return (unsigned char)(f->busy_status | f->toggle);
+        return (unsigned char)(st | f->toggle);
     }
     if (f->autoselect)
         return (off & 3) == 0 ? f->maker : (off & 3) == 1 ? f->device : 0x00;
@@ -55,6 +58,20 @@ void flash29_write(flash29 *f, unsigned long off, unsigned char v, unsigned long
     unsigned a = (unsigned)(off & 0x7FFF);
     int is555 = a == 0x5555 || (f->short_decode && (off & 0x7FF) == 0x555);
     int is2aa = a == 0x2AAA || (f->short_decode && (off & 0x7FF) == 0x2AA);
+    if (f->state == 7) {                         /* a sector erase's time-out (flash29.h): another 30h adds a sector */
+        if (v == 0x30 && (f->hz <= 0 || now < f->window_until)) {
+            unsigned long from = off & ~(FLASH29_SECTOR - 1) & (f->size - 1);
+            double pre = f->hz > 0 ? preprogram_s(f, from, FLASH29_SECTOR) : 0.0;
+            memset(f->data + from, 0xFF, FLASH29_SECTOR);
+            f->n_sector_erase++;
+            if (f->hz > 0) {                     /* the same erase, one sector longer; the window opens again */
+                f->busy_until += (unsigned long long)((pre + FLASH29_SECTOR_ERASE_S) * f->hz + 0.5);
+                f->window_until = now + (unsigned long long)(FLASH29_SECTOR_WINDOW_S * f->hz + 0.5);
+            }
+            return;
+        }
+        f->state = 0;                            /* anything else closes it, and is a write of its own */
+    }
     if (flash29_busy(f, now))
         return;                                  /* commands are ignored until the operation ends */
     switch (f->state) {
@@ -87,6 +104,11 @@ void flash29_write(flash29 *f, unsigned long off, unsigned char v, unsigned long
                 memset(f->data + from, 0xFF, FLASH29_SECTOR);
                 f->n_sector_erase++;
                 begin(f, now, pre + FLASH29_SECTOR_ERASE_S, DQ3);
+#ifndef FLASH29_NO_MULTI                         /* the tests' must-fail control: one sector per erase, as before */
+                f->state = 7;                    /* more sectors may follow (flash29.h) */
+                if (f->hz > 0)
+                    f->window_until = now + (unsigned long long)(FLASH29_SECTOR_WINDOW_S * f->hz + 0.5);
+#endif
             }
             break;
     }

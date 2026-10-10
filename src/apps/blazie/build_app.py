@@ -5,6 +5,7 @@
   test_emu_unit.exe  the unit, headless: boot speech, a chord answered, real-time speed
   test_clock.exe     the clock controller and the keys held while the unit starts (Jayson), headless
   test_flash.exe     the file flash: the ID check, the erase's time and chirps, files kept; _break, _old: its controls
+  test_update.exe    the firmware update into the program flash's second bank, then p-chord l; _break, _single: controls
   test_files.exe     files in and out (bl_files.c, the FAT image) against the units' own commands
   blazie_files.exe   the same on a saved state, from the command line
   test_games.exe     Blazie's games (Simon, Hangman) run from the unit's files, headless (RetroBunn: Simon)
@@ -56,6 +57,8 @@ CONTROLS = {
     "cut_rx": {"bl_serial": "BL_SERIAL_CUT_RX"},
     "hooks": {"bl_idle": "BLI_TEST_HOOKS"},
     "flash_old": {"flash29": "FLASH29_NO_PREPROGRAM"},
+    "pf_break": {"bl_board": "BLAZIE_PROGRAM_FLASH_BREAK"},
+    "single": {"flash29": "FLASH29_NO_MULTI"},
 }
 LICENCES = (("LICENSE", os.path.join(REPO, "LICENSE")),
             (os.path.join("licenses", "MAME-Z180-core-BSD-3-Clause.txt"),
@@ -136,6 +139,12 @@ def main():
     link("test_flash_break.exe", [flash] + chip + board("flash_break") + [emu, chords, setup])
     # ... and the erase without its preprogramming (flash29.c, FLASH29_NO_PREPROGRAM: 32 s, as before)
     link("test_flash_old.exe", [flash] + chip + board("flash_old") + [emu, chords, setup])
+    # the firmware update (test_update.c: the program flash, an Am29F040), and its controls: the program flash's
+    # writes dropped (BLAZIE_PROGRAM_FLASH_BREAK, as before 0.8), and a sector erase without more sectors
+    upd = compile_c(os.path.join(HERE, "test_update.c"), APP)
+    link("test_update.exe", [upd] + unit + files)
+    link("test_update_break.exe", [upd] + chip + board("pf_break") + [emu, chords, setup] + files)
+    link("test_update_single.exe", [upd] + chip + board("single") + [emu, chords, setup] + files)
     # files in and out against the units' own commands (test_files.c; its controls: --break=N)
     link("test_files.exe", [compile_c(os.path.join(HERE, "test_files.c"), APP)] + unit + files)
     # Blazie's games run from the unit's files (test_games.c; RetroBunn, PR #9: Simon); its control: TEST_GAMES_BREAK

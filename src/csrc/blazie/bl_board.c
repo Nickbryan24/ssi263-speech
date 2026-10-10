@@ -10,8 +10,14 @@
  * port E0h bit 3 maps the file flash over 80000h..FFFFFh: 512 KB of a 2 MB 29F016-style chip, bits 0-1 picking which
  * (measured: the firmware's file system is 2 MB -- its file list says "2045 k flash" free -- and a file moved to flash
  * is programmed with E0h = 0Bh at window offset 7FE00h, the top of the fourth 512 KB).
- * E0h bit 4 picks the program flash's other bank (p-chord l: the firmware checks a program is there and
- * restarts into it): the same image is in both here, so the unit restarts in its own language.  SSI-263 at
+ * The program at 00000h-3FFFFh is one bank of the program flash, an Am29F040 (512 KB, maker 01h, device A4h: the
+ * "super flash"), E0h bit 4 picking the other (p-chord l: the firmware checks a program is there and restarts into
+ * it).  The image is loaded into both banks, so the unit restarts in its own language, until the firmware update
+ * (an update program run with o-chord x) writes one: it reads the chip's ID, asks which bank, erases that bank's four
+ * sectors in one multi-sector erase and programs it byte by byte (flash29.h), with E0h's bit 4 set for bank b; then a
+ * steady tone, phoneme 17h left sounding.  Ordinary use never writes it (no command in a boot, the menus or a
+ * p-chord l: measured); before 0.8 those writes were dropped and the update failed with rapid beeps.  The board's
+ * code sites (below) are bank a's: they serve a chord held at power-on, which always starts there.  SSI-263 at
  * ports C0h..C4h, its A/R
  * request on /INT1.  Braille keyboard on port 40h, /INT2.  Serial on ASCI0 (9600 bit/s at 6.144 MHz), with the
  * host honouring the unit's XON/XOFF.  Port A0h bit 0 switches the serial port's line drivers on (bl_serial.h).
@@ -41,7 +47,8 @@ int bh_trace_on;
 #define TR(...) do { } while (0)
 #endif
 
-#define ROM_SIZE 0x40000
+#define ROM_SIZE 0x40000                     /* one bank of the program flash: what the CPU sees at 00000h */
+#define PFLASH_SIZE (2 * ROM_SIZE)           /* the program flash: an Am29F040, two banks */
 #define FILE_ROM_OFFSET 0x3000
 #define SLICE_DEFAULT 10000
 #define FLASH_BASE 0x80000
@@ -53,6 +60,8 @@ int bh_trace_on;
 struct bl_unit {
     unsigned char *flash, *ram, *fflash;
     flash29 ff;                              /* the file flash's command logic, over fflash */
+    flash29 pf;                              /* the program flash's, over flash (both banks) */
+    int pf_live;                             /* a command under way: reads go through pf until it is idle again */
     z180 *cpu;
     double clock_hz, phon_ms;
     int irq_line;
@@ -128,12 +137,27 @@ static unsigned long flash_off(const bl_unit *u, uint32_t A)   /* the chip addre
 #endif
 }
 
+static unsigned long pf_bank(const bl_unit *u)   /* the program flash's bank the CPU sees: E0h bit 4 */
+{
+    return (u->port_e0 & 0x10) ? ROM_SIZE : 0;
+}
+
+static uint8_t pf_read(bl_unit *u, uint32_t A)
+{
+    unsigned long long now = z180_cycles(u->cpu);
+    if (u->pf.state == 0 && !u->pf.autoselect && !flash29_busy(&u->pf, now))
+        u->pf_live = 0;                      /* idle again: plain reads */
+    else
+        return flash29_read(&u->pf, pf_bank(u) + A, now);
+    return u->flash[pf_bank(u) + A];
+}
+
 /* ---- the bus the CPU sees (cpu.h) -------------------------------------------------------------------------------- */
 static uint8_t mem_read(void *ctx, uint32_t A)
 {
     bl_unit *u = (bl_unit *)ctx;
     A &= 0xFFFFF;
-    if (A < ROM_SIZE) return u->flash[A];
+    if (A < ROM_SIZE) return u->pf_live ? pf_read(u, A) : u->flash[pf_bank(u) + A];
     if (A >= FLASH_BASE && flash_window(u)) return flash29_read(&u->ff, flash_off(u, A), z180_cycles(u->cpu));
     return u->ram[A];
 }
@@ -142,8 +166,13 @@ static void mem_write(void *ctx, uint32_t A, uint8_t V)
 {
     bl_unit *u = (bl_unit *)ctx;
     A &= 0xFFFFF;
-    if (A < ROM_SIZE)
-        return;                              /* ROM: bns.c counts and logs these; after a hard reset there are none */
+    if (A < ROM_SIZE) {                      /* the program flash: only the firmware update writes it */
+#ifndef BLAZIE_PROGRAM_FLASH_BREAK           /* the tests' must-fail control: dropped, as before 0.8 */
+        flash29_write(&u->pf, pf_bank(u) + A, V, z180_cycles(u->cpu));
+        u->pf_live = 1;
+#endif
+        return;
+    }
     if (A >= FLASH_BASE && flash_window(u)) {
         flash29_write(&u->ff, flash_off(u, A), V, z180_cycles(u->cpu));
         return;
@@ -383,7 +412,7 @@ bl_unit *bl_create(const char *firmware, const char *state, double phon_ms,
     int i;
     cpu_bus bus;
     if (!u) { snprintf(err, errlen, "out of memory"); return NULL; }
-    u->flash = (unsigned char *)malloc(ROM_SIZE);
+    u->flash = (unsigned char *)malloc(PFLASH_SIZE);
     u->ram = (unsigned char *)calloc(1, 0x100000);
     u->fflash = (unsigned char *)malloc(FFLASH_SIZE);
     u->lfifo = (unsigned char *)malloc(FIFO);
@@ -392,6 +421,10 @@ bl_unit *bl_create(const char *firmware, const char *state, double phon_ms,
     u->ff.size = FFLASH_SIZE;
     u->ff.maker = 0x01;
     u->ff.device = 0xAD;
+    u->pf.data = u->flash;                   /* an Am29F040: the update reads its ID */
+    u->pf.size = PFLASH_SIZE;
+    u->pf.maker = 0x01;
+    u->pf.device = 0xA4;
     u->clock_hz = 6144000.0;
     u->phon_ms = phon_ms;
     u->irq_line = Z180_INT1;
@@ -407,7 +440,7 @@ bl_unit *bl_create(const char *firmware, const char *state, double phon_ms,
         u->key_val[i] = key_val[i];
     }
     u->n_keys = n_keys < MAX_KEYS ? n_keys : MAX_KEYS;
-    memset(u->flash, 0xFF, ROM_SIZE);
+    memset(u->flash, 0xFF, PFLASH_SIZE);
     memset(u->fflash, 0xFF, FFLASH_SIZE);
     if (state) {                             /* battery-backed RAM + file flash, as a real unit keeps them: the whole
                                                 2 MB, or its first 512 KB (bl_save_state's format while the rest is
@@ -441,6 +474,7 @@ bl_unit *bl_create(const char *firmware, const char *state, double phon_ms,
     fseek(f, FILE_ROM_OFFSET, SEEK_SET);
     n = (long)fread(u->flash, 1, ROM_SIZE, f);
     fclose(f);
+    memcpy(u->flash + ROM_SIZE, u->flash, ROM_SIZE);   /* both banks (bl_program_flash: an updated one) */
     {                                        /* bns.c refuses a firmware without these sites; so does this */
         unsigned send = find_sig(u, "F6 40 D3 C0", 2, n);
         unsigned prime = find_sig(u, "F6 E0 D3 C4 CD ?? ?? 3E C0 D3 C0", 9, n);
@@ -578,6 +612,14 @@ int bl_save_state(const bl_unit *u, const char *path)
 void bl_flash_timed(bl_unit *u, int on)
 {
     u->ff.hz = on ? u->clock_hz : 0.0;
+    u->pf.hz = u->ff.hz;
+}
+
+long bl_program_flash(bl_unit *u, unsigned char **data, unsigned long *writes)
+{
+    if (data) *data = u->flash;
+    if (writes) *writes = u->pf.n_program + u->pf.n_sector_erase + u->pf.n_chip_erase;
+    return (long)PFLASH_SIZE;
 }
 
 int bl_flash_busy(const bl_unit *u, unsigned long *chip_erases, unsigned long *sector_erases)
