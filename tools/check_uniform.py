@@ -65,6 +65,16 @@ PLATFORMS = ("nvda", "sapi", "linux", "android")
 LABEL = {"nvda": "NVDA", "sapi": "SAPI", "linux": "Linux", "android": "Android"}
 FEATURES = ("run-ahead", "numbers", "line-lift")
 FEATURE_LABEL = {"run-ahead": "run ahead", "numbers": "number words", "line-lift": "line-start lift"}
+# run ahead and the number words exist for the English and Spanish units only (voices.c bl_has_numbers: the other
+# units read their own numbers, and run ahead is tested on those two alone -- the Italian and Slovak units cannot
+# even tell its end).  The line-start lift is the English unit's: in note-taking mode the Spanish, German, Italian
+# and Slovak units lift no line moved to (measured in the emulator, 2026-10-10), and the setting does nothing on
+# them -- their pitch writes are the same with it on and off
+FEATURE_LANGS = {"run-ahead": ("en", "es"), "numbers": ("en", "es"), "line-lift": ("en",)}
+
+
+def applies(feat, v):
+    return v["engine"] == "SSV_BLAZIE" and v["lang"] in FEATURE_LANGS.get(feat, (v["lang"],))
 ADDONS = ("blazie", "speakout", "accent")
 
 
@@ -318,6 +328,8 @@ def sapi(voices, p, stage=None):
     dlls = [os.path.join(stage, a, "ssi263_sapi.dll") for a in ("x86", "x64")]
     blobs = [open(d, "rb").read() if os.path.isfile(d) else b"" for d in dlls]
     dialog = os.path.join(stage, "settings.ps1")
+    if not os.path.isfile(dialog):                  # a -Dev stage has no dialog (build.ps1): the one a stage copies
+        dialog = os.path.join(REPO, "sapi", "settings.ps1")
     ps1 = read(dialog) if os.path.isfile(dialog) else ""
     for feat, value in (("run-ahead", "RunAhead"), ("numbers", "BrailleLiteNumbers"), ("line-lift", "LineLift")):
         wide = value.encode("utf-16-le")
@@ -485,7 +497,7 @@ def main():
     gaps, lines = [], []
     rows = [(v["name"], v["id"], None) for v in voices]
     rows += [("  %s: %s" % (FEATURE_LABEL[f], v["name"]), v["id"], f) for f in FEATURES for v in voices
-             if v["engine"] == "SSV_BLAZIE"]
+             if applies(f, v)]
     width = max(len(r[0]) for r in rows) + 2
     print("voice x platform (canonical: src/csrc/voices.c, %d voices, by id)" % len(voices))
     print("%-*s%s" % (width, "", "".join("%-9s" % LABEL[k] for k in PLATFORMS)))

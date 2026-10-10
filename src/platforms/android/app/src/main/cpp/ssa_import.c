@@ -178,10 +178,44 @@ int ssa_import_mockingboard(const unsigned char *data, long n, const char *out, 
 #endif
 }
 
+/* bl_firmware.h's languages, by the app's voice: one table both ways */
+static const struct { int language, voice; } BLAZIE[] = {
+    {BLV_FW_ENGLISH, SSA_ENGLISH}, {BLV_FW_SPANISH, SSA_SPANISH}, {BLV_FW_GERMAN, SSA_GERMAN},
+    {BLV_FW_ITALIAN, SSA_ITALIAN}, {BLV_FW_SLOVAK, SSA_SLOVAK},
+};
+#define N_BLAZIE ((int)(sizeof BLAZIE / sizeof *BLAZIE))
+
+int ssa_blazie_voice(int language)
+{
+    int i;
+    for (i = 0; i < N_BLAZIE; i++)
+        if (BLAZIE[i].language == language) return BLAZIE[i].voice;
+    return -1;
+}
+
+int ssa_blazie_recipe(int voice)
+{
+    int i;
+    for (i = 0; i < N_BLAZIE; i++)
+        if (BLAZIE[i].voice == voice) return blv_firmware_recipe(BLAZIE[i].language);
+    return -1;
+}
+
 int ssa_import_firmware(const unsigned char *data, long n, const char *out, char *msg, int msglen)
 {
     char disk[256];
     int r = blv_import_firmware(data, n, out, msg, msglen), s;
+    if (r >= 0) {                      /* a Blazie release: its language as the app's voice */
+        if (ssa_import_break == 3)
+            return r;                  /* the control: the raw language, as before the table (ssa_import.h) */
+        s = ssa_blazie_voice(r);
+        if (s < 0) {                   /* a language bl_firmware.c knows and this app has no voice for */
+            if (out) remove(out);
+            snprintf(msg, (size_t)msglen, "Blazie firmware this app has no voice for (language %d)", r);
+            return BLV_FW_REFUSED;
+        }
+        return s;
+    }
     if (r == BLV_FW_NONE)
         r = ssa_import_mockingboard(data, n, out, msg, msglen);
     if (r == BLV_FW_NONE)

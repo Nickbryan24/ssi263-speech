@@ -15,9 +15,12 @@ through the desktop library (bl.dll + ssi263.dll on Windows, libssi263speech.so 
 
 Every fixture is made here, at test time, from the unit's files in the firmware folder (--firmware, default
 $SSI263_FIRMWARE, else firmware/blazie): BL2ENG.BNS + bl2_2003_warm.state, spanish/BL2SPA.BNS + bl2spa_fresh.state,
-tns/TNSENG.TNS (a Type 'n Speak image: Blazie's notice, but not a Braille Lite the voice can run), and
-once2000/BL2ENG.BNS (ONCE's September 2000 English; its cases are skipped, and said so, when it is not there).
-Nothing is kept.
+tns/TNSENG.TNS (a Type 'n Speak image: Blazie's notice, but not a Braille Lite the voice can run),
+once2000/BL2ENG.BNS (ONCE's September 2000 English; its cases are skipped, and said so, when it is not there), and
+0.8's units -- german/Lite2000.BNS, italian/Lite2000.BNS, bns2000/BS2SLL.BNS, each with its state -- each imported
+as its language, its state made with that language's recipe (blv_firmware_recipe: the Slovak unit's is the
+English one) into the app's flat names and checked against the list and the firmware folder's, then made to speak
+(skipped, and said so, when not there).  Nothing is kept.
 """
 import argparse
 import ctypes
@@ -40,13 +43,23 @@ BREAK = os.environ.get("SSI263_IMPORT_TEST_BREAK", "")
 BREAK_STATE = bool(BREAK) and BREAK != "hash"
 BREAK_HASH = BREAK == "hash"
 ENGLISH, SPANISH, NONE, REFUSED, WRITE, UNKNOWN = 0, 1, -1, -2, -3, -4
-NAMES = {ENGLISH: "English", SPANISH: "Spanish", NONE: "none", REFUSED: "refused", WRITE: "write",
-         UNKNOWN: "unknown"}
+GERMAN, ITALIAN, SLOVAK = 2, 3, 4            # bl_firmware.h's BLV_FW_* (languages, not the app's voices: 7, 8, 9)
+NAMES = {ENGLISH: "English", SPANISH: "Spanish", GERMAN: "German", ITALIAN: "Italian", SLOVAK: "Slovak",
+         NONE: "none", REFUSED: "refused", WRITE: "write", UNKNOWN: "unknown"}
 LABELS = ["Braille Lite English: the June 5, 2003 revision",
           "Braille Lite English: ONCE's September 20, 2000 revision",
-          "Braille Lite Spanish: ONCE's September 20, 2000 revision"]
+          "Braille Lite Spanish: ONCE's September 20, 2000 revision",
+          "Braille Lite German: the September 20, 2000 revision",
+          "Braille Lite Italian: the September 20, 2000 revision",
+          "Braille 'n Speak 2000 Slovak"]
+LANGUAGES = (ENGLISH, ENGLISH, SPANISH, GERMAN, ITALIAN, SLOVAK)
+# blv_firmware_recipe: each language's state recipe (bl_state.h's BLV_STATE_*): the Slovak unit's is the English one
+RECIPES = {ENGLISH: 0, SPANISH: 1, GERMAN: 2, ITALIAN: 3, SLOVAK: 0}
+# 0.8's units: (language, the app's voice key in test_android_native's FILES, the label)
+NEW = [(GERMAN, "de", LABELS[3]), (ITALIAN, "it", LABELS[4]), (SLOVAK, "sk", LABELS[5])]
 CHUNK = 10 * 1000 * 1000                     # bl_state.c's: instructions between progress reports
-RECIPE = {ENGLISH: 150 * 1000 * 1000, SPANISH: 1150 * 1000 * 1000}
+# by recipe: German and Italian take the English runs (their yes in their own language), the Slovak unit the English
+RECIPE = {0: 150 * 1000 * 1000, 1: 1150 * 1000 * 1000, 2: 150 * 1000 * 1000, 3: 150 * 1000 * 1000}
 PROGRESS = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_double)
 
 bad = 0
@@ -66,6 +79,9 @@ def load(lib_path, chip_path):
     lib.blv_firmware_label.restype = ctypes.c_char_p
     lib.blv_firmware_label.argtypes = [ctypes.c_int]
     lib.blv_firmware_language.argtypes = [ctypes.c_int]
+    if not hasattr(lib, "blv_firmware_recipe"):
+        sys.exit("%s is older than bl_firmware.h (no blv_firmware_recipe): rebuild it" % lib_path)
+    lib.blv_firmware_recipe.argtypes = [ctypes.c_int]
     lib.blv_state_check.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
     lib.blv_sha256.argtypes = [ctypes.c_char_p, ctypes.c_long, ctypes.c_char_p]
     lib.blv_make_state.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, PROGRESS, ctypes.c_void_p,
@@ -93,9 +109,52 @@ def check_sha256(lib):
 
 def check_list(lib):
     got = [(lib.blv_firmware_label(k).decode(), lib.blv_firmware_language(k)) for k in range(lib.blv_firmware_count())]
-    want = list(zip(LABELS, (ENGLISH, ENGLISH, SPANISH)))
+    want = list(zip(LABELS, LANGUAGES))
     result(got == want, "the list: %d releases, labelled" % len(want), "" if got == want else "got %s" % got)
     result(lib.blv_firmware_label(len(want)) is None and lib.blv_firmware_language(-1) == -1, "past the list: none")
+    got = {lang: lib.blv_firmware_recipe(lang) for lang in RECIPES}
+    result(got == RECIPES and lib.blv_firmware_recipe(-1) == -1 and lib.blv_firmware_recipe(5) == -1,
+           "each language's state recipe (the Slovak unit's the English one)", "" if got == RECIPES else "got %s" % got)
+
+
+def new_unit(fw, key):
+    """0.8's unit in the firmware folder (test_android_native's LANG_SOURCES): (its .BNS, its state), or None."""
+    sub, bns, state = TAN.LANG_SOURCES[key]
+    paths = (os.path.join(fw, sub, bns), os.path.join(fw, sub, state))
+    return paths if all(os.path.isfile(p) for p in paths) else None
+
+
+def check_new_units(lib, fw, made, tmp):
+    """0.8's units, each when its files are here: its .BNS imported as its language, written as it came; its state
+    made with its language's recipe (blv_firmware_recipe) into the app's flat names, the list's byte for byte -- and
+    the one in the firmware folder (MAME-made too) -- with its progress steady; one byte changed, refused."""
+    for lang, key, label in NEW:
+        unit = new_unit(fw, key)
+        if not unit:
+            print("skip %s: no %s/%s + %s in the firmware folder" % ((NAMES[lang],) + TAN.LANG_SOURCES[key]))
+            continue
+        data = open(unit[0], "rb").read()
+        out = os.path.join(tmp, "out.BNS")
+        if os.path.exists(out):
+            os.remove(out)
+        got, msg = import_bytes(lib, data, out)
+        result(got == lang and msg == label and open(out, "rb").read() == data,
+               "%s: %s, written as it came" % (os.path.basename(unit[0]), NAMES[lang]), "%s (%s)" % (got, msg))
+        bns, state = (os.path.join(made, f) for f in TAN.FILES[key])
+        shutil.copy2(unit[0], bns)
+        recipe = lib.blv_firmware_recipe(lang)
+        ok, err, secs, reports = make_state(lib, bns, recipe, state)
+        listed = ok and lib.blv_state_check(bns.encode(), state.encode()) == 1
+        result(listed and open(state, "rb").read() == open(unit[1], "rb").read(),
+               "generated %s state = the list's and the firmware folder's, byte for byte" % NAMES[lang],
+               "%.1f s" % secs if listed else (err or "a different state"))
+        check_progress(NAMES[lang], recipe, secs, reports)
+        changed = bytearray(open(state, "rb").read())
+        changed[-1] ^= 1
+        path = os.path.join(tmp, "changed.state")
+        open(path, "wb").write(bytes(changed))
+        result(lib.blv_state_check(bns.encode(), path.encode()) == 0,
+               "the generated %s state with one byte changed is not the list's" % NAMES[lang])
 
 
 def spanish_dir(fw):
@@ -253,14 +312,16 @@ def main():
                 check_progress(label, lang, secs, reports)
         if not BREAK_STATE:
             check_states(lib, fw, made, tmp)
+            check_new_units(lib, fw, made, tmp)
         # ... and it speaks every case of the Android test as the desktop's shipped state does (made on z180emu, so a
         # REFERENCE: within a few samples, the length of each case; the state's own bytes are checked above)
         shipped = os.path.join(tmp, "shipped")
         os.makedirs(shipped)
         # (the lockstep's cases: run ahead's are its own test's, test_android_native.py)
         want = TAN.reference(lib, TAN.data_folder(fw, shipped), run_ahead=False)
-        if BREAK_STATE:
-            want.pop("spanish", None)
+        if BREAK_STATE:                      # the control makes the English state alone
+            for name in ["spanish"] + [n for n in want if n.split("-")[0] in TAN.LANG_SOURCES]:
+                want.pop(name, None)
         got = TAN.reference(lib, made, run_ahead=False)
         for name in want:
             n, want_n = got.get(name, (0, ""))[0], want[name][0]
@@ -291,7 +352,7 @@ def check_once_english(lib, fw, tmp, june):
            (err or "a different state"))
     check_progress("September 2000 English", ENGLISH, secs, reports)
     got = TAN.reference(lib, d, run_ahead=False)
-    for name in (n for n in june if n != "spanish"):
+    for name in (n for n in june if n != "spanish" and n.split("-")[0] not in TAN.LANG_SOURCES):
         n, want_n = got.get(name, (0, ""))[0], june[name][0]
         close = n > 0 and abs(n - want_n) <= max(0.02 * want_n, 2000)
         result(close, "September 2000 English speaks: %s" % name, "%d samples (June 2003: %d)" % (n, want_n))

@@ -50,7 +50,7 @@ extern "C" {
 typedef struct {
     const char *id;                /* "blazie:blazie": the NVDA driver module and its voice, as the SAPI tokens carry it */
     const char *name;              /* the NVDA driver's name for it, UTF-8 */
-    const char *lang;              /* "en", "es" */
+    const char *lang;              /* "en", "es", "de", "it", "sk" */
     int engine;                    /* SSV_BLAZIE ... SSV_MOCKINGBOARD */
     int slot;                      /* voices of one slot share one unit in a bank (the two Accents: one card) */
     const char *files[4];          /* its firmware, relative to the firmware folder, "/"-separated; NULL after the last */
@@ -133,12 +133,14 @@ SSV_API ssv_voice *ssv_bank_voice(ssv_bank *k, int i, char *err, int errlen);
 
 /* The accented-letter pass every voice's text path runs first (translit.h), on its own: n bytes of UTF-8 (n < 0: up
    to the NUL) in, UTF-8 out.  charset: what the firmware knows, SSV_ASCII (the English Braille Lite, the Speak-Out,
-   the Accents) or SSV_CP850 (the Spanish Braille Lite).  Returns the length (no NUL), copying into out when it fits in
+   the Accents), SSV_CP850 (the Spanish, German and Italian Braille Lites) or SSV_CP852 (the Slovak Braille 'n
+   Speak 2000).  Returns the length (no NUL), copying into out when it fits in
    cap; -1 when out of memory.  For the Braille Lite's NVDA driver (its front end is Python, its unit this library)
    and for the tests that hold the voices to 0.7.0's drivers, which predate the pass.  The library also exports
    translit.h's ssv_translit_break, the tests' control (nonzero: the pass off for every voice in it). */
 #define SSV_ASCII 0
 #define SSV_CP850 1
+#define SSV_CP852 2
 SSV_API int ssv_translit(const char *utf8, int n, int charset, char *out, int cap);
 
 #ifdef __cplusplus

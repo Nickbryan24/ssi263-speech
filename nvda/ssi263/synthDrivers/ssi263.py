@@ -41,7 +41,11 @@ except ImportError:              # staged only with its firmware file (build_ssi
 
 # firmware type: (its name, the unit's driver module, {language: that driver's voice})
 FIRMWARE_TYPES = OrderedDict([
-    ("braillelite2000", ("Braille Lite 2000", blazie, OrderedDict([("en", "blazie"), ("es", "blazie_es")]))),
+    # 0.8: German and Italian (Blazie's September 2000 update) beside English and Spanish
+    ("braillelite2000", ("Braille Lite 2000", blazie, OrderedDict([("en", "blazie"), ("es", "blazie_es"),
+                                                                   ("de", "blazie_de"), ("it", "blazie_it")]))),
+    # the Slovak Braille 'n Speak 2000: the same driver, its own unit
+    ("braillenspeak2000", ("Braille 'n Speak 2000", blazie, OrderedDict([("sk", "blazie_sk")]))),
     ("speakout", ("Speak-Out", speakout, OrderedDict([("en", "speakout")]))),
     ("accentsa", ("Accent SA", accentmini, OrderedDict([("en", "sa")]))),
     ("accentmini", ("Accent-mini", accentmini, OrderedDict([("en", "mini")]))),
@@ -50,7 +54,7 @@ if mockingboard is not None:
     FIRMWARE_TYPES["mockingboard"] = ("Mockingboard", mockingboard, OrderedDict([("en", "mockingboard")]))
     # the earlier text-to-speech of Mockingboard disk 1: its own rules ("Mocking-bo-wrd", "dough-lars")
     FIRMWARE_TYPES["mockingboardearly"] = ("Mockingboard, early", mockingboard, OrderedDict([("en", "early")]))
-LANGUAGES = {"en": "English", "es": "Español"}
+LANGUAGES = {"en": "English", "es": "Español", "de": "Deutsch", "it": "Italiano", "sk": "Slovenčina"}
 # the units' own string settings with choices (NVDA's available<Id>s, its id capitalized)
 CHOICES = ("variant", "sampleRate", "whine")
 BOOT_TIMEOUT = 30.0              # seconds a unit may take to boot its firmware before it counts as failed

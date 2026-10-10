@@ -12,6 +12,26 @@ SSI-263 hardware, with every voice the NVDA add-ons have (Tomi, 0.7.5: "all voic
 | GW Micro Speak-Out (`en-US-speakout`) | **imported** by the user (0.7.5): GW Micro's `SPEAKOUT.HEX` | its V40 firmware on MAME's V40 |
 | Mockingboard (Sweet Micro Systems) (`en-US-mockingboard`) | **built in** (0.8, the GitHub APK), or imported: `mockingboard-tts-1.1.bin` | Sweet Micro's text-to-speech 1.1 on a 6502 (Fake6502's instructions, via EchoTalk) |
 | Mockingboard, early (Sweet Micro Systems) (`en-US-mockingboard-early`) | **built in** the same way, or imported: `mockingboard-tts-early.bin` | the earlier text-to-speech of Mockingboard disk 1, on the same 6502 |
+| Braille Lite 2000, German (`de-DE-braillelite`) | **imported** by the user (0.8): the update disk's `Lite2000.BNS` | Blazie's September 2000 firmware on MAME's Z180 |
+| Braille Lite 2000, Italian (`it-IT-braillelite`) | **imported** by the user (0.8): the update disk's `Lite2000.BNS` | Blazie's September 2000 firmware on MAME's Z180 |
+| Braille 'n Speak 2000, Slovak (`sk-SK-braillenspeak`) | **imported** by the user (0.8): `BS2SLL.BNS` | the Slovak community's firmware on MAME's Z180 |
+
+The data folder keeps 0.8's units under the NVDA add-on's flat names (`Lite2000_de.BNS` + `lite2000_de_fresh.state`,
+`Lite2000_it.BNS` + `lite2000_it_fresh.state`, `BS2SLL.BNS` + `bs2sll_fresh.state`, as `sd_voices.c`): both update
+disks call theirs `Lite2000.BNS`.
+
+## Languages, as Android sees them
+
+`SsiLanguages.kt` tells Android -- the system's text-to-speech settings, TalkBack's language list and its switching --
+what it can speak, the way TGSpeechBox does (`TgsbTtsService.LANGUAGES`, `CheckVoiceData`): every voice's locale,
+asked after in ISO 639-2/T and ISO 3166 alpha-3 (two-letter codes and `ger`/`slo` taken too), and a language offered
+only while a voice of it can speak. English always (the Accents built in); Spanish, German, Italian and Slovak each
+once its Blazie unit's firmware is imported -- until then `LANG_MISSING_DATA` (below zero: a screen reader's switch
+to it fails and stays where it was; the settings' "install voice data" opens the import), absent from `onGetVoices`
+and from CheckVoiceData's available list (in its unavailable one). A language no voice speaks is
+`LANG_NOT_SUPPORTED`. `onGetLanguage` is the chosen voice's language; a request in Spanish, German, Italian or Slovak
+gets that language's unit when it is here (the chosen voice when it is that unit), whatever "Use selected voice in all
+apps" says; English requests the chosen voice, as before.
 
 Aicom's files and Sweet Micro's are the only firmware the APK carries (`assets/aicom`, with `firmware/AICOM.txt`;
 `assets/sweet-micro`, with Sweet Micro's notice); Blazie's and GW Micro's never ship -- each user imports their own,
@@ -128,6 +148,14 @@ Files are known by content, never by name (`src/csrc/blazie/bl_firmware.c`): the
 | English, June 5, 2003 revision | "FS june2003": `blt2000.exe` and its `BL2ENG.BNS` | `ff8f30ec…` |
 | English, ONCE's September 20, 2000 revision | ONCE's "braillehablado" disk: `blite2000/BL2ENG.BNS` | `c840112f…` |
 | Spanish, ONCE's September 20, 2000 revision | ONCE's "braillehablado" disk: `blite2000/BL2SPA.BNS` | `eedd606e…` |
+| German, the September 20, 2000 revision (0.8) | Blazie's update disk: `Lite2000.BNS` | `9594b476…` |
+| Italian, the September 20, 2000 revision (0.8) | Blazie's update disk: `Lite2000.BNS` | `40bf2ad9…` |
+| Braille 'n Speak 2000, Slovak (0.8) | `BS2SLL.BNS` | `445203a8…` |
+
+`bl_firmware.h` gives each release's language (`BLV_FW_*`); `ssa_import.c` turns it into the app's voice
+(`ssa_blazie_voice`: German 7, Italian 8, Slovak 9 -- the languages' own 2, 3, 4 are the Accent SA's, the Speak-Out's
+and the Accent-mini's indexes) and back into the state recipe (`ssa_blazie_recipe`, `blv_firmware_recipe`: German's
+and Italian's the English runs with their own yes, the Slovak unit's the English one), which `nativeMakeState` takes.
 
 Any other image is refused in words: a Braille Lite 2000 release not on the list (another country's may lay its
 memory out differently, and its recipe is not known), and another Blazie unit's firmware (Braille 'n Speak, Type 'n
@@ -140,7 +168,7 @@ the Setup page and announced to TalkBack.
 The unit's battery-backed state (it holds what the firmware wrote, so it cannot ship either) is made on the phone
 from the firmware (`bl_state.c`): the bns.c runs that made the shipped states, replayed on MAME's Z180, and checked
 on the phone against the list's hash for that release (MAME-made: the same bytes on the phone, the desktop and Linux;
-the desktop's shipped states, made on z180emu, differ by the recipe's timing and are refused). English takes a few seconds, Spanish about a minute
+the desktop's shipped states, made on z180emu, differ by the recipe's timing and are refused). English, German, Italian and Slovak take a few seconds (150 million instructions), Spanish about a minute
 (1150 million Z180 instructions; 71 s for both on the A024); the progress bar moves every 10 million instructions and
 TalkBack hears every fifth of the way, no closer than 5 s apart. Then the unit speaks once (`ssa_probe`) and only then
 do the files replace what was there, in device-protected storage. Until then the service reports its languages as
@@ -163,7 +191,8 @@ when it is there), the licences (the project's MIT, Aicom's notice, MAME's BSD-3
 V40 and 8086 cores, and with the Mockingboard's sources in the tree its 6502's credits: Fake6502's `PINNED.txt` and
 EchoTalk's BSD-3-Clause, and Sweet Micro's notice with its files). None of that is committed. A developer build may
 carry the firmware, by asking: `SSI263_ANDROID_BUNDLE_FIRMWARE=1` (with `SSI263_FIRMWARE`, default `firmware/blazie`,
-the Spanish unit there or in `spanish/`); never distribute one. Gradle then needs `-Pssi263BundleFirmware=1` too:
+the Spanish unit there or in `spanish/`, 0.8's in `german/`, `italian/` and `bns2000/`, under the app's flat names);
+never distribute one. Gradle then needs `-Pssi263BundleFirmware=1` too:
 without it, staged firmware stops the build (a leftover once rode into a plain `assembleDebug`); and staged
 Mockingboard files without Sweet Micro's notice stop it too. `check_apk_no_firmware.py` looks inside an APK (and any
 archive in it): Aicom's three ROMs, the Accent-mini's driver and the two Mockingboard files (in `assets/sweet-micro`
@@ -209,15 +238,24 @@ shipped in the APK. The Setup page's "Licenses and source" shows them all and po
 
 `test_import_native.py` makes every fixture at test time from the files in the firmware folder (`--firmware`, default
 `$SSI263_FIRMWARE`, else `firmware/blazie`, with `spanish/`, `tns/` and `once2000/` -- ONCE's September 2000
-`BL2ENG.BNS`, its cases skipped when absent): the listed releases written as they came, the list and its labels, an
+`BL2ENG.BNS`, its cases skipped when absent; `german/`, `italian/`, `bns2000/` -- 0.8's units, each made into a state
+with its language's recipe and checked against the list and the folder's own, then made to speak, skipped when
+absent): the listed releases written as they came, the list, its labels and each language's recipe, an
 update program and the 1998 layout, two unknown releases refused, TNSENG.TNS refused, states and noise not firmware;
 the states made from the firmware alone must be the listed ones byte for byte (the shipped z180emu-made ones are
 refused), speak every case of the Android test within a few samples of the shipped ones, and report their progress every 10 million instructions, steadily. Its controls hold the
 wrong chord at the English warm reset, and drop the list (the unknown releases are then taken). The JVM tests
-(`app/src/test`) play the native side with a fake and check the zip layouts (top, one folder down, the add-on, an
+(`app/src/test`) play the native side with a fake and check the zip layouts (top, one folder down, the add-on and the
+unified 0.8 add-on's `synthDrivers/_ssi263_unified/_ssi263_blazie/`, an
 update program inside a zip, `speakout.zip`, both units in one zip), the refusals' words (unknown releases, other
 units, a damaged HEX alone and beside firmware, states alone, in a zip and beside firmware) and the choices between
-releases.
+releases; `SsiLanguagesTest.kt` what Android is told about each language with and without each unit imported.
+
+0.8's units in `test_android_native.py` (block `lang`; each when its files are in the firmware folder): a sentence with
+its accented letters and "1.234" on a fresh unit at the app's defaults -- number words on, which the unit must not get
+(voices.c drops them: it reads its own) -- and the import's probe ("Hallo.", "Ciao.", "Ahoj."), against bl_voice with
+the unit's code page (850; Slovak 852) and, for the Italian and Slovak units, the host's `no_echo`; their `.BNS`
+judged as voices 7, 8, 9 (`--import`); `ssa_blazie_voice` and `ssa_blazie_recipe` checked in the C program.
 
 `test_android_native.py` also covers 0.7.5's voices and settings. The Braille Lite with run ahead on (its setting,
 `blv_set_run_ahead`) against bl_voice running ahead -- and its audio must not be the lockstep's. Its number words
@@ -285,7 +323,7 @@ defaults:
 
 | Voice | Settings (Voice settings page) |
 |---|---|
-| Braille Lite | tone 0-26 (7); short pauses (on); read numbers as words (on: the driver's custom number processing, English and Spain's Spanish); run the unit ahead (**experimental**, off; needs short pauses), as in NVDA, SAPI and Linux; idle sound off/hiss/whine; voice inflection (on) |
+| Braille Lite, Braille 'n Speak | tone 0-26 (7); short pauses (on); read numbers as words (on: the driver's custom number processing, English and Spain's Spanish; the German, Italian and Slovak units read their own); run the unit ahead (**experimental**, off; needs short pauses; English and Spanish), as in NVDA, SAPI and Linux; lift line starts (off; heard on the English unit); idle sound off/hiss/whine; voice inflection (on) |
 | Speak-Out | tone A-Z (I, the box's own); join phrases (on); shorten pauses between sentences (on) |
 | Accents | voice inflection (on: full intonation; off: monotone) |
 
@@ -321,7 +359,7 @@ and restored after it by the voice itself (`sov_speak`, `amv_speak`), moved at l
 | `app/src/main/res/xml/tts_engine.xml` | Tells the framework which screen holds the engine's settings |
 | `app/src/main/cpp/ssa_map.h`, `ssa_map.c` | An Android request's rate and pitch onto the voice's scales, the way `sd_ssi263.c` maps SSIP; the test's control switch |
 | `app/src/main/cpp/ssa_engine.h`, `ssa_engine.c` | The front end in plain C over `src/csrc/voices.h` (the voices' engines and defaults, units made with `ssv_create_from`): the app's voices and where their files are (the imported ones by path, the Aicom ROMs and driver in memory; the Accent SA a unit per utterance), the settings and the request's rate and pitch, the boot settings, start, pull in chunks, stop (any thread) and cancel; `ssa_accent_pitch`, `ssa_speakout_pitch`; `ssa_probe`, the import's last check; the tests' controls |
-| `app/src/main/cpp/ssa_import.h`, `ssa_import.c` | The import's judgement by content: the Braille Lite's (`bl_firmware.h`), then the Speak-Out's `SPEAKOUT.HEX` (Intel HEX, the known sha256); the test's control |
+| `app/src/main/cpp/ssa_import.h`, `ssa_import.c` | The import's judgement by content: the Blazie units' (`bl_firmware.h`, each language as the app's voice and back to its state recipe), then the Speak-Out's `SPEAKOUT.HEX` (Intel HEX, the known sha256); the test's control |
 | `app/src/main/cpp/ssa_jni.c` | The thin JNI bridge to `ssa_engine` (the Aicom ROMs and driver handed over), and to the import's native part (`ssa_import.h`, `bl_state.h`) |
 | `app/src/main/kotlin/com/ssi263speech/tts/SsiNative.kt` | The JNI declarations |
 | `.../SsiData.kt` | The units' files: the Accents' ROMs and driver from the APK's assets; the Braille Lite's and the Speak-Out's in device-protected storage -- which voices are imported and as what, the import's move into place, removal; a developer build's bundled firmware |
@@ -330,12 +368,14 @@ and restored after it by the voice itself (`sov_speak`, `amv_speak`), moved at l
 | `.../SsiSettings.kt` | The settings, in device-protected storage, read once per utterance |
 | `.../SsiEngine.kt` | The one engine in the process: opens it, lists the voices (the Accents built in, the Braille Lite and the Speak-Out once imported), the default voice, owns it for one utterance at a time |
 | `.../SsiTtsService.kt` | The `TextToSpeechService`: voices and languages, the request's voice, rate and pitch, audio streamed block by block, stop |
+| `.../SsiLanguages.kt` | What Android is told about each language (no Android context in it, so the JVM tests run it): availability, the voice for a request's language, CheckVoiceData's tags |
 | `.../SettingsActivity.kt` | The screen: Setup (the voices, the firmware's import -- the Braille Lite's and the Speak-Out's -- and removal with progress, status, a preview, the system TTS settings, licences and source) and Voice settings (every voice's own); the adb test hooks (`autospeak`, `ttstest`, `setvoice`, `setrunahead`, `import`, `removefirmware`) |
 | `.../SettingsWidgets.kt` | Headings, the accessible slider, radio buttons and check boxes, from outspoken |
 | `.../PreviewPlayer.kt` | The preview: rendered through the engine, played on an AudioTrack, kept as `last-render.wav` |
 | `.../TtsSelfTest.kt` | The service through Android's own client, bound by package name (the default engine untouched): a file render, or a stop |
-| `.../CheckVoiceDataActivity.kt` | Answers the framework's voice-data check: English always (the Accent SA), Spanish once its firmware is imported |
+| `.../CheckVoiceDataActivity.kt` | Answers the framework's voice-data check: English always (the Accent SA), Spanish, German, Italian and Slovak once their firmware is imported |
 | `app/src/test/kotlin/.../FirmwareImportTest.kt` | The JVM tests of `FirmwareImport`, with a fake native side |
+| `app/src/test/kotlin/.../SsiLanguagesTest.kt` | The JVM tests of `SsiLanguages`: each language with and without its unit |
 | `.../GetSampleTextActivity.kt` | The sample sentence the system's TTS settings speak |
 | `licenses/DISTRIBUTION.txt` | The distribution notice the licences dialog shows first (MIT, MAME's cores, the source, Aicom's ROMs and driver, no Braille Lite or Speak-Out firmware) |
 | `licenses/Kotlin-LICENSE.txt`, `Kotlin-NOTICE.txt` | The Kotlin runtime's licence (the project's and Casso's MIT licences and MAME's notices are added by `build_android.sh`) |

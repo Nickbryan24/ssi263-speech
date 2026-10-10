@@ -23,7 +23,9 @@
 # Found from the environment first, then paths.local (the key of the same name), then the default:
 #   SSI263_FIRMWARE    only with SSI263_ANDROID_BUNDLE_FIRMWARE=1 (a developer build that carries the firmware):
 #                      the folder with BL2ENG.BNS + bl2_2003_warm.state, and BL2SPA.BNS + bl2spa_fresh.state for
-#                      the Spanish unit, there or in its spanish/ folder (default firmware/blazie)
+#                      the Spanish unit, there or in its spanish/ folder (default firmware/blazie); and 0.8's units
+#                      when there: german/ and italian/ (Lite2000.BNS + lite2000_de|it_fresh.state), bns2000/
+#                      (BS2SLL.BNS + bs2sll_fresh.state), bundled under the app's flat names (ssa_engine.c)
 #   ANDROID_NDK_HOME   the NDK (default: the newest under $ANDROID_HOME/ndk or $ANDROID_SDK_ROOT/ndk)
 #
 # Output: src/platforms/android/app/src/main/jniLibs/<abi>/libssi263speech.so (gitignored) and build/android/assets
@@ -233,6 +235,17 @@ stage_assets() {
             if [ -f "$d/BL2SPA.BNS" ] && [ -f "$d/bl2spa_fresh.state" ]; then
                 cp "$d/BL2SPA.BNS" "$d/bl2spa_fresh.state" "$A/firmware/"
                 break
+            fi
+        done
+        # 0.8's German and Italian Braille Lite 2000 and Slovak Braille 'n Speak 2000, each when both of its files
+        # are there, under the app's flat names (ssa_engine.c's; the German and Italian disks both say Lite2000.BNS)
+        for unit in german/Lite2000.BNS:Lite2000_de.BNS:lite2000_de_fresh.state \
+                    italian/Lite2000.BNS:Lite2000_it.BNS:lite2000_it_fresh.state \
+                    bns2000/BS2SLL.BNS:BS2SLL.BNS:bs2sll_fresh.state; do
+            src="${unit%%:*}"; rest="${unit#*:}"; name="${rest%%:*}"; state="${rest#*:}"
+            if [ -f "$FW/$src" ] && [ -f "$FW/${src%/*}/$state" ]; then
+                cp "$FW/$src" "$A/firmware/$name"
+                cp "$FW/${src%/*}/$state" "$A/firmware/$state"
             fi
         done
         echo "DEVELOPER BUILD: the firmware is bundled; do not distribute this APK"

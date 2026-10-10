@@ -10,7 +10,9 @@
  *                                           data folder has SPEAKOUT.HEX, each Mockingboard's when it has its file
  *                                           (mockingboard-tts-1.1.bin, mockingboard-tts-early.bin), and with the last
  *                                           folder the built-in copies' cases; the Braille Lite's, lockstep and run
- *                                           ahead, and its number words on and off (English, and Spanish when there)
+ *                                           ahead, and its number words on and off (English, and Spanish when there);
+ *                                           0.8's German, Italian and Slovak units' sentence and probe, each when
+ *                                           its files are there
  *     test_android_native --texts           stdin's lines as the Accent SA's front end sends them
  *     test_android_native --so-direct <SPEAKOUT.HEX>
  *                                           the Speak-Out's reference: so_voice driven directly (sov_create, sov_set,
@@ -39,8 +41,8 @@
  * mapping (ssa_map.h), so the "fast" cases must differ; accent-pitch, accent-glide, accent-reuse and accent-step are
  * ssa_engine.h's ssa_accent_break 1, 2, 3 and 4; speakout-pitch, speakout-settings, run-ahead, numbers,
  * mockingboard-pitch, mockingboard-numbers, mockingboard-import-ignored, mockingboard-builtin-ignored and
- * mockingboard-variant its ssa_voice_break 1 to 9; import-hash and import-dsk ssa_import.h's
- * ssa_import_break 1 and 2.
+ * mockingboard-variant its ssa_voice_break 1 to 9; import-hash, import-dsk and import-lang ssa_import.h's
+ * ssa_import_break 1, 2 and 3.
  *
  * Built by the desktop compiler (test_android_native.py) and by build_android.sh --test (static, for a device).
  */
@@ -55,8 +57,19 @@
 #include "speakout/so_voice.h"
 #include "accentmini/am_voice.h"
 #include "mockingboard/mb_voice.h"
+#include "blazie/bl_firmware.h"
+#include "blazie/bl_state.h"
 
 static const char *HELLO = "Hello there. This is the Braille Lite, speaking on a phone.";
+/* 0.8's Blazie units (test_android_native.py's LANGS, in the same order): the voice, the case's name, a sentence in
+   its language with its accented letters and a number the unit reads itself (the app's default "Read numbers as
+   words" is on: voices.c must drop it for these units, or the hash differs), and the import's probe (SsiImport.kt's
+   probeText) */
+static const struct { int voice; const char *name, *text, *probe; } LANGS[] = {
+    {SSA_GERMAN, "de", "Guten Tag. Gr\xc3\xbc\xc3\x9f" " Gott, es kostet 1.234 Euro.", "Hallo."},
+    {SSA_ITALIAN, "it", "Buongiorno. Perch\xc3\xa9 no? Costa 1.234 euro.", "Ciao."},
+    {SSA_SLOVAK, "sk", "Dobr\xc3\xbd de\xc5\x88. \xc4\x8co sa deje? Stoj\xc3\xad to 1.234 eur.", "Ahoj."},
+};
 static const char *LONG = "This is a long message for the stop test, with a comma or two, that keeps going well "
                           "past the moment the harness says stop. It has a second sentence as well.";
 /* the Braille Lite's number words: English's, and Spain's ("1.234.567" one number, "3,5" tres coma cinco) */
@@ -727,7 +740,8 @@ int main(int argc, char **argv)
                     : !strcmp(brk, "mockingboard-pitch") ? 5 : !strcmp(brk, "mockingboard-numbers") ? 6
                     : !strcmp(brk, "mockingboard-import-ignored") ? 7 : !strcmp(brk, "mockingboard-builtin-ignored") ? 8
                     : !strcmp(brk, "mockingboard-variant") ? 9 : !strcmp(brk, "line-lift") ? 10 : 0;
-    ssa_import_break = !brk ? 0 : !strcmp(brk, "import-hash") ? 1 : !strcmp(brk, "import-dsk") ? 2 : 0;
+    ssa_import_break = !brk ? 0 : !strcmp(brk, "import-hash") ? 1 : !strcmp(brk, "import-dsk") ? 2
+                     : !strcmp(brk, "import-lang") ? 3 : 0;
     if (argc >= 2 && !strcmp(argv[1], "--texts")) return texts();
     if (argc >= 6 && !strcmp(argv[1], "--level"))
         return level(argv[2], argv[3], atoi(argv[4]), atoi(argv[5]), argc >= 7 ? argv[6] : NULL);
@@ -746,6 +760,17 @@ int main(int argc, char **argv)
     if (ssa_rate(50, 100) != 50 || ssa_pitch(50, 50) != 25 || ssa_pitch(50, 400) != 100
             || ssa_ssip_from_percent(200) != 50 || ssa_to100(-100) != 0) {
         fprintf(stderr, "the mapping is off\n");
+        return 1;
+    }
+    /* a Blazie release's language is not a voice index: the import gives the app's voice, the state its recipe */
+    if (ssa_blazie_voice(BLV_FW_ENGLISH) != SSA_ENGLISH || ssa_blazie_voice(BLV_FW_SPANISH) != SSA_SPANISH
+            || ssa_blazie_voice(BLV_FW_GERMAN) != SSA_GERMAN || ssa_blazie_voice(BLV_FW_ITALIAN) != SSA_ITALIAN
+            || ssa_blazie_voice(BLV_FW_SLOVAK) != SSA_SLOVAK || ssa_blazie_voice(BLV_FW_NONE) != -1
+            || ssa_blazie_recipe(SSA_ENGLISH) != BLV_STATE_ENGLISH || ssa_blazie_recipe(SSA_SPANISH) != BLV_STATE_SPANISH
+            || ssa_blazie_recipe(SSA_GERMAN) != BLV_STATE_GERMAN || ssa_blazie_recipe(SSA_ITALIAN) != BLV_STATE_ITALIAN
+            || ssa_blazie_recipe(SSA_SLOVAK) != BLV_STATE_ENGLISH || ssa_blazie_recipe(SSA_ACCENT_SA) != -1
+            || ssa_blazie_recipe(SSA_SPEAKOUT) != -1) {
+        fprintf(stderr, "the Blazie languages' voices or recipes are off\n");
         return 1;
     }
 
@@ -802,6 +827,31 @@ int main(int argc, char **argv)
             if (speak(e, SSA_ENGLISH, "Writing functions.", k ? &s : &on, 100, 100, 4096, 0, &d)) return 1;
             report(k ? "lift-off" : "lift-on", &d);
             ssa_free(e);
+        }
+    }
+
+    /* 0.8's Blazie units, each when its two files are here: a sentence on a fresh unit at the app's defaults (number
+       words on, as the app sends them), and the import's check (ssa_probe) on a unit of its own */
+    if (block("lang")) {
+        int k;
+        for (k = 0; k < (int)(sizeof LANGS / sizeof *LANGS); k++) {
+            unsigned long long h;
+            char name[32];
+            long n;
+            int has;
+            e = ssa_new(argv[1]);
+            ssa_configure(e, 22050, 1, 0);
+            has = e && ssa_has_voice(e, LANGS[k].voice);
+            if (has) {
+                if (speak(e, LANGS[k].voice, LANGS[k].text, &s, 100, 100, 4096, 0, &d)) return 1;
+                report(LANGS[k].name, &d);
+            }
+            ssa_free(e);
+            if (!has) continue;
+            n = ssa_probe(argv[1], LANGS[k].voice, LANGS[k].probe, &h, err, sizeof err);
+            if (n <= 0) { fprintf(stderr, "%s probe: %ld %s\n", LANGS[k].name, n, err); return 1; }
+            snprintf(name, sizeof name, "%s-probe", LANGS[k].name);
+            printf("%s %ld %016llx\n", name, n, h);
         }
     }
 

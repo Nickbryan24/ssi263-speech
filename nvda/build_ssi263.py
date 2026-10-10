@@ -26,7 +26,7 @@ import subprocess
 import sys
 import zipfile
 
-from build_common import copy_native_binding, read_manifest, rm, zip_build
+from build_common import BLAZIE_UNITS, copy_native_binding, read_manifest, rm, zip_build
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -88,8 +88,6 @@ def expected_files():
         U + "mockingboard.py": os.path.join(HERE, "mockingboard", "synthDrivers", "mockingboard.py"),
         U + "_ssi263_blazie/BL2ENG.BNS": os.path.join(fw, "blazie", "BL2ENG.BNS"),
         U + "_ssi263_blazie/bl2_2003_warm.state": os.path.join(fw, "blazie", "bl2_2003_warm.state"),
-        U + "_ssi263_blazie/BL2SPA.BNS": os.path.join(fw, "blazie", "spanish", "BL2SPA.BNS"),
-        U + "_ssi263_blazie/bl2spa_fresh.state": os.path.join(fw, "blazie", "spanish", "bl2spa_fresh.state"),
         U + "_ssi263_speakout/SPEAKOUT.HEX": os.path.join(fw, "gw-micro-speakout", "SPEAKOUT.HEX"),
         U + "_ssi263_accent/SPKEMS.DVC": os.path.join(fw, "aicom-accent-mini", "SPKEMS.DVC"),
         U + "_ssi263_accent/AICOM.txt": os.path.join(fw, "AICOM.txt"),
@@ -110,6 +108,8 @@ def expected_files():
         for arch in ("x64", "x86"):
             out[U + "_ssi263_%s/bin/%s/ssi263speech.dll" % (unit, arch)] = os.path.join(
                 REPO, "build", "win", arch, "ssi263speech.dll")
+    for name, src in BLAZIE_UNITS:           # Spanish, German, Italian, Slovak: required in a release
+        out[U + "_ssi263_blazie/" + name] = os.path.join(fw, "blazie", *src.split("/"))
     plugin = os.path.join(HERE, "ssi263", "globalPlugins", "ssi263Speech")
     for n in os.listdir(plugin):
         if n.endswith(".py"):

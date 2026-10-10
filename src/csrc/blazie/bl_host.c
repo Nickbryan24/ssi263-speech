@@ -96,6 +96,10 @@ struct bl_host {
        emulated unit does in note-taking mode; with the unit's voice inflection off it drops its markers, and so
        there is no lift -- as on the unit.  0 off, 1 armed (the next line), 2 lifting. */
     int lift, lift_r1s, lift_val;
+    /* The unit never echoes ^F (bh_set_int "no_echo"): the Italian Braille Lite and the Slovak Braille 'n Speak
+       send XON/XOFF only, so the echo count can never say an utterance is over.  bh_busy then judges by the chip
+       alone: speech under way, a phoneme playing, or the firmware's request not yet left unanswered. */
+    int no_echo;
 };
 
 enum { BH_FAULT_RUN_AHEAD = 1, BH_FAULT_EVENT = 2 };
@@ -413,7 +417,9 @@ static void say_now(bl_host *h, const unsigned char *data, int n)
     h->say_time = ssi263_time(h->chip);
     h->preparing = 1;
     h->stale_f = h->sent_f - h->echo_f > 0 ? h->sent_f - h->echo_f : 0;   /* echoes still due from earlier sends */
-    if (h->ra_on) {                                        /* run ahead: captured from here, played in bh_run */
+    /* run ahead: captured from here, played in bh_run -- never on a unit that does not echo ^F (no_echo): the capture
+       ends on the echo, so the Italian and Slovak units ran on for minutes with it on (voice_equiv.py --run-ahead) */
+    if (h->ra_on && !h->no_echo) {
         if (h->ra.active)
             ra_flush(&h->ra);                              /* only the 0.7 draft's control gets here (hold) */
         h->preparing = 0;
@@ -565,6 +571,8 @@ BL_API int bh_busy(const bl_host *h, double quiet, double patience)
         if (request(h) && !(h->ar == 1 && h->last_load < h->ar_time && now - h->ar_time >= UNANSWERED_S))
             return 1;
     }
+    if (h->no_echo)                                        /* nothing spoken yet: waiting for the first word */
+        return h->last_speech <= h->say_time && (now - h->say_time) < patience;
     return bh_owed(h) > 0 && (now - since) < patience;
 }
 
@@ -878,6 +886,7 @@ BL_API int bh_get_int(const bl_host *h, const char *name)
     if (!strcmp(name, "ar")) return h->ar;
     if (!strcmp(name, "log_writes")) return h->log_on;
     if (!strcmp(name, "line_lift")) return h->lift;
+    if (!strcmp(name, "no_echo")) return h->no_echo;
     if (!strcmp(name, "run_ahead")) return h->ra_on;
     if (!strcmp(name, "run_ahead_state")) return ra_state(&h->ra, h->chip);
     if (!strcmp(name, "run_ahead_end")) return h->ra.end;
@@ -914,6 +923,7 @@ BL_API void bh_set_int(bl_host *h, const char *name, int v)
     else if (!strcmp(name, "preparing")) h->preparing = v;
     else if (!strcmp(name, "turbo_between_lines")) h->turbo_between_lines = v;
     else if (!strcmp(name, "log_writes")) h->log_on = v != 0;
+    else if (!strcmp(name, "no_echo")) h->no_echo = v != 0;
     else if (!strcmp(name, "line_lift")) {             /* 1: lift the next line's start; 0: not (bh_cancel too) */
         h->lift = v ? 1 : 0;
         h->lift_r1s = 0;

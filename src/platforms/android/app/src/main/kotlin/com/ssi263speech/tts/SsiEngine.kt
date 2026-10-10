@@ -1,8 +1,9 @@
 // The one engine in this process, shared by the TTS service and the settings screen's preview: opens the native
 // side on the imported unit files and the APK's Aicom ROMs, lists the voices -- every voice the NVDA add-ons have
 // (Tomi, 0.7.5): the Aicom Accent SA always, the default until a Braille Lite is imported (Tomi, 2026-09-30); the
-// Accent-mini when this build carries it; the Braille Lite voices, the GW Micro Speak-Out and the Mockingboard once
-// their firmware is imported -- and owns the engine for one utterance at a time.  A stop from any thread reaches the render in progress
+// Accent-mini when this build carries it; the Braille Lite voices (English, Spanish, German, Italian), the Slovak
+// Braille 'n Speak 2000, the GW Micro Speak-Out and the Mockingboard once their firmware is imported; each voice's
+// language what SsiLanguages tells Android -- and owns the engine for one utterance at a time.  A stop from any thread reaches the render in progress
 // (nativeStop); the synthesis thread then cancels, so the unit drops what it has not spoken and the next utterance
 // starts clean -- as the speech-dispatcher module does after STOP.
 package com.ssi263speech.tts
@@ -24,7 +25,14 @@ object SsiEngine {
         VoiceInfo(SsiNative.MOCKINGBOARD, "en-US-mockingboard", "Mockingboard (Sweet Micro Systems)",
                   Locale("en", "US")),
         VoiceInfo(SsiNative.MOCKINGBOARD_EARLY, "en-US-mockingboard-early", "Mockingboard, early (Sweet Micro Systems)",
-                  Locale("en", "US")))
+                  Locale("en", "US")),
+        VoiceInfo(SsiNative.GERMAN, "de-DE-braillelite", "Braille Lite 2000 (Deutsch)", Locale("de", "DE")),
+        VoiceInfo(SsiNative.ITALIAN, "it-IT-braillelite", "Braille Lite 2000 (italiano)", Locale("it", "IT")),
+        VoiceInfo(SsiNative.SLOVAK, "sk-SK-braillenspeak", "Braille 'n Speak 2000 (slovenčina)", Locale("sk", "SK")))
+
+    /** Every voice this app has, whether or not it can speak now (SsiLanguages: a language whose firmware is not here
+     * is missing data, not unsupported). */
+    val KNOWN: List<VoiceInfo> get() = ALL
 
     private val lock = Any()
     @Volatile private var opened = false
@@ -74,15 +82,13 @@ object SsiEngine {
     fun defaultVoice(ctx: Context): Int =
         if (SsiData.has(ctx, SsiNative.ENGLISH)) SsiNative.ENGLISH else SsiNative.ACCENT_SA
 
-    /** An English voice can speak: the Accents (built in), the imported Braille Lite or Speak-Out. */
-    fun english(ctx: Context): Boolean = voices(ctx).any { it.index != SsiNative.SPANISH }
+    /** A voice of that language ("en", "deu", ...) can speak now. */
+    fun speaks(ctx: Context, lang: String): Boolean = SsiLanguages.voicesOf(lang, voices(ctx)).isNotEmpty()
 
-    fun spanish(ctx: Context): Boolean = SsiData.has(ctx, SsiNative.SPANISH)
-
-    /** For a request in English: the chosen voice when it is an English one, else the first English voice. */
-    fun englishVoiceFor(ctx: Context, index: Int): VoiceInfo =
-        voiceFor(ctx, index).takeIf { it.index != SsiNative.SPANISH }
-            ?: voices(ctx).firstOrNull { it.index != SsiNative.SPANISH } ?: ALL[0]
+    /** For a request in that language: the chosen voice when it speaks it, else the first voice that does; null when
+     * none can (SsiLanguages.voiceFor). */
+    fun voiceForLanguage(ctx: Context, lang: String?, index: Int): VoiceInfo? =
+        SsiLanguages.voiceFor(lang, index, voices(ctx))
 
     /** Own the engine for one utterance: every native call but a stop happens inside. */
     fun <T> withEngine(block: () -> T): T = synchronized(lock) { block() }

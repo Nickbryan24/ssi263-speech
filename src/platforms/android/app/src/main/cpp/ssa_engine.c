@@ -40,6 +40,9 @@ static const voice_def VOICES[SSA_VOICES] = {
     {"accentmini:mini", {NULL}},
     {"mockingboard:mockingboard", {SSA_MOCKINGBOARD_FILE, NULL}},
     {"mockingboard:early", {SSA_MOCKINGBOARD_EARLY_FILE, NULL}},
+    {"blazie:blazie_de", {"Lite2000_de.BNS", "lite2000_de_fresh.state", NULL}},     /* the add-on's flat names */
+    {"blazie:blazie_it", {"Lite2000_it.BNS", "lite2000_it_fresh.state", NULL}},
+    {"blazie:blazie_sk", {"BS2SLL.BNS", "bs2sll_fresh.state", NULL}},
 };
 static const size_t ROM_SIZES[3] = {0x10000, 0x8000, 0x8000};
 
@@ -161,6 +164,20 @@ static void settings_for(const ssa_engine *e, int voice, const ssa_settings *s, 
         o->run_ahead = s->run_ahead && ssa_voice_break != 3;
         o->line_lift = s->line_lift && ssa_voice_break != 10;  /* bl_voice.h blv_set_line_lift */
         o->numbers = s->numbers && ssa_voice_break != 4;    /* bl_numbers (voices.c), English or Spain's */
+        break;
+    case SSA_GERMAN:
+    case SSA_ITALIAN:
+    case SSA_SLOVAK:                   /* 0.8's Blazie units: as the two above, less what they do not have -- each
+                                          reads its own numbers, and run ahead is tested on English and Spanish
+                                          alone (voices.c's ssv_speak drops both for them whatever is sent); the
+                                          line-start lift is sent as to every Blazie unit, and does nothing on
+                                          them (their pitch writes are the same with it on and off) */
+        o->pitch = ssa_pitch(s->pitch, request_pitch);
+        o->tone = s->tone;
+        o->pack = s->pack;
+        o->line_lift = s->line_lift && ssa_voice_break != 10;
+        o->numbers = 0;
+        o->run_ahead = 0;
         break;
     case SSA_SPEAKOUT:                 /* the slider's pitch as the setting, the request's as a capital's offset */
         o->pitch = clamp100(s->pitch);

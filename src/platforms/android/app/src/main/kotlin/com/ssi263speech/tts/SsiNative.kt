@@ -18,6 +18,10 @@ object SsiNative {
     const val ACCENT_MINI = 4               // the Aicom Accent-mini (built in, when the build carries it)
     const val MOCKINGBOARD = 5              // the Mockingboard, Sweet Micro Systems' (built in; an import replaces it)
     const val MOCKINGBOARD_EARLY = 6        // the Mockingboard, early: disk 1's text-to-speech (the same way)
+    const val GERMAN = 7                    // the Braille Lite, German (imported; 0.8)
+    const val ITALIAN = 8                   // the Braille Lite, Italian (imported)
+    const val SLOVAK = 9                    // the Braille 'n Speak 2000, Slovak (imported)
+    const val VOICES = 10                   // ssa_engine.h's SSA_VOICES: every index is below it
 
     /** Open the engine on the folder holding the unit's files (once per process; later calls keep it). */
     external fun nativeOpen(dataDir: String): Boolean
@@ -79,12 +83,14 @@ object SsiNative {
     const val FW_NOT_BUILT = -6
     const val FW_OTHER_DISK = -7
 
-    /** Find the firmware in these bytes by its content: the Braille Lite ROM image, when it is a release on the list
-     * (bl_firmware.c's), written to `out` as a .BNS -- [ENGLISH] or [SPANISH] -- or GW Micro's SPEAKOUT.HEX (Intel
+    /** Find the firmware in these bytes by its content: a Blazie ROM image, when it is a release on the list
+     * (bl_firmware.c's), written to `out` as a .BNS -- its voice: [ENGLISH], [SPANISH], [GERMAN], [ITALIAN] or [SLOVAK]
+     * (ssa_import.c maps the list's languages to these) -- or GW Micro's SPEAKOUT.HEX (Intel
      * HEX, the known sha256: ssa_import.c), written to `out` as it is -- [SPEAKOUT] -- or the Mockingboard's
      * mockingboard-tts-1.1.bin (its sha256), written to `out` as it is, or made from the Developers Toolkit's disk
      * image (mb_dsk.h) -- [MOCKINGBOARD], or the early one, [MOCKINGBOARD_EARLY]; the label in [nativeImportError].  Else [FW_NONE] when there is no firmware
-     * in them, [FW_REFUSED] when it is another Blazie unit's, [FW_UNKNOWN] when it is a Braille Lite 2000 release not
+     * in them, [FW_REFUSED] when it is another Blazie unit's (or a listed release in a language this app has no voice
+     * for), [FW_UNKNOWN] when it is a Braille Lite 2000 release not
      * on the list, [FW_OTHER_HEX] when it is an Intel HEX file but not the Speak-Out's (damaged, or another),
      * [FW_NOT_BUILT] when it is the Mockingboard's in a build without that voice, [FW_OTHER_DISK] when it is a 140 KB
      * disk image but not the toolkit's -- the reason in [nativeImportError]. */
@@ -96,9 +102,10 @@ object SsiNative {
     /** The state at `state` is the one [nativeMakeState] makes from the release at `bns`. */
     external fun nativeStateCheck(bns: String, state: String): Boolean
 
-    /** Make the unit's state from its firmware, as the shipped one was made: 1, or 0 with the reason in
-     * [nativeImportError].  Seconds long: never on the main thread. */
-    external fun nativeMakeState(firmware: String, language: Int, out: String): Int
+    /** Make a Blazie voice's unit state from its firmware, as the shipped one was made (the voice's language's
+     * recipe: ssa_blazie_recipe): 1, or 0 with the reason in [nativeImportError].  Seconds long: never on the main
+     * thread. */
+    external fun nativeMakeState(firmware: String, voice: Int, out: String): Int
 
     /** How far [nativeMakeState] has come, 0..1; any thread. */
     external fun nativeStateProgress(): Double

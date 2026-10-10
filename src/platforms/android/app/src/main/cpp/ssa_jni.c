@@ -11,6 +11,7 @@
  * only sets a flag.
  */
 #include <jni.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -210,8 +211,9 @@ static unsigned char *bytes_of(JNIEnv *env, jbyteArray a, jsize *n)
     return p;
 }
 
-/* ssa_import.h's ssa_import_firmware, the firmware in these bytes by content: BLV_FW_ENGLISH 0 or _SPANISH 1 (a
-   Braille Lite release on the list, written to `out` as a .BNS), SSA_HEX_SPEAKOUT 3 (the known SPEAKOUT.HEX,
+/* ssa_import.h's ssa_import_firmware, the firmware in these bytes by content: SSA_ENGLISH 0, _SPANISH 1, _GERMAN 7,
+   _ITALIAN 8 or _SLOVAK 9 (a Blazie release on the list, its language as the app's voice, written to `out` as a
+   .BNS), SSA_HEX_SPEAKOUT 3 (the known SPEAKOUT.HEX,
    written to `out`) or SSA_FW_MOCKINGBOARD 5 / _EARLY 6 (a known Mockingboard file, from itself or a disk image,
    written to `out`), the label in
    nativeImportError; else negative (_NONE, _REFUSED, _WRITE, _UNKNOWN; SSA_HEX_OTHER -5: an Intel HEX file but not
@@ -266,20 +268,25 @@ static int state_progress(void *ctx, double done)
     return g_state_cancel;
 }
 
-/* blv_make_state: 1, or 0 with the reason in nativeImportError.  Long (seconds; Spanish most of a minute): call it
-   off the main thread and read nativeStateProgress meanwhile; nativeStateCancel abandons it. */
-JNIEXPORT jint JNICALL FN(nativeMakeState)(JNIEnv *env, jclass cls, jstring jfw, jint language, jstring jout)
+/* blv_make_state for a Blazie voice's unit (SSA_ENGLISH ... SSA_SLOVAK), with its language's recipe
+   (ssa_blazie_recipe): 1, or 0 with the reason in nativeImportError.  Long (seconds; Spanish most of a minute): call
+   it off the main thread and read nativeStateProgress meanwhile; nativeStateCancel abandons it. */
+JNIEXPORT jint JNICALL FN(nativeMakeState)(JNIEnv *env, jclass cls, jstring jfw, jint voice, jstring jout)
 {
     const char *fw, *out;
-    int r = 0;
+    int r = 0, recipe = ssa_blazie_recipe(voice);
     (void)cls;
     g_import_error[0] = 0;
     g_state_cancel = 0;
     g_state_done = 0;
+    if (recipe < 0) {
+        snprintf(g_import_error, sizeof g_import_error, "voice %d has no state to make", voice);
+        return 0;
+    }
     fw = (*env)->GetStringUTFChars(env, jfw, NULL);
     out = (*env)->GetStringUTFChars(env, jout, NULL);
     if (fw && out)
-        r = blv_make_state(fw, language, out, state_progress, NULL, g_import_error, sizeof g_import_error);
+        r = blv_make_state(fw, recipe, out, state_progress, NULL, g_import_error, sizeof g_import_error);
     if (fw) (*env)->ReleaseStringUTFChars(env, jfw, fw);
     if (out) (*env)->ReleaseStringUTFChars(env, jout, out);
     return r;

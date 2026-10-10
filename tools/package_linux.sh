@@ -42,8 +42,17 @@ for dir in "$FW" "$FW/spanish"; do
         break
     fi
 done
-# The Braille 'n Speak 2000's firmware ships in the emulator's own downloads only, never in this package (Tomi);
-# the emulators offer it when the person supplies it.
+# 0.8: the German and Italian Braille Lite 2000 and the Slovak Braille 'n Speak 2000, each when its files are in the
+# firmware folder, under the NVDA add-on's flat names (sd_voices.c).  The Slovak unit is the one Braille 'n Speak
+# 2000 file that ships in this package (Tomi, 2026-10-10); the English Braille 'n Speak 2000 still ships in the
+# emulator's own downloads only.
+for pair in german/Lite2000.BNS:Lite2000_de.BNS german/lite2000_de_fresh.state:lite2000_de_fresh.state \
+            italian/Lite2000.BNS:Lite2000_it.BNS italian/lite2000_it_fresh.state:lite2000_it_fresh.state \
+            bns2000/BS2SLL.BNS:BS2SLL.BNS bns2000/bs2sll_fresh.state:bs2sll_fresh.state; do
+    if [ -f "$FW/${pair%%:*}" ]; then
+        cp "$FW/${pair%%:*}" "$STAGE/share/ssi263-speech/${pair##*:}"
+    fi
+done
 # the other voices' firmware, for the voices the module has (sd_ssi263 --voices), and their notices
 VOICES="$("$ROOT/build/linux/sd_ssi263" --voices | cut -f1)"
 has() { echo "$VOICES" | grep -qx "$1"; }

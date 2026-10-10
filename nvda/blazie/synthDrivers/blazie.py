@@ -84,14 +84,35 @@ STATE = os.path.join(_ENGINE_DIR, "bl2_2003_warm.state")
 # when both files are present.  It reads DOS code page 850 (its braille table's accents: a-acute A0, n-tilde A4 ...).
 FIRMWARE_ES = os.path.join(_ENGINE_DIR, "BL2SPA.BNS")
 STATE_ES = os.path.join(_ENGINE_DIR, "bl2spa_fresh.state")
+# 0.8: Blazie's September 2000 German and Italian Braille Lite 2000 (an anonymous donation) and the Slovak
+# Braille 'n Speak 2000, each optional as the Spanish one: their own rules, read in code page 850 (German, Italian)
+# or 852 (Slovak), checked against what each unit says for its accented letters.  Their states: the English
+# recipe, its yes in the unit's language (bl_state.c).
+FIRMWARE_DE = os.path.join(_ENGINE_DIR, "Lite2000_de.BNS")
+STATE_DE = os.path.join(_ENGINE_DIR, "lite2000_de_fresh.state")
+FIRMWARE_IT = os.path.join(_ENGINE_DIR, "Lite2000_it.BNS")
+STATE_IT = os.path.join(_ENGINE_DIR, "lite2000_it_fresh.state")
+FIRMWARE_SK = os.path.join(_ENGINE_DIR, "BS2SLL.BNS")
+STATE_SK = os.path.join(_ENGINE_DIR, "bs2sll_fresh.state")
 # voice id: (display name, language, firmware, snapshot, text encoding)
 VOICES = {"blazie": ("Braille Lite 2000 (June 2003)", "en", FIRMWARE, STATE, "latin-1"),
-          "blazie_es": ("Braille Lite 2000 (espa\u00f1ol)", "es", FIRMWARE_ES, STATE_ES, "cp850")}
+          "blazie_es": ("Braille Lite 2000 (espa\u00f1ol)", "es", FIRMWARE_ES, STATE_ES, "cp850"),
+          "blazie_de": ("Braille Lite 2000 (Deutsch)", "de", FIRMWARE_DE, STATE_DE, "cp850"),
+          "blazie_it": ("Braille Lite 2000 (italiano)", "it", FIRMWARE_IT, STATE_IT, "cp850"),
+          "blazie_sk": ("Braille 'n Speak 2000 (sloven\u010dina)", "sk", FIRMWARE_SK, STATE_SK, "cp852")}
+# "Custom number processing" exists for these languages only; the other units read their numbers themselves
+# (voices.c bl_has_numbers)
+NUMBER_LANGS = ("en", "es")
+# the units that never echo ^F (XON/XOFF only): their end comes from the chip alone (bl_host.c "no_echo")
+NO_ECHO = ("blazie_it", "blazie_sk")
 # the voices whose firmware run ahead's interaction contract has been tested on (Astra, Reply 107): the mechanism is
 # board-independent, its use is not -- another release or unit gets the lockstep until its own tests exist
 RUN_AHEAD_TESTED = ("blazie", "blazie_es")
 # lineLift: speech after this much silence starts fresh, as speech after a cancel (bl_voice.c LIFT_PAUSE_S)
 LIFT_PAUSE_S = 0.5
+# after the unit is done its last sound may decay this long: rendered on until a block is quiet (the German unit ends
+# 0.1 s after its last load, mid-decay -- a blip, Tomi; bl_voice.c TAIL_MAX_S)
+TAIL_MAX_S = 0.3
 UNIT_VOLUME = 6         # the unit's factory volume; NVDA's slider is applied digitally
 MAKEUP = 2.0            # +6 dB so volume 6 sits at a normal level
 # A roll-off after the chip (hosts/blazie.py) that matches the unit's line out: first order at 5 kHz matched
@@ -140,7 +161,7 @@ def _translit(text, encoding="latin-1"):
         return text
     ctypes, fn = _translit_fn
     raw = text.encode("utf-8", "surrogatepass")
-    charset = 1 if encoding == "cp850" else 0                # voices.h SSV_CP850 / SSV_ASCII
+    charset = {"cp850": 1, "cp852": 2}.get(encoding, 0)      # voices.h SSV_CP850 / SSV_CP852 / SSV_ASCII
     n = fn(raw, len(raw), charset, None, 0)
     if n < 0:
         return text
@@ -159,7 +180,7 @@ def _clean(text, encoding="latin-1"):
             out.append(" ")
         elif o < 128:
             out.append(ch)
-        elif encoding == "cp850" and _cp850(ch):
+        elif encoding in ("cp850", "cp852") and _in_codepage(ch, encoding):
             out.append(ch)
         else:
             out.append({"‘": "'", "’": "'", "“": '"', "”": '"',
@@ -167,9 +188,9 @@ def _clean(text, encoding="latin-1"):
     return "".join(out)
 
 
-def _cp850(ch):
+def _in_codepage(ch, encoding):
     try:
-        ch.encode("cp850")
+        ch.encode(encoding)
         return True
     except UnicodeEncodeError:
         return False
@@ -596,6 +617,8 @@ class SynthDriver(SynthDriver):
         unit.whine = None if self._whine == "off" else self._whine
         unit.encoding = encoding
         unit.lang = lang
+        if voice in NO_ECHO and hasattr(type(unit), "no_echo"):
+            unit.no_echo = 1             # its end from the chip alone: it never echoes ^F
         unit.voice = voice
         unit.sent_settings = (DEFAULT_RATE, DEFAULT_PITCH, DEFAULT_TONE)   # the unit boots with these
         return unit
@@ -837,7 +860,7 @@ class SynthDriver(SynthDriver):
             # "£2.63": the firmware reads only "$" (and the English unit has no pound sign at all); first the letters
             # its alphabet lacks, as their base letters (or a lone one's words)
             text = _clean(numwords.currencies(_translit(value, unit.encoding), unit.lang), unit.encoding)
-            if self._numbers:
+            if self._numbers and unit.lang in NUMBER_LANGS:
                 # with the add-on's boot the firmware counts to 999,999,999,999 and says a
                 # trillion as "one billion" (measured); this is for those
                 text = _numbers(text, unit.lang)
@@ -853,6 +876,7 @@ class SynthDriver(SynthDriver):
                     unit.line_lift = 1
             t_start = unit.chip.time
             unit.say(lines)
+            tail = 0.0
             while not self._cancelFlag.is_set():
                 y = unit.run(BLOCK_S)
                 if self._lead:
@@ -869,6 +893,9 @@ class SynthDriver(SynthDriver):
                     unit.chip.snap_pitch = False
                     self._snap_until_speech = False
                 if not unit.busy():
+                    if tail < TAIL_MAX_S and any(abs(v) > LEAD_THRESHOLD for v in y):
+                        tail += BLOCK_S              # its last sound still decaying
+                        continue
                     self._pitch_dirty = False    # the unit has read everything sent so far
                     break
         if self._cancelFlag.is_set():

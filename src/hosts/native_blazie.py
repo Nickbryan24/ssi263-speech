@@ -237,6 +237,9 @@ class NativeBlazie:
     # note-taking mode's line-start lift for the next line said (bl_host.c; the NVDA driver's lineLift): 1 arms
     # it, the line's second pitch marker ends it, a cancel drops it
     line_lift = _int_attr("line_lift")
+    # a unit that never echoes ^F (the Italian Braille Lite, the Slovak Braille 'n Speak): its end from the chip
+    # alone (bl_host.c bh_busy)
+    no_echo = _int_attr("no_echo")
     run_ahead_break = _int_attr("run_ahead_break")
     log_ar = _int_attr("log_ar")
 

@@ -17,6 +17,11 @@ What it is made of (plan(), written beside it as MANIFEST.json):
         accent_sa.dll, speakout_v40.dll) and firmware/
   gen   written here: the engine package's __init__, and the Accent-mini's INIT snapshot (SPKEMS.state), made as
         build_accent.py made it, on MAME's 8086, from the files above
+  fix   from REV, with FIXES applied: the later driver fixes the native drivers carry on purpose, each one exact
+        replacement (it fails when REV's text is not found once); their text is in the key.  0.8: the Braille Lite's
+        end tail (a last sound still decaying when the unit is done is rendered on, up to TAIL_MAX_S: the German
+        unit's blip, Tomi) -- without it the Spanish voice, whose last sounds decay, ends a block earlier than the
+        native voices and every utterance after it starts from another chip state
 The folder's name is the hash of that list with every file's own bytes (REV's by their git blob ids, this tree's by
 SHA-256): any changed binary, firmware or package file -- rebuilt from unchanged sources or not -- makes a new
 reference rather than reusing one made over other bytes.  A test points fake_nvda_driver_test.py at a folder by
@@ -39,6 +44,28 @@ DIST = os.path.join(REPO, "nvda", "dist")
 FW = os.path.join(REPO, "firmware")
 ARCHES = ("x64", "x86")
 ADDONS = ("speakout", "accent", "blazie")
+TAIL_OLD = """                if not unit.busy():
+                    self._pitch_dirty = False    # the unit has read everything sent so far
+                    break
+"""
+TAIL_NEW = """                if not unit.busy():
+                    if tail < 0.3 and any(abs(v) > LEAD_THRESHOLD for v in y):
+                        tail += BLOCK_S              # its last sound still decaying (0.8's end tail)
+                        continue
+                    self._pitch_dirty = False    # the unit has read everything sent so far
+                    break
+"""
+TAIL_START_OLD = """            unit.say(lines)
+            while not self._cancelFlag.is_set():
+                y = unit.run(BLOCK_S)
+"""
+TAIL_START_NEW = """            unit.say(lines)
+            tail = 0.0
+            while not self._cancelFlag.is_set():
+                y = unit.run(BLOCK_S)
+"""
+# {REV's file: [(old, new)]}: each old text must be found exactly once in REV's file
+FIXES = {"nvda/blazie/synthDrivers/blazie.py": [(TAIL_START_OLD, TAIL_START_NEW), (TAIL_OLD, TAIL_NEW)]}
 ENGINE_INIT = ('"""The %s\'s engine package: this tree\'s chip under 0.7.0\'s drivers '
                '(nvda/tools/legacy_drivers.py)."""\n' % NAME)
 INIT_CODE = ("import hashlib, pickle, sys; sys.path.insert(0, %r)\n"
@@ -101,7 +128,7 @@ def _addon(addon):
         items.append((eng + "/SPKEMS.state", "gen", "the driver's INIT on MAME's 8086 (build_accent.write_state)"))
     else:
         eng = sd + "/_ssi263_blazie"
-        items = [(sd + "/blazie.py", "rev", "nvda/blazie/synthDrivers/blazie.py")] + _engine(eng)
+        items = [(sd + "/blazie.py", "fix", "nvda/blazie/synthDrivers/blazie.py")] + _engine(eng)
         items += [(eng + "/" + d, "rev", "src/hosts/" + s) for s, d in (
             ("blazie.py", "blazie_host.py"), ("native_blazie.py", "native_blazie.py"), ("blazie_idle.py", "blazie_idle.py"))]
         items += [(eng + "/bin/%s/bl.dll" % a, "tree", "nvda/dist/blazie-lib/%s/bl.dll" % a) for a in ARCHES]
@@ -140,6 +167,9 @@ def plan():
         for dest, kind, src in _addon(addon):
             if kind == "rev":
                 ident = "git:" + blobs[src]
+            elif kind == "fix":
+                fixes = "".join(o + "\0" + n + "\0" for o, n in FIXES[src])
+                ident = "git:%s+fix:%s" % (blobs[src], hashlib.sha256(fixes.encode()).hexdigest()[:16])
             elif kind == "tree":
                 p = os.path.join(REPO, src)
                 ident = "sha256:" + _sha(p) if os.path.isfile(p) else "missing"
@@ -179,6 +209,16 @@ def _make(addon, root):
         if kind == "rev":
             with open(path, "wb") as f:
                 f.write(_git("show", "%s:%s" % (REV, src)))
+        elif kind == "fix":
+            text = _git("show", "%s:%s" % (REV, src)).decode("utf-8")
+            eol = "\r\n" if "\r\n" in text else "\n"
+            text = text.replace("\r\n", "\n")
+            for old, new in FIXES[src]:
+                if text.count(old) != 1:
+                    sys.exit("legacy_drivers: a fix's text is not in %s at %s exactly once" % (src, REV[:7]))
+                text = text.replace(old, new)
+            with open(path, "wb") as f:
+                f.write(text.replace("\n", eol).encode("utf-8"))
         elif kind == "tree":
             if ident == "missing":
                 sys.exit("legacy_drivers: %s is missing (build it first)" % os.path.join(REPO, src))

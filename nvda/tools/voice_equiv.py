@@ -1,12 +1,17 @@
 """The gate for bl_voice (src/csrc/blazie/bl_voice.c): the real NVDA Braille Lite driver, under the stand-in NVDA,
 and the C voice speak the same texts with the same settings, and every PCM byte the driver feeds its player must
 equal what blv_render returns.  English and (when its files are there) Spanish; line splitting and packing, the
-text clean-up, settings changes and the lead trim are all on the path.
+text clean-up, settings changes and the lead trim are all on the path.  0.8: the German, Italian and Slovak units
+(each when its files are there): their code pages (850, 852), and the Italian and Slovak units' end without ^F
+echoes (bl_host.c "no_echo").
 
     python voice_equiv.py            # exit 1 on the first difference
     python voice_equiv.py --run-ahead
                                      # "run ahead" on: the driver's runAhead setting against blv_set_run_ahead (the
-                                     # host runs ahead only with packing on, as the driver gates it)
+                                     # host runs ahead only with packing on, as the driver gates it; English and
+                                     # Spanish only, as the driver and voices.c have it -- the German unit is not
+                                     # asked; the Italian and Slovak units ARE, in C, and must not: no ^F echo ends
+                                     # a capture there (bl_host.c's gate; without it they ran on for minutes))
     VOICE_EQUIV_BREAK=1              # control: the C side speaks with pack flipped -- must FAIL
     VOICE_EQUIV_BREAK=ahead          # control, with --run-ahead: the C side never turns run ahead on -- must FAIL
 
@@ -18,6 +23,8 @@ import struct
 import sys
 import time
 
+# a text's letters the console lacks (Slovak) must never stop the report
+sys.stdout.reconfigure(errors="replace")
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN_AHEAD = "--run-ahead" in sys.argv
 sys.argv = [sys.argv[0], "blazie"]
@@ -47,6 +54,18 @@ CASES = [
     ("OK button", 100, 0, 26, 100, True),
 ]
 CASES_ES = [("Mañana, ¿qué tal? Él está aquí. ¡Olé!", 50, 50, 7, 100, True)]
+# voice id, its firmware and state attributes, encoding (bl_voice.h), its cases
+CASES_MORE = [
+    ("blazie_de", "FIRMWARE_DE", "STATE_DE", 1,
+     [("Guten Tag! Wie geht es Ihnen? Grüße aus der Straße, schön.", 50, 50, 7, 100, True),
+      ("Ein längerer Satz, mit einem Komma, der weit über die vierzehn Wörter hinausgeht, die das Gerät auf einmal liest. Noch einer.", 60, 40, 9, 80, False)]),
+    ("blazie_it", "FIRMWARE_IT", "STATE_IT", 1,
+     [("Buongiorno, come stai? La città è bella, perché sì.", 50, 50, 7, 100, True),
+      ("Più tardi, così è.", 70, 30, 12, 60, True)]),
+    ("blazie_sk", "FIRMWARE_SK", "STATE_SK", 2,
+     [("Dobrý deň, ako sa máš? Toto je slovenský hlas, čaj a šach.", 50, 50, 7, 100, True),
+      ("Žltý kôň úpel ďábelské ódy.", 50, 50, 7, 100, False)]),
+]
 
 
 def driver_side(cases):
@@ -68,13 +87,13 @@ def driver_side(cases):
         mark = len(notified)
         d.speak([text])
         if not wait_idle(60):
-            sys.exit("the driver did not finish %r" % text)
+            sys.exit("the driver did not finish %r: %s" % (text, last_wait_error[0]))
         out.append((b"".join(raw), d._unit.geti("run_ahead")))
     d._player.feed = orig
     return out
 
 
-def c_side(cases, fw, state, encoding):
+def c_side(cases, fw, state, encoding, no_echo=False, ahead=RUN_AHEAD):
     ctypes.CDLL(CHIP)                                   # bl.dll imports it: load that copy first
     lib = ctypes.CDLL(LIB)
     lib.blv_create.restype = ctypes.c_void_p
@@ -92,10 +111,13 @@ def c_side(cases, fw, state, encoding):
     v = lib.blv_create(fw.encode("mbcs"), state.encode("mbcs"), encoding, float(d._out_rate), 1, 0, err, 256)
     if not v:
         sys.exit("blv_create: %s" % err.value.decode())
-    if RUN_AHEAD and not BREAK_AHEAD:
+    if ahead and not BREAK_AHEAD:
         lib.blv_set_run_ahead.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.blv_set_run_ahead(v, 1)
     host = lib.blv_host(v)
+    if no_echo:                                         # as voices.c sets it for these units
+        lib.bh_set_int.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        lib.bh_set_int(host, b"no_echo", 1)
     out = []
     for text, rate, pitch, tone, volume, pack in cases:
         lib.blv_set(v, rate, pitch, tone, volume, int(pack) ^ (1 if BREAK else 0))
@@ -113,10 +135,14 @@ def c_side(cases, fw, state, encoding):
     return out
 
 
-def compare(label, cases, a, b):
+def compare(label, cases, a, b, ahead_lang=True, gated=False):
+    """ahead_lang: the voice runs ahead at all (English, Spanish); gated: C was asked to and the host must refuse
+    (on, nothing captured: -1, taken as off)"""
     bad = 0
     for (text, *_, pack), (x, xa), (y, ya) in zip(cases, a, b):
-        want = int(RUN_AHEAD and pack)                  # the driver runs ahead only with short pauses on
+        want = int(RUN_AHEAD and pack and ahead_lang)   # the driver runs ahead only with short pauses on
+        if gated and ya == -1:
+            ya = 0
         flags = "" if xa == want and ya == want else "  run ahead: driver %d, C %d, want %d" % (xa, ya, want)
         if x == y and not flags:
             print("same  %-6s %6d samples  run ahead %d  %r" % (label, len(x) // 2, want, text[:40]))
@@ -137,8 +163,18 @@ bad = compare("en", CASES, driver_side(CASES), c_side(CASES, drv_mod.FIRMWARE, d
 if os.path.isfile(drv_mod.FIRMWARE_ES) and os.path.isfile(drv_mod.STATE_ES):
     d._set_voice("blazie_es")
     bad += compare("es", CASES_ES, driver_side(CASES_ES), c_side(CASES_ES, drv_mod.FIRMWARE_ES, drv_mod.STATE_ES, 1))
+more = 0
+for voice, fw_attr, st_attr, enc, cases in CASES_MORE:
+    fw, st = getattr(drv_mod, fw_attr), getattr(drv_mod, st_attr)
+    if os.path.isfile(fw) and os.path.isfile(st):
+        d._set_voice(voice)
+        no_echo = voice in drv_mod.NO_ECHO
+        force = RUN_AHEAD and no_echo                   # asked in C anyway: the host's gate must hold
+        bad += compare(voice[7:], cases, driver_side(cases), c_side(cases, fw, st, enc, no_echo, ahead=force),
+                       ahead_lang=False, gated=force)
+        more += len(cases)
 d.terminate()
-total = len(CASES) + len(CASES_ES)
+total = len(CASES) + len(CASES_ES) + more
 print("%d of %d utterances byte-identical to the NVDA driver%s" % (total - bad, total,
                                                                    " (run ahead on)" if RUN_AHEAD else ""))
 sys.exit(1 if bad else 0)

@@ -20,6 +20,9 @@ extern "C" {
 
 #define BLV_FW_ENGLISH 0           /* an English release on the list (BL2ENG.BNS) */
 #define BLV_FW_SPANISH 1           /* a Spanish release on the list (BL2SPA.BNS) */
+#define BLV_FW_GERMAN 2            /* 0.8: Blazie's September 2000 German Braille Lite 2000 (Lite2000.BNS) */
+#define BLV_FW_ITALIAN 3           /* ... Italian */
+#define BLV_FW_SLOVAK 4            /* the Slovak Braille 'n Speak 2000 (BS2SLL.BNS): the one Braille 'n Speak voice */
 #define BLV_FW_NONE (-1)           /* no Braille Lite firmware in these bytes */
 #define BLV_FW_REFUSED (-2)        /* an image, but not one the voice can run (the sites are missing: another unit) */
 #define BLV_FW_WRITE (-3)          /* out_bns could not be written */
@@ -39,6 +42,9 @@ BL_API int blv_import_firmware(const unsigned char *data, long n, const char *ou
 BL_API int blv_firmware_count(void);
 BL_API const char *blv_firmware_label(int release);
 BL_API int blv_firmware_language(int release);
+/* A language's state recipe (bl_state.h BLV_STATE_*) for blv_make_state: the Slovak unit takes the English one;
+   -1 for an unknown language.  A language is not a voice index: each platform maps it to its own voice. */
+BL_API int blv_firmware_recipe(int language);
 
 /* 1 when the state at state_path is the one blv_make_state makes from the .BNS at bns_path (a release on the list,
    as blv_import_firmware wrote it), else 0. */

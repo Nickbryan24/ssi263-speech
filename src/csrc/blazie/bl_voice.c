@@ -12,6 +12,7 @@
 #endif
 #include "bl_voice.h"
 #include "bl_cp850.h"
+#include "bl_cp852.h"
 #include "../translit.h"
 
 /* the driver's constants */
@@ -27,6 +28,7 @@
 #define MAX_WORDS 14
 #define LEAD_THRESHOLD 0.003
 #define LEAD_PREROLL 220
+#define TAIL_MAX_S 0.3           /* blazie.py TAIL_MAX_S: after the unit is done, its last sound may decay this long */
 #define LIFT_PAUSE_S 0.5         /* blazie.py LIFT_PAUSE_S: speech after this much silence starts fresh */
 /* hosts/blazie.py boot_keys(menu=("punct_none", "numbers_toggle"), start=3000000, gap=1500000, status) */
 #define KEY_START 3000000ULL
@@ -44,6 +46,7 @@ struct bl_voice {
     int lead, active;
     int line_lift, lift_next;     /* blv_set_line_lift; the next utterance comes after a cancel (or is the first) */
     double quiet_since;           /* blv_clock() when the last utterance ended; < 0 while one is under way */
+    double tail;                  /* seconds rendered after the unit was done, its last sound decaying */
     int fault;                    /* the host refused or failed an utterance (bh_say/bh_busy < 0: run ahead's sticky
                                      faults, Astra's Reply 112); the next blv_speak recovers with bh_cancel first */
     short *pcm;
@@ -187,16 +190,20 @@ static int py_isspace(unsigned c)
         || (c >= 0x2000 && c <= 0x200A) || c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000;
 }
 
-static int cp850_byte(unsigned c)                           /* -1 if cp850 has no such character */
+/* the unit's byte for c in its DOS code page (BLV_CP850, BLV_CP852); -1 if the page has no such character */
+static int cp_byte(int encoding, unsigned c)
 {
+    const unsigned short *high = encoding == BLV_CP850 ? bl_cp850_high : encoding == BLV_CP852 ? bl_cp852_high : NULL;
     int i;
     if (c < 0x80) return (int)c;
+    if (!high) return -1;
     for (i = 0; i < 128; i++)
-        if (bl_cp850_high[i] == c) return 0x80 + i;
+        if (high[i] == c) return 0x80 + i;
     return -1;
 }
 
-static int known_cp850(unsigned c) { return cp850_byte(c) >= 0; }    /* the Spanish unit's alphabet (translit.h) */
+static int known_cp850(unsigned c) { return cp_byte(BLV_CP850, c) >= 0; }   /* those units' alphabet (translit.h) */
+static int known_cp852(unsigned c) { return cp_byte(BLV_CP852, c) >= 0; }   /* the Slovak unit's */
 
 /* ---- ssi263_numwords.currencies (English only): "£2.63" -> "2 pounds 63 pence" -------------------------------------
    The regex, tried as Python's re does: at each position the three alternatives in order, each amount in the
@@ -371,7 +378,7 @@ static int clean(const unsigned *in, int n, int encoding, unsigned *out)
         unsigned c = in[i];
         if (c < 32 || c == 127) out[m++] = ' ';
         else if (c < 128) out[m++] = c;
-        else if (encoding == BLV_CP850 && cp850_byte(c) >= 0) out[m++] = c;
+        else if (encoding != BLV_LATIN1 && cp_byte(encoding, c) >= 0) out[m++] = c;
         else if (c == 0x2018 || c == 0x2019) out[m++] = '\'';
         else if (c == 0x201C || c == 0x201D) out[m++] = '"';
         else if (c == 0x2013 || c == 0x2014) out[m++] = '-';
@@ -487,7 +494,8 @@ static int say_bytes(const char *utf8, int encoding, int pack, blv_numbers_fn fn
     /* translit.h first: the letters this unit's alphabet lacks, as base letters (or a lone one's words) */
     cur = (unsigned *)malloc(sizeof(unsigned) * (size_t)tl_room(m));
     if (!cur) { free(cps); return 0; }
-    m = tl_apply(cps, m, encoding == BLV_CP850 ? known_cp850 : tl_known_ascii, cur);
+    m = tl_apply(cps, m, encoding == BLV_CP850 ? known_cp850 : encoding == BLV_CP852 ? known_cp852 : tl_known_ascii,
+                 cur);
     free(cps);
     cps = cur;
     /* sizes: currencies() writes at most 8 code points per one it reads ("£.5" -> "50 pence"), _clean 3 ("...") */
@@ -522,7 +530,7 @@ static int say_bytes(const char *utf8, int encoding, int pack, blv_numbers_fn fn
             int i;
             if (w > ln[k].w0) data[len++] = ' ';
             for (i = ws[w]; i < we[w]; i++) {
-                int b = encoding == BLV_CP850 ? cp850_byte(t[i]) : (t[i] < 256 ? (int)t[i] : -1);
+                int b = encoding != BLV_LATIN1 ? cp_byte(encoding, t[i]) : (t[i] < 256 ? (int)t[i] : -1);
                 data[len++] = (unsigned char)(b < 0 ? '?' : b);
             }
         }
@@ -568,6 +576,7 @@ BL_API int blv_speak(bl_voice *v, const char *utf8)
     }
     v->gain = MAKEUP * v->volume / 100.0;
     v->lead = 1;
+    v->tail = 0.0;
     v->active = 0;
     /* unit.run_ahead: on with short pauses only (both Braille Lite voices are in the driver's RUN_AHEAD_TESTED); read
        by the host's next say, which runs the mode (run_ahead.h) -- nothing of it here */
@@ -626,6 +635,17 @@ BL_API int blv_render(bl_voice *v, const short **pcm, int *done)
             busy = 1;                                /* the control: the fault taken as busy, as before */
         if (busy < 0)                                /* a fault ends the utterance here, not silence until a cancel */
             v->fault = 1;
+        if (busy == 0 && v->tail < TAIL_MAX_S) {
+            /* _tail: the unit is done, but its last phoneme may still be decaying (the German unit ends 0.1 s after
+               its last load, mid-decay: a blip, Tomi); render on until a block is quiet */
+            int k;
+            for (k = start; k < n; k++)
+                if (y[k] > LEAD_THRESHOLD || y[k] < -LEAD_THRESHOLD) break;
+            if (k < n) {
+                v->tail += BLOCK_S;
+                busy = 1;
+            }
+        }
         if (busy <= 0) {
             v->active = 0;
             *done = 1;

@@ -1,4 +1,5 @@
-// The firmware a person brings, and what is in it: the Braille Lite's (Blazie's), the Speak-Out's (GW Micro's
+// The firmware a person brings, and what is in it: the Braille Lite's and the Slovak Braille 'n Speak 2000's
+// (Blazie's: English, Spanish, German, Italian, Slovak), the Speak-Out's (GW Micro's
 // SPEAKOUT.HEX) and the Mockingboard's (Sweet Micro Systems' text-to-speech: mockingboard-tts-1.1.bin and the early
 // mockingboard-tts-early.bin).  The app carries neither of the first two, so each user imports their own copy, the
 // way outspoken and Panthera take their engine data; the GitHub APK carries both Mockingboard files (Tomi,
@@ -23,6 +24,9 @@ object FirmwareImport {
     const val SPEAKOUT = 3                  // the GW Micro Speak-Out (SsiNative.SPEAKOUT)
     const val MOCKINGBOARD = 5              // the Mockingboard (SsiNative.MOCKINGBOARD)
     const val MOCKINGBOARD_EARLY = 6        // the Mockingboard, early (SsiNative.MOCKINGBOARD_EARLY)
+    const val GERMAN = 7                    // the Braille Lite, German (SsiNative.GERMAN; 0.8)
+    const val ITALIAN = 8                   // the Braille Lite, Italian (SsiNative.ITALIAN)
+    const val SLOVAK = 9                    // the Braille 'n Speak 2000, Slovak (SsiNative.SLOVAK)
     const val NONE = -1                     // no firmware in the bytes
     const val REFUSED = -2                  // Blazie firmware, but another unit's: not one the voice can run
     const val UNKNOWN = -4                  // Braille Lite 2000 firmware, but not a release on the list
@@ -30,15 +34,21 @@ object FirmwareImport {
     const val NOT_BUILT = -6                // the Mockingboard's file, but this copy of the app has no Mockingboard
     const val OTHER_DISK = -7               // a 140 KB Apple II disk image, but not one of the two Mockingboard ones
 
-    /** The files each imported voice needs, by its index: the Braille Lite's firmware and the state made from it; the
-     * Speak-Out's HEX; the Mockingboard's file. */
+    /** The files each imported voice needs, by its index (ssa_engine.c's): a Blazie unit's firmware and the state
+     * made from it -- 0.8's under the NVDA add-on's flat names, the German and Italian update disks both calling theirs
+     * Lite2000.BNS --; the Speak-Out's HEX; the Mockingboard's file. */
     val FILES = mapOf(ENGLISH to listOf("BL2ENG.BNS", "bl2_2003_warm.state"),
                       SPANISH to listOf("BL2SPA.BNS", "bl2spa_fresh.state"),
+                      GERMAN to listOf("Lite2000_de.BNS", "lite2000_de_fresh.state"),
+                      ITALIAN to listOf("Lite2000_it.BNS", "lite2000_it_fresh.state"),
+                      SLOVAK to listOf("BS2SLL.BNS", "bs2sll_fresh.state"),
                       SPEAKOUT to listOf("SPEAKOUT.HEX"),
                       MOCKINGBOARD to listOf("mockingboard-tts-1.1.bin"),
                       MOCKINGBOARD_EARLY to listOf("mockingboard-tts-early.bin"))
     /** The imported voices, in the order an import takes them. */
-    val IMPORTED = listOf(ENGLISH, SPANISH, SPEAKOUT, MOCKINGBOARD, MOCKINGBOARD_EARLY)
+    val IMPORTED = listOf(ENGLISH, SPANISH, GERMAN, ITALIAN, SLOVAK, SPEAKOUT, MOCKINGBOARD, MOCKINGBOARD_EARLY)
+    /** The Blazie units: a state made from each one's firmware. */
+    val BLAZIE = setOf(ENGLISH, SPANISH, GERMAN, ITALIAN, SLOVAK)
     /** The voices whose firmware is taken as it is, with no state to make. */
     val NO_STATE = setOf(SPEAKOUT, MOCKINGBOARD, MOCKINGBOARD_EARLY)
     /** The voices the APK also carries a copy of (assets/sweet-micro): an import replaces it. */
@@ -54,14 +64,17 @@ object FirmwareImport {
     const val MAX_SOURCE = 64L shl 20       // an add-on is a few megabytes; firmware a few hundred kilobytes
     const val MAX_ENTRY = 4 shl 20          // an update program is half a megabyte
 
-    const val NO_FIRMWARE_ZIP = "This zip does not contain Braille Lite, Speak-Out or Mockingboard firmware."
-    const val NO_FIRMWARE_FILE = "This file does not contain Braille Lite, Speak-Out or Mockingboard firmware."
+    const val NO_FIRMWARE_ZIP = "This zip does not contain Braille Lite, Braille 'n Speak, Speak-Out or Mockingboard " +
+        "firmware."
+    const val NO_FIRMWARE_FILE = "This file does not contain Braille Lite, Braille 'n Speak, Speak-Out or " +
+        "Mockingboard firmware."
     /** Tomi's words, for a state picked on its own. */
     const val STATE_FILE = "This is a state file, not firmware. Please import only firmware files, or zips " +
         "containing them, with this tool."
     const val WHAT_TO_CHOOSE = "Choose the Braille Lite 2000's firmware: its update program (such as blt2000.exe), " +
-        "the BL2ENG.BNS or BL2SPA.BNS inside it, a zip holding them at its top or one folder down, or the NVDA " +
-        "add-on (.nvda-addon), which carries both. Or the Speak-Out's: GW Micro's SPEAKOUT.HEX, or the speakout.zip " +
+        "the BL2ENG.BNS (English), BL2SPA.BNS (Spanish) or Lite2000.BNS (German, Italian) inside it, a zip holding " +
+        "them at its top or one folder down, or the NVDA add-on (.nvda-addon), which carries them all. Or the Slovak " +
+        "Braille 'n Speak 2000's: BS2SLL.BNS. Or the Speak-Out's: GW Micro's SPEAKOUT.HEX, or the speakout.zip " +
         "holding it. Or the Mockingboard's: mockingboard-tts-1.1.bin, Sweet Micro Systems' text-to-speech, made " +
         "from the Mockingboard Developers Toolkit disk, or that disk's image itself (.dsk, .do or .po); for the " +
         "early Mockingboard, mockingboard-tts-early.bin or the image of Mockingboard disk 1."
@@ -69,8 +82,8 @@ object FirmwareImport {
 
     /** What the native side says about some bytes: SsiImport's in the app, a fake in the tests. */
     interface Identify {
-        /** Find the firmware in `data`: when it is a Braille Lite release on the list, write it to `out` as a .BNS --
-         * [ENGLISH] or [SPANISH] -- or when it is the Speak-Out's SPEAKOUT.HEX, the Mockingboard's file or the
+        /** Find the firmware in `data`: when it is a Blazie release on the list, write it to `out` as a .BNS --
+         * [ENGLISH], [SPANISH], [GERMAN], [ITALIAN] or [SLOVAK] -- or when it is the Speak-Out's SPEAKOUT.HEX, the Mockingboard's file or the
          * disk image holding it, write it (the Mockingboard's: the file) to `out` -- [SPEAKOUT], [MOCKINGBOARD],
          * [MOCKINGBOARD_EARLY] -- with the label; or [NONE], [REFUSED], [UNKNOWN], [OTHER_HEX], [NOT_BUILT] or
          * [OTHER_DISK] with the reason. */
@@ -81,8 +94,16 @@ object FirmwareImport {
     }
 
     fun languageName(language: Int) = when (language) {
-        SPANISH -> "Spanish"; SPEAKOUT -> "Speak-Out"; MOCKINGBOARD -> "Mockingboard"
+        SPANISH -> "Spanish"; GERMAN -> "German"; ITALIAN -> "Italian"; SLOVAK -> "Slovak"
+        SPEAKOUT -> "Speak-Out"; MOCKINGBOARD -> "Mockingboard"
         MOCKINGBOARD_EARLY -> "early Mockingboard"; else -> "English" }
+
+    /** The unit's name in words: "German Braille Lite", "Slovak Braille 'n Speak 2000"; the Speak-Out and the
+     * Mockingboards by their own. */
+    fun unitName(language: Int) = when (language) {
+        !in BLAZIE -> languageName(language)
+        SLOVAK -> "Slovak Braille 'n Speak 2000"
+        else -> "${languageName(language)} Braille Lite" }
 
     /** A unit's state, by its content: the size every state has.  Never imported, whatever its name. */
     fun isState(data: ByteArray) = CONTROL != "state" && data.size == STATE_SIZE
@@ -90,7 +111,7 @@ object FirmwareImport {
     /** One firmware the import will bring in: a Braille Lite release on the list, the Speak-Out's HEX or the
      * Mockingboard's file. */
     class Found(
-        val language: Int,                  // the voice: [ENGLISH], [SPANISH], [SPEAKOUT], [MOCKINGBOARD] or [MOCKINGBOARD_EARLY]
+        val language: Int,                  // the voice: one of [IMPORTED]
         val from: String,                   // where it was: the file's name, or its path in the zip
         val firmware: File,                 // the .BNS or the HEX, written into the staging folder
         val label: String,                  // the release, in words (the native side's list)
@@ -163,8 +184,12 @@ object FirmwareImport {
                         val path = e.name.replace('\\', '/').trimStart('/')
                         val parts = path.split('/').filter { it.isNotEmpty() }
                         if (parts.isEmpty() || parts.contains("__MACOSX")) continue
-                        val addon = parts.size == 3 && parts[0].equals("synthDrivers", true) &&
-                            parts[1].equals("_ssi263_blazie", true)
+                        // the Blazie add-on's synthDrivers/_ssi263_blazie/, and the unified 0.8 add-on's
+                        // synthDrivers/_ssi263_unified/_ssi263_blazie/ (every Blazie unit's files, flat)
+                        val addon = parts[0].equals("synthDrivers", true) &&
+                            ((parts.size == 3 && parts[1].equals("_ssi263_blazie", true)) ||
+                             (parts.size == 4 && parts[1].equals("_ssi263_unified", true) &&
+                              parts[2].equals("_ssi263_blazie", true)))
                         val tooDeep = if (CONTROL == "1") parts.size > 1 else parts.size > 2 && !addon
                         if (tooDeep) {
                             if (parts.last().lowercase().let { it.endsWith(".bns") || it.endsWith(".exe") ||

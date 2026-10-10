@@ -1,6 +1,6 @@
 /* make_state.c -- a unit's factory state from its firmware alone, as the emulator starts it the first time.
  *
- *   make_state FIRMWARE english|spanish OUT
+ *   make_state FIRMWARE english|spanish|german|italian|french OUT
  *
  * The unit is powered on and keyed through the recipe (../../csrc/blazie/bl_state.h: english is the three power-ons
  * that made bl2_2003_warm.state, and fits the Braille 'n Speak 2000's English and Slovak; spanish the Spanish
@@ -9,6 +9,11 @@
  *
  *   make_state firmware/blazie/bns2000/BS03ENG.BNS english firmware/blazie/bns2000/bs03eng_fresh.state
  *   make_state firmware/blazie/bns2000/BS2SLL.BNS english firmware/blazie/bns2000/bs2sll_fresh.state
+ *
+ * Blazie's September 2000 German and Italian Braille Lite 2000 (firmware/blazie/german/, italian/, never in git):
+ *
+ *   make_state firmware/blazie/german/Lite2000.BNS german firmware/blazie/german/lite2000_de_fresh.state
+ *   make_state firmware/blazie/italian/Lite2000.BNS italian firmware/blazie/italian/lite2000_it_fresh.state
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,11 +27,18 @@ int main(int argc, char **argv)
     char err[256];
     int language, model;
     bl_unit *u;
-    if (argc != 4 || (strcmp(argv[2], "english") && strcmp(argv[2], "spanish"))) {
-        fprintf(stderr, "usage: make_state FIRMWARE english|spanish OUT\n");
+    static const char *names[] = {"english", "spanish", "german", "italian", "french"};
+    static const int ids[] = {BLV_STATE_ENGLISH, BLV_STATE_SPANISH, BLV_STATE_GERMAN, BLV_STATE_ITALIAN,
+                              BLV_STATE_FRENCH};
+    int k;
+    language = -1;
+    for (k = 0; argc == 4 && k < 5; k++)
+        if (!strcmp(argv[2], names[k]))
+            language = ids[k];
+    if (language < 0) {
+        fprintf(stderr, "usage: make_state FIRMWARE english|spanish|german|italian|french OUT\n");
         return 2;
     }
-    language = strcmp(argv[2], "spanish") ? BLV_STATE_ENGLISH : BLV_STATE_SPANISH;
     u = bl_create(argv[1], NULL, 20.0, NULL, NULL, 0, err, sizeof err);
     if (!u) {
         fprintf(stderr, "make_state: %s\n", err);

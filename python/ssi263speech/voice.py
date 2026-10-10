@@ -2,7 +2,9 @@
 the SSI-263, exactly as in the NVDA add-on and the speech-dispatcher module (the same C, bl_voice).
 
 The firmware is not included (it is Blazie's): pass the folder holding BL2ENG.BNS + bl2_2003_warm.state (English)
-or BL2SPA.BNS + bl2spa_fresh.state (Spanish) -- for instance the NVDA add-on's engine folder.
+or BL2SPA.BNS + bl2spa_fresh.state (Spanish); 0.8 adds German (Lite2000_de.BNS + lite2000_de_fresh.state), Italian
+(Lite2000_it.BNS + lite2000_it_fresh.state) and the Slovak Braille 'n Speak 2000 (BS2SLL.BNS + bs2sll_fresh.state)
+-- for instance the NVDA add-on's engine folder, which names them so.
 
     v = BrailleLite("path/to/firmware", rate=22050)
     pcm = v.speak("Hello there.")                    # 16-bit mono PCM (bytes)
@@ -12,14 +14,19 @@ import os
 
 from . import _native
 
-FILES = {"en": ("BL2ENG.BNS", "bl2_2003_warm.state"), "es": ("BL2SPA.BNS", "bl2spa_fresh.state")}
+# language: (firmware, state, text code page (bl_voice.h BLV_*), the unit never echoes ^F (voices.c bl_no_echo))
+FILES = {"en": ("BL2ENG.BNS", "bl2_2003_warm.state", 0, False),
+         "es": ("BL2SPA.BNS", "bl2spa_fresh.state", 1, False),
+         "de": ("Lite2000_de.BNS", "lite2000_de_fresh.state", 1, False),
+         "it": ("Lite2000_it.BNS", "lite2000_it_fresh.state", 1, True),
+         "sk": ("BS2SLL.BNS", "bs2sll_fresh.state", 2, True)}
 
 
 class BrailleLite:
     """One Braille Lite unit booted as the screen-reader drivers boot it.  rate: the output sample rate (Hz)."""
 
     def __init__(self, firmware_dir, language="en", rate=22050, inflection=True, idle_noise=0):
-        fw, st = FILES[language]
+        fw, st, codepage, no_echo = FILES[language]
         paths = [os.path.join(firmware_dir, fw), os.path.join(firmware_dir, st)]
         for p in paths:
             if not os.path.isfile(p):
@@ -27,10 +34,12 @@ class BrailleLite:
         self._lib = _native.voice_lib()
         err = ctypes.create_string_buffer(256)
         enc = "mbcs" if os.name == "nt" else "utf-8"
-        self._v = self._lib.blv_create(paths[0].encode(enc), paths[1].encode(enc), 1 if language == "es" else 0,
+        self._v = self._lib.blv_create(paths[0].encode(enc), paths[1].encode(enc), codepage,
                                        float(rate), 1 if inflection else 0, int(idle_noise), err, 256)
         if not self._v:
             raise RuntimeError("ssi263speech: the unit did not boot: %s" % err.value.decode("latin-1", "replace"))
+        if no_echo:
+            self._lib.bh_set_int(self._lib.blv_host(self._v), b"no_echo", 1)
         self.rate = rate
         self.set()
 

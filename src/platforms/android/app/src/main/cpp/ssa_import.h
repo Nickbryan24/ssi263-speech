@@ -48,11 +48,19 @@ int ssa_import_speakout(const unsigned char *data, long n, const char *out, char
 int ssa_import_mockingboard(const unsigned char *data, long n, const char *out, char *msg, int msglen);
 
 /* Every firmware the app imports, by content (the JNI bridge's nativeImportFirmware): bl_firmware.h's
-   blv_import_firmware first -- BLV_FW_ENGLISH 0 or _SPANISH 1, written to out as a .BNS -- and, when it finds no
-   Braille Lite firmware, ssa_import_mockingboard -- SSA_FW_MOCKINGBOARD 5 or _EARLY 6, written to out as it is --
+   blv_import_firmware first -- a Blazie release on its list, written to out as a .BNS, its language given as the
+   app's voice (ssa_blazie_voice: SSA_ENGLISH 0, _SPANISH 1, _GERMAN 7, _ITALIAN 8, _SLOVAK 9) -- and, when it finds
+   no Braille Lite firmware, ssa_import_mockingboard -- SSA_FW_MOCKINGBOARD 5 or _EARLY 6, written to out as it is --
    then ssa_import_speakout -- SSA_HEX_SPEAKOUT 3, written to out as SPEAKOUT.HEX.  Else negative (BLV_FW_NONE,
    _REFUSED, _WRITE, _UNKNOWN; SSA_HEX_OTHER; SSA_FW_MB_BUILD, SSA_FW_MB_DISK), the reason in msg. */
 int ssa_import_firmware(const unsigned char *data, long n, const char *out, char *msg, int msglen);
+
+/* A Blazie release's language (bl_firmware.h's BLV_FW_*, which is not a voice index: German's 2 would be the Accent
+   SA's) as the app's voice, SSA_ENGLISH ... SSA_SLOVAK; -1 for none.  And back: the state recipe a Blazie voice's
+   unit is made with (blv_firmware_recipe of its language, for blv_make_state: the Slovak unit's is the English
+   one); -1 for a voice with no state to make. */
+int ssa_blazie_voice(int language);
+int ssa_blazie_recipe(int voice);
 
 /* The labels of an imported Speak-Out and Mockingboard. */
 #define SSA_SPEAKOUT_LABEL "GW Micro Speak-Out: SPEAKOUT.HEX"
@@ -62,7 +70,9 @@ int ssa_import_firmware(const unsigned char *data, long n, const char *out, char
 /* The test's controls (test_android_native.c sets them; the app never does): 1 drops the sha256 check, so any
    well-formed Intel HEX is taken as the Speak-Out's -- the "another HEX" cases must then fail; and any file of a
    Mockingboard file's size as that one -- its "one byte changed" cases must then fail.  2 never tries a disk image,
-   so the .dsk cases must fail. */
+   so the .dsk cases must fail.  3 returns a Blazie release's raw firmware language (bl_firmware.h) instead of the
+   app's voice, as before 0.8's table -- German's 2 is the Accent SA's index -- so the German, Italian and Slovak
+   imports must fail. */
 extern int ssa_import_break;
 
 #ifdef __cplusplus

@@ -44,6 +44,14 @@ static const voice_def ALL[] = {
     {"blazie:blazie", "Braille Lite 2000", "en-US", "braille-lite", {"BL2ENG.BNS", "bl2_2003_warm.state", NULL}},
     {"blazie:blazie_es", "Braille Lite 2000 (espa\xc3\xb1ol)", "es-ES", "braille-lite",
      {"BL2SPA.BNS", "bl2spa_fresh.state", NULL}},
+    /* 0.8: the German and Italian Braille Lite 2000 (Blazie's September 2000 update) and the Slovak Braille 'n
+       Speak 2000, under the NVDA add-on's names for their files */
+    {"blazie:blazie_de", "Braille Lite 2000 (Deutsch)", "de-DE", "braille-lite",
+     {"Lite2000_de.BNS", "lite2000_de_fresh.state", NULL}},
+    {"blazie:blazie_it", "Braille Lite 2000 (italiano)", "it-IT", "braille-lite",
+     {"Lite2000_it.BNS", "lite2000_it_fresh.state", NULL}},
+    {"blazie:blazie_sk", "Braille 'n Speak 2000 (sloven\xc4\x8dina)", "sk-SK", "braille-n-speak",
+     {"BS2SLL.BNS", "bs2sll_fresh.state", NULL}},
     {"accentmini:sa", "Accent SA", "en-US", "accent-sa",
      {"aicom-accent-sa/u2.BIN", "aicom-accent-sa/u3.BIN", "aicom-accent-sa/u4.BIN", NULL}, {0x10000, 0x8000, 0x8000}},
     {"accentmini:mini", "Accent-mini", "en-US", "accent-mini", {"aicom-accent-mini/SPKEMS.DVC", NULL}},

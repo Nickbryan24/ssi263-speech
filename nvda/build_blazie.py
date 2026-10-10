@@ -2,7 +2,8 @@
 import os
 import shutil
 import sys
-from build_common import read_manifest, check_native, copy_engine, copy_native_voices, build_board, rm, zip_build
+from build_common import (BLAZIE_UNITS, read_manifest, check_native, copy_engine, copy_native_voices, build_board, rm,
+                          zip_build)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANIFEST, VERSION = read_manifest(os.path.join(HERE, "blazie"))
@@ -38,10 +39,10 @@ def main():
         shutil.copy2(os.path.join(HERE, "shared", name), eng)
     shutil.copy2(FIRMWARE, eng)
     shutil.copy2(STATE, eng)
-    spa = os.path.join(REPO, "firmware", "blazie", "spanish")
-    for name in ("BL2SPA.BNS", "bl2spa_fresh.state"):
-        if os.path.isfile(os.path.join(spa, name)):
-            shutil.copy2(os.path.join(spa, name), eng)
+    for name, src in BLAZIE_UNITS:           # the other languages' units, each when its files are here
+        src = os.path.join(REPO, "firmware", "blazie", *src.split("/"))
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(eng, name))
     shutil.copytree(os.path.join(HERE, "blazie", "locale"), os.path.join(BUILD, "locale"))
     with open(os.path.join(BUILD, "manifest.ini"), "w", encoding="utf-8") as f:
         f.write(MANIFEST)

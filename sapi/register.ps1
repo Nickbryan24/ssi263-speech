@@ -32,6 +32,9 @@ function Remove-Voices {
 function Language-Code([string]$lang) {
     switch ($lang.Split('_')[0].Split('-')[0].ToLower()) {
         'es' { return '40A' }
+        'de' { return '407' }
+        'it' { return '410' }
+        'sk' { return '41B' }
         default { return '409' }
     }
 }

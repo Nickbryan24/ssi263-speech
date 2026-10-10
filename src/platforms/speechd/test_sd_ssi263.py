@@ -96,13 +96,26 @@ lib.bh_clear_writes.argtypes = [ctypes.c_void_p]
 
 
 # ---- the reference -----------------------------------------------------------------------------------------------
+# 0.8: the other units by language: their files (the module's flat names), code page (bl_voice.h) and whether they
+# echo ^F (voices.c bl_no_echo)
+UNITS = {"de": ("Lite2000_de.BNS", "lite2000_de_fresh.state", 1, False),
+         "it": ("Lite2000_it.BNS", "lite2000_it_fresh.state", 1, True),
+         "sk": ("BS2SLL.BNS", "bs2sll_fresh.state", 2, True)}
+
+
 class Ref:
-    def __init__(self, spanish=False, rate=22050, whine=0, run_ahead=0, numbers=1, line_lift=0):
+    def __init__(self, spanish=False, rate=22050, whine=0, run_ahead=0, numbers=1, line_lift=0, lang=None):
         fw, st = (("BL2SPA.BNS", "bl2spa_fresh.state") if spanish else ("BL2ENG.BNS", "bl2_2003_warm.state"))
+        enc, no_echo = int(spanish), False
+        if lang:
+            fw, st, enc, no_echo = UNITS[lang]
+            numbers = 0                                 # the unit reads its own numbers (voices.c)
         err = ctypes.create_string_buffer(256)
-        self.v = lib.blv_create(os.path.join(DATA, fw).encode(), os.path.join(DATA, st).encode(), int(spanish),
+        self.v = lib.blv_create(os.path.join(DATA, fw).encode(), os.path.join(DATA, st).encode(), enc,
                                 float(rate), 1, whine, err, 256)
         assert self.v, err.value
+        if no_echo:
+            lib.bh_set_int(lib.blv_host(self.v), b"no_echo", 1)
         lib.blv_set_run_ahead(self.v, run_ahead)
         lib.blv_set_line_lift(self.v, line_lift)
         lib.blv_set_numbers(self.v, NUMBERS_FN if numbers else None)
@@ -376,6 +389,9 @@ listed = [v[4:].split("\t")[0] for v in voices[:-1]]
 # the add-ons' voices, by their names, with their languages: those built in whose files are there, in this order
 EXPECTED = [("Braille Lite 2000", "en-US", ("BL2ENG.BNS", "bl2_2003_warm.state")),
             ("Braille Lite 2000 (español)", "es-ES", ("BL2SPA.BNS", "bl2spa_fresh.state")),
+            ("Braille Lite 2000 (Deutsch)", "de-DE", ("Lite2000_de.BNS", "lite2000_de_fresh.state")),
+            ("Braille Lite 2000 (italiano)", "it-IT", ("Lite2000_it.BNS", "lite2000_it_fresh.state")),
+            ("Braille 'n Speak 2000 (slovenčina)", "sk-SK", ("BS2SLL.BNS", "bs2sll_fresh.state")),
             ("Accent SA", "en-US", tuple("aicom-accent-sa/" + f for f in FW_DIRS["aicom-accent-sa"])),
             ("Accent-mini", "en-US", ("aicom-accent-mini/SPKEMS.DVC",)),
             ("Speak-Out", "en-US", ("gw-micro-speakout/SPEAKOUT.HEX",)),
@@ -412,6 +428,12 @@ if os.path.isfile(os.path.join(DATA, "BL2SPA.BNS")):
     m.set(language="es")
     pcm, ev, _ = m.speak("Mañana, ¿qué tal?")
     results.append(same("spanish", pcm, Ref(spanish=True).say("Mañana, ¿qué tal?")))
+# the 0.8 units, each when its files are there: chosen by its language, spoken as its own reference
+for lang, text in (("de", "Guten Tag, schön."), ("it", "Buongiorno, città."), ("sk", "Dobrý deň, čaj.")):
+    if os.path.isfile(os.path.join(DATA, UNITS[lang][0])):
+        m.set(language=lang)
+        pcm, ev, _ = m.speak(text)
+        results.append(same(lang, pcm, Ref(lang=lang).say(text)) and ev == "702 END")
 
 m.send("QUIT")
 m.p.wait(timeout=10)

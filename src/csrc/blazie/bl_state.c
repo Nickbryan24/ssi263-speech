@@ -53,15 +53,33 @@ static const run SPANISH[] = {
                                {900 * M, 0x0E}, {980 * M, 0x0E}}},
 };
 
+/* German, Italian and French (Blazie's September 2000 update): the English recipe, its five answers in the unit's
+   own language -- the same questions in the same order ("... flash ... ja oder nein", "... si o no", "... o ou
+   n"), read from the phonemes each unit spoke; run 3's n is no in all of them.  Each unit then says its own
+   ready ("zwei tausend bereit", "due mila pronto", "deux mille pret"). */
+static unsigned char yes_of(int language)
+{
+    return language == BLV_STATE_GERMAN ? 0x1A            /* j */
+         : language == BLV_STATE_ITALIAN ? 0x0E           /* s */
+         : language == BLV_STATE_FRENCH ? 0x15            /* o */
+         : 0x3D;                                          /* y */
+}
+
 BL_API int blv_make_state(const char *firmware, int language, const char *out_path, blv_state_progress progress,
                           void *ctx, char *err, int errlen)
 {
+    run own[sizeof ENGLISH / sizeof *ENGLISH];
     const run *runs = language == BLV_STATE_SPANISH ? SPANISH : ENGLISH;
     int n_runs = language == BLV_STATE_SPANISH ? (int)(sizeof SPANISH / sizeof *SPANISH)
                                                : (int)(sizeof ENGLISH / sizeof *ENGLISH);
     unsigned long long total = 0, before = 0;
     int r, i;
-    if (language != BLV_STATE_ENGLISH && language != BLV_STATE_SPANISH) {
+    if (language == BLV_STATE_GERMAN || language == BLV_STATE_ITALIAN || language == BLV_STATE_FRENCH) {
+        memcpy(own, ENGLISH, sizeof own);
+        for (i = 0; i < own[0].n_keys; i++)
+            own[0].keys[i].chord = yes_of(language);       /* run 1: the hard reset's five yes */
+        runs = own;
+    } else if (language != BLV_STATE_ENGLISH && language != BLV_STATE_SPANISH) {
         snprintf(err, errlen, "no state recipe for language %d", language);
         return 0;
     }

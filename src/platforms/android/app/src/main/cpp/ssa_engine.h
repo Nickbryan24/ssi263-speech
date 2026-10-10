@@ -14,6 +14,15 @@
  *                    (Sweet Micro Systems)                  else the APK's copy in memory (assets/sweet-micro);
  *   SSA_MOCKINGBOARD_EARLY  Mockingboard, early mb_voice.h  <data>/mockingboard-tts-early.bin, the same way
  *                                               (when voices.c has them: SSV_HAVE_MOCKINGBOARD, build_android.sh)
+ *   SSA_GERMAN       Braille Lite 2000 (de)     bl_voice.h  <data>/Lite2000_de.BNS + lite2000_de_fresh.state (imported)
+ *   SSA_ITALIAN      Braille Lite 2000 (it)     bl_voice.h  <data>/Lite2000_it.BNS + lite2000_it_fresh.state (imported)
+ *   SSA_SLOVAK       Braille 'n Speak 2000 (sk) bl_voice.h  <data>/BS2SLL.BNS + bs2sll_fresh.state       (imported)
+ *
+ * 0.8's three Blazie units -- Blazie's September 2000 German and Italian Braille Lite 2000, the Slovak Braille 'n
+ * Speak 2000 -- under the NVDA add-on's flat names for their files, as sd_voices.c has them (the German and Italian
+ * update disks both call theirs Lite2000.BNS).  voices.c gives each its code page (850; the Slovak unit's 852), lets
+ * the Italian and Slovak units end without ^F echoes, and drops the number words and run ahead for all three (they
+ * read their own numbers; run ahead is tested on English and Spanish alone).
  *
  * The Aicom Accent SA (the built-in voice, Tomi 2026-09-30: Aicom's ROMs ship in the APK, handed over in memory) runs
  * through as_voice.h, the NVDA Accent driver's front end in C.  Each utterance gets a unit of its own, booted as the
@@ -54,7 +63,10 @@ typedef struct ssa_engine ssa_engine;
 #define SSA_ACCENT_MINI 4              /* Aicom's SPKEMS.DVC, from ssa_set_accent_mini */
 #define SSA_MOCKINGBOARD 5             /* Sweet Micro Systems' mockingboard-tts-1.1.bin, imported or built in */
 #define SSA_MOCKINGBOARD_EARLY 6       /* ... and mockingboard-tts-early.bin (Mockingboard disk 1's), the same way */
-#define SSA_VOICES 7
+#define SSA_GERMAN 7                   /* Lite2000_de.BNS + lite2000_de_fresh.state (0.8) */
+#define SSA_ITALIAN 8                  /* Lite2000_it.BNS + lite2000_it_fresh.state */
+#define SSA_SLOVAK 9                   /* the Braille 'n Speak 2000's BS2SLL.BNS + bs2sll_fresh.state */
+#define SSA_VOICES 10
 
 /* The imported files' names in the data folder (the Speak-Out's and the Mockingboard's: SsiImport writes them there;
    the Mockingboard's is mb_host.h's MB_FILE). */
@@ -69,8 +81,10 @@ typedef struct ssa_engine ssa_engine;
 /* The app's own settings, on the NVDA drivers' scales.  rate, pitch 0-100 (50 = the unit's factory rate and pitch);
    volume 0-200 (100 = the desktop voices' level), every voice's.  The Braille Lite's (bl_voice.h's blv_set): tone
    0-26 (7), pack = short pauses, run_ahead = "Run the unit ahead" (EXPERIMENTAL, off by default), line_lift = "Lift
-   line starts (as note-taking mode)" (off by default; a request after a stop or a pause), numbers = "Read
-   numbers as words" (1, the driver's default; English, and Spain's Spanish for the Spanish unit).  The Speak-Out's
+   line starts (as note-taking mode)" (off by default; a request after a stop or a pause; sent to every Blazie
+   unit, heard on the English one alone: the others lift no line in note-taking mode either),
+   numbers = "Read numbers as words" (1, the driver's default; English, and Spain's Spanish for the Spanish unit;
+   the German, Italian and Slovak units read their own).  The Speak-Out's
    (so_voice.h's sov_set): so_tone 0-25 = A-Z (8 = I), so_join = "Join phrases", so_short = "Shorten pauses between
    sentences".  The Accents take rate, pitch and volume; the Mockingboard (mb_voice.h's mbv_set) rate, pitch, volume
    and numbers. */

@@ -70,7 +70,9 @@ verdict() {                         # $L/STATUS: ok when every step is as it mus
 fw_copies() {                       # DIR: DIR/fw-ship (the firmware without bns2000/), DIR/speakout-firmware (beside
     d="$1"                          # it, where package_linux.sh looks), DIR/bns2000 (the emulator archive's)
     mkdir -p "$d/fw-ship"
-    (cd "$FIRMWARE" && tar -cf - --exclude=./bns2000 .) | (cd "$d/fw-ship" && tar -xf -)
+    # the English Braille 'n Speak 2000 stays out of the speech package; the Slovak one ships in it (0.8, Tomi)
+    (cd "$FIRMWARE" && tar -cf - --exclude=./bns2000/BS03ENG.BNS --exclude=./bns2000/bs03eng_fresh.state .) \
+        | (cd "$d/fw-ship" && tar -xf -)
     [ -d "$SPEAKOUT" ] && cp -r "$SPEAKOUT" "$d/speakout-firmware"
     cp -r "$FIRMWARE/bns2000" "$d/bns2000"
 }
@@ -99,8 +101,8 @@ pi_package() {
             --against=nvda/tools/golden/blazie_es.txt
     fi
     step package sh tools/package_linux.sh "$FW_SHIP" "$V"
-    step no_bns2000 sh -c "if tar -tzf build/ssi263-speech-$V-linux-$M.tar.gz | grep -i -E 'bns2000|bs03eng|bs2sll|bs2eng'; \
-        then exit 1; fi; echo 'no Braille n Speak 2000 firmware in the package'"
+    step no_bns2000 sh -c "if tar -tzf build/ssi263-speech-$V-linux-$M.tar.gz | grep -i -E 'bns2000/|bs03eng|bs2eng'; \
+        then exit 1; fi; echo 'no English Braille n Speak 2000 firmware in the package (the Slovak unit ships)'"
     rm -rf dist
     step wheel python3 python/build_wheel.py --lib-dir build/linux --plat "linux_$M" --out dist
     step wheel_shipped python3 python/test_wheel.py dist/ssi263speech-*.whl "$DATA"
@@ -117,8 +119,11 @@ contents() {                        # archive, then kind (full|emu): what must a
             share/ssi263-speech/gw-micro-speakout/SPEAKOUT.HEX share/ssi263-speech/aicom-accent-sa/u2.BIN
             share/ssi263-speech/aicom-accent-sa/u3.BIN share/ssi263-speech/aicom-accent-sa/u4.BIN
             share/ssi263-speech/aicom-accent-mini/SPKEMS.DVC licenses/Aicom-notice.txt
-            licenses/Speak-Out-firmware-notice.txt share/ssi263-speech/speech-dispatcher/ssi263.conf"
-        never='bns2000|bs03eng|bs2sll|bs2eng'
+            licenses/Speak-Out-firmware-notice.txt share/ssi263-speech/speech-dispatcher/ssi263.conf
+            share/ssi263-speech/Lite2000_de.BNS share/ssi263-speech/lite2000_de_fresh.state
+            share/ssi263-speech/Lite2000_it.BNS share/ssi263-speech/lite2000_it_fresh.state
+            share/ssi263-speech/BS2SLL.BNS share/ssi263-speech/bs2sll_fresh.state"
+        never='bns2000/|bs03eng|bs2eng'
     else
         need="bin/blazie_emu bin/blazie_emu_gtk bin/blazie_files bin/blazie_emu_bt bin/blazie_bt README-blazie-bt.md
             share/ssi263-speech/BL2ENG.BNS share/ssi263-speech/tns/TNSENG.TNS share/ssi263-speech/bns2000/BS03ENG.BNS

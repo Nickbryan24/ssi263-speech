@@ -116,7 +116,7 @@ object SsiData {
         if (!imported(ctx, voice)) return null
         val files = FILES[voice] ?: return null
         return try { File(dir(ctx), files[0] + LABEL).readText() }
-            catch (e: Exception) { "Braille Lite ${FirmwareImport.languageName(voice)} (built into this app)" }
+            catch (e: Exception) { "${FirmwareImport.unitName(voice)} (built into this app)" }
     }
 
     /** Move a finished import's files (`ready`: .BNS, .state, .label) into place, each replacing its namesake --

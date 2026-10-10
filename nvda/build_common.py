@@ -24,6 +24,17 @@ IGN = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "drivers.py")
 
 
 
+# The Braille Lite driver's optional units beside the English one: (the name in the add-on's engine folder, its
+# file under firmware/blazie/).  Each voice is offered when both its files are there (blazie.py VOICES); the
+# release requires them all (build_ssi263.py).  Firmware: release assets only, never in git.
+BLAZIE_UNITS = [
+    ("BL2SPA.BNS", "spanish/BL2SPA.BNS"), ("bl2spa_fresh.state", "spanish/bl2spa_fresh.state"),
+    ("Lite2000_de.BNS", "german/Lite2000.BNS"), ("lite2000_de_fresh.state", "german/lite2000_de_fresh.state"),
+    ("Lite2000_it.BNS", "italian/Lite2000.BNS"), ("lite2000_it_fresh.state", "italian/lite2000_it_fresh.state"),
+    ("BS2SLL.BNS", "bns2000/BS2SLL.BNS"), ("bs2sll_fresh.state", "bns2000/bs2sll_fresh.state"),
+]
+
+
 def read_manifest(addon_dir):
     """An add-on's manifest.ini, kept in its own folder (nvda/<name>/manifest.ini) so add-on crawlers
     find it in the repo; the build copies it into the package as is.  Returns (text, version)."""

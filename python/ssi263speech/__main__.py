@@ -1,5 +1,6 @@
 """python -m ssi263speech --phonemes HF EH L OU --out hello.wav
-   python -m ssi263speech --firmware FOLDER --say "Hello there." --out hello.wav [--spanish]
+   python -m ssi263speech --firmware FOLDER --say "Hello there." --out hello.wav [--language en|es|de|it|sk]
+   (--spanish: --language es, as before)
 """
 import argparse
 import sys
@@ -13,6 +14,7 @@ def main():
     ap.add_argument("--say", help="text, spoken by an emulated Braille Lite (needs --firmware)")
     ap.add_argument("--firmware", help="the folder with the Braille Lite's firmware and state (not included)")
     ap.add_argument("--spanish", action="store_true")
+    ap.add_argument("--language", default="en", choices=("en", "es", "de", "it", "sk"))
     ap.add_argument("--rate", type=int, default=22050, help="sample rate (Hz)")
     ap.add_argument("--out", required=True, help="the WAV file to write")
     ap.add_argument("--version", action="version", version=__version__)
@@ -20,7 +22,7 @@ def main():
     if a.say:
         if not a.firmware:
             ap.error("--say needs --firmware (the firmware is not included)")
-        pcm = BrailleLite(a.firmware, "es" if a.spanish else "en", rate=a.rate).speak(a.say)
+        pcm = BrailleLite(a.firmware, "es" if a.spanish else a.language, rate=a.rate).speak(a.say)
     elif a.phonemes:
         pcm = Chip(rate=a.rate).say_phonemes([int(p) if p.isdigit() else p for p in a.phonemes])
     else:

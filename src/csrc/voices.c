@@ -7,6 +7,7 @@
 #include "voices.h"
 #include "translit.h"
 #include "blazie/bl_cp850.h"
+#include "blazie/bl_cp852.h"
 #include "blazie/bl_voice.h"
 #include "blazie/bl_numbers.h"
 #include "accentsa/as_voice.h"
@@ -35,6 +36,14 @@ static const ssv_info VOICES[] = {
     /* the earlier text-to-speech of Mockingboard disks 1 and 2: its own rules ("Mocking-bo-wrd", "dough-lars") */
     {"mockingboard:early", "Mockingboard, early (Sweet Micro Systems)", "en", SSV_MOCKINGBOARD, 5,
      {"sweet-micro-mockingboard/mockingboard-tts-early.bin", NULL}},
+    /* 0.8: the Braille Lite 2000 in German and Italian (Blazie's September 2000 update, an anonymous donation) and
+       the Braille 'n Speak 2000 in Slovak -- each unit's own rules, through the same voice (bl_encoding) */
+    {"blazie:blazie_de", "Braille Lite 2000 (Deutsch)", "de", SSV_BLAZIE, 6,
+     {"blazie/german/Lite2000.BNS", "blazie/german/lite2000_de_fresh.state", NULL}},
+    {"blazie:blazie_it", "Braille Lite 2000 (italiano)", "it", SSV_BLAZIE, 7,
+     {"blazie/italian/Lite2000.BNS", "blazie/italian/lite2000_it_fresh.state", NULL}},
+    {"blazie:blazie_sk", "Braille 'n Speak 2000 (sloven\xc4\x8dina)", "sk", SSV_BLAZIE, 8,
+     {"blazie/bns2000/BS2SLL.BNS", "blazie/bns2000/bs2sll_fresh.state", NULL}},
 };
 #define NVOICES ((int)(sizeof VOICES / sizeof VOICES[0]))
 
@@ -100,11 +109,32 @@ typedef struct {
 
 /* the Braille Lite: blazie.py (rate, pitch, volume, tone, short pauses, number words, run ahead, line-start lift;
    inflection and whine are the unit's boot) */
+/* each Blazie unit's text: the English unit's 7-bit, the Spanish, German and Italian units' DOS code page 850, the
+   Slovak unit's 852 (read from what each says for the accented letters of its language) */
+static int bl_encoding(const char *lang)
+{
+    if (!strcmp(lang, "sk")) return BLV_CP852;
+    if (!strcmp(lang, "es") || !strcmp(lang, "de") || !strcmp(lang, "it")) return BLV_CP850;
+    return BLV_LATIN1;
+}
+
+/* "Custom number processing" (bl_numbers): English and Spain's Spanish only; every other unit reads its numbers
+   itself (blazie.py NUMBER_LANGS) */
+static int bl_has_numbers(const char *lang) { return !strcmp(lang, "en") || !strcmp(lang, "es"); }
+
+/* the Italian Braille Lite and the Slovak Braille 'n Speak never echo ^F (XON/XOFF only): their end comes from the
+   chip alone (bl_host.c "no_echo"; blazie.py NO_ECHO) */
+static int bl_no_echo(const char *lang) { return !strcmp(lang, "it") || !strcmp(lang, "sk"); }
+
 static void *eng_bl_create(const ssv_info *info, const ssv_source *src, const ssv_boot *b, char *err, int errlen)
 {
+    bl_voice *v;
     if (!src->path[0] || !src->path[1]) { snprintf(err, errlen, "the Braille Lite's files: no path"); return NULL; }
-    return blv_create(src->path[0], src->path[1], strcmp(info->lang, "es") ? BLV_LATIN1 : BLV_CP850,
-                      (double)b->sample_rate, b->inflection != 0, b->whine, err, errlen);
+    v = blv_create(src->path[0], src->path[1], bl_encoding(info->lang),
+                   (double)b->sample_rate, b->inflection != 0, b->whine, err, errlen);
+    if (v && bl_no_echo(info->lang))
+        bh_set_int(blv_host(v), "no_echo", 1);
+    return v;
 }
 static void eng_bl_set(void *u, const ssv_settings *s)
 {
@@ -350,6 +380,13 @@ SSV_API int ssv_speak(ssv_voice *v, const ssv_settings *s, const char *utf8, int
 {
     ssv_settings d;
     if (!s) { ssv_defaults(v->index, &d); s = &d; }
+    if (VOICES[v->index].engine == SSV_BLAZIE && !bl_has_numbers(VOICES[v->index].lang)
+            && (s->numbers || s->run_ahead)) {
+        d = *s;                    /* the unit reads its own numbers: no number words of ours; and run ahead is */
+        d.numbers = 0;             /* tested on the English and Spanish units only (blazie.py RUN_AHEAD_TESTED; */
+        d.run_ahead = 0;           /* without ^F echoes it cannot even tell its end) */
+        s = &d;
+    }
     v->e->set(v->u, s);
     return v->e->speak(v->u, utf8 ? utf8 : "", pitch_offset);
 }
@@ -358,7 +395,7 @@ SSV_API int ssv_render(ssv_voice *v, const short **pcm, int *done) { return v->e
 SSV_API void ssv_cancel(ssv_voice *v) { v->e->cancel(v->u); }
 
 /* ---- a bank ---------------------------------------------------------------------------------------------------------- */
-#define SLOTS 8
+#define SLOTS 12
 
 struct ssv_bank {
     char *fwdir;
@@ -418,14 +455,16 @@ SSV_API ssv_voice *ssv_bank_voice(ssv_bank *k, int i, char *err, int errlen)
 }
 
 /* ---- the accented-letter pass on its own (translit.h) ---------------------------------------------------------- */
-static int known_cp850(unsigned c)                 /* bl_voice.c's cp850_byte(c) >= 0 */
+static int known_in(const unsigned short *high, unsigned c)      /* bl_voice.c's cp_byte(..., c) >= 0 */
 {
     int i;
     if (c < 0x80) return 1;
     for (i = 0; i < 128; i++)
-        if (bl_cp850_high[i] == c) return 1;
+        if (high[i] == c) return 1;
     return 0;
 }
+static int known_cp850(unsigned c) { return known_in(bl_cp850_high, c); }
+static int known_cp852(unsigned c) { return known_in(bl_cp852_high, c); }
 
 SSV_API int ssv_translit(const char *utf8, int n, int charset, char *out, int cap)
 {
@@ -438,7 +477,7 @@ SSV_API int ssv_translit(const char *utf8, int n, int charset, char *out, int ca
     k = tl_utf8_decode(utf8, n, in);
     t = (unsigned *)malloc(sizeof(unsigned) * (size_t)tl_room(k));
     if (!t) { free(in); return -1; }
-    m = tl_apply(in, k, charset == SSV_CP850 ? known_cp850 : tl_known_ascii, t);
+    m = tl_apply(in, k, charset == SSV_CP850 ? known_cp850 : charset == SSV_CP852 ? known_cp852 : tl_known_ascii, t);
     free(in);
     u = (unsigned char *)malloc((size_t)m * 4 + 1);
     if (!u) { free(t); return -1; }

@@ -11,6 +11,13 @@ ssa_map.c and ssa_import.c, on the same chip, boards, hosts and voices), every c
   without -- from a library that has the number words (bl.dll has none): ssi263speech.dll on Windows
   (src/csrc/build_ssi263speech.py), libssi263speech.so on Linux.  On and off must also sound different (fresh units:
   by the setting alone).
+- 0.8's Blazie units -- the German and Italian Braille Lite 2000, the Slovak Braille 'n Speak 2000; each one's cases
+  run when its two files are in the firmware folder's german/, italian/ or bns2000/ -- under the app's flat names: a
+  sentence with its accented letters and a number on a fresh unit at the app's defaults (number words on, which the
+  units must not get: they read their own), and the import's probe, against bl_voice driven directly with each
+  unit's code page (850; the Slovak unit's 852) and, for the Italian and Slovak units, the host's no_echo, as
+  voices.c makes them.  Their import: each .BNS taken as its voice (7, 8, 9: the app's indexes, not bl_firmware.h's
+  languages), written as it came; ssa_blazie_recipe gives each voice its state recipe (the C program's own check).
 - The GW Micro Speak-Out (imported; its cases run when firmware/gw-micro-speakout/SPEAKOUT.HEX is there): against
   so_voice driven directly (test_android_native --so-direct: sov_set, sov_speak, sov_render, sov_cancel on one kept
   unit, the settings computed here: the request's rate on the slider, the slider's pitch as the setting and the
@@ -70,7 +77,8 @@ ssa_map.c and ssa_import.c, on the same chip, boards, hosts and voices), every c
                              import-dsk           ssa_import_break 2: a disk image never tried (the .dsk cases fail)
 
 SSI263_ANDROID_TEST_ONLY=<blocks>, a comma list of bl (the Braille Lite in lockstep, its Spanish unit and the probe),
-ra (run ahead), lift (the line-start lift), num (the number words), accent (the Accent SA and its text), so (the Speak-Out), mini (the
+ra (run ahead), lift (the line-start lift), num (the number words), lang (0.8's German, Italian and Slovak units),
+accent (the Accent SA and its text), so (the Speak-Out), mini (the
 Accent-mini), mb (the Mockingboard), import (the Speak-Out's and the Mockingboard's import): only those blocks, on
 both sides -- for the controls, so each runs what
 its bug touches (the 3-minute gate).
@@ -127,7 +135,21 @@ RA_CASES = [
 ]
 # the number words (the C program's num- cases): each language's text on and off, each on a fresh unit
 NUM_TEXTS = {"en": "It is 1,234,567 steps, 3.5 miles and $12.50.", "es": "Son 1.234.567 pasos y 3,5 kilos."}
-FILES = {"en": ("BL2ENG.BNS", "bl2_2003_warm.state"), "es": ("BL2SPA.BNS", "bl2spa_fresh.state")}
+FILES = {"en": ("BL2ENG.BNS", "bl2_2003_warm.state"), "es": ("BL2SPA.BNS", "bl2spa_fresh.state"),
+         "de": ("Lite2000_de.BNS", "lite2000_de_fresh.state"), "it": ("Lite2000_it.BNS", "lite2000_it_fresh.state"),
+         "sk": ("BS2SLL.BNS", "bs2sll_fresh.state")}
+# 0.8's units in the firmware folder (their folder, the .BNS, the state), copied under the app's flat names above
+LANG_SOURCES = {"de": ("german", "Lite2000.BNS", "lite2000_de_fresh.state"),
+                "it": ("italian", "Lite2000.BNS", "lite2000_it_fresh.state"),
+                "sk": ("bns2000", "BS2SLL.BNS", "bs2sll_fresh.state")}
+ENCODING = {"en": 0, "es": 1, "de": 1, "it": 1, "sk": 2}      # bl_voice.h's BLV_LATIN1, _CP850, _CP852 (voices.c's)
+NO_ECHO = ("it", "sk")                                         # voices.c's bl_no_echo
+# test_android_native.c's LANGS, in the same order: (language, the sentence, the import's probe -- SsiImport.kt's)
+LANGS = [("de", "Guten Tag. Grüß Gott, es kostet 1.234 Euro.", "Hallo."),
+         ("it", "Buongiorno. Perché no? Costa 1.234 euro.", "Ciao."),
+         ("sk", "Dobrý deň. Čo sa deje? Stojí to 1.234 eur.", "Ahoj.")]
+# ssa_import_firmware's codes for the Blazie releases: the app's voices (ssa_engine.h), not bl_firmware.h's languages
+BLAZIE_VOICE = {"en": 0, "es": 1, "de": 7, "it": 8, "sk": 9}
 AICOM = os.path.join(REPO, "firmware", "aicom-accent-sa")
 SPEAKOUT_HEX = os.path.join(REPO, "firmware", "gw-micro-speakout", "SPEAKOUT.HEX")
 MINI_DVC = os.path.join(REPO, "firmware", "aicom-accent-mini", "SPKEMS.DVC")
@@ -303,16 +325,22 @@ def accent_level():
 
 # ---- the reference: bl_voice, as sd_ssi263 drives it --------------------------------------------------------------
 class Ref:
-    def __init__(self, lib, data, spanish, run_ahead=0, numbers_fn=None):
-        fw, st = FILES["es" if spanish else "en"]
+    def __init__(self, lib, data, lang, run_ahead=0, numbers_fn=None):
+        """lang: FILES's key -- the unit made as voices.c makes it (its code page; the host's no_echo for it/sk).
+        True / False: Spanish / English, as before 0.8 (test_wheel.py and test_volume_headroom.py call it so)."""
+        if isinstance(lang, bool):
+            lang = "es" if lang else "en"
+        fw, st = FILES[lang]
         err = ctypes.create_string_buffer(256)
         self.lib = lib
         self.run_ahead = run_ahead
         self.numbers_fn = numbers_fn            # bl_numbers, from a library that has it: say(numbers=...) sets it
-        self.v = lib.blv_create(os.path.join(data, fw).encode(), os.path.join(data, st).encode(), int(spanish),
+        self.v = lib.blv_create(os.path.join(data, fw).encode(), os.path.join(data, st).encode(), ENCODING[lang],
                                 22050.0, 1, 0, err, 256)
         if not self.v:
             sys.exit("reference boot failed: %s" % err.value)
+        if lang in NO_ECHO:
+            lib.bh_set_int(lib.blv_host(self.v), b"no_echo", 1)
 
     def say(self, text, rate, pitch, blocks, volume=100, numbers=None):
         lib = self.lib
@@ -353,6 +381,9 @@ def load_reference(lib_path, chip_path):
     lib.blv_cancel.argtypes = [ctypes.c_void_p]
     lib.blv_destroy.argtypes = [ctypes.c_void_p]
     lib.blv_set_run_ahead.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.blv_host.restype = ctypes.c_void_p
+    lib.blv_host.argtypes = [ctypes.c_void_p]
+    lib.bh_set_int.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
     return lib
 
 
@@ -364,21 +395,34 @@ def block(name):
     return not ONLY or name in ONLY
 
 
+def has_lang(data, lang):
+    return all(os.path.isfile(os.path.join(data, f)) for f in FILES[lang])
+
+
 def reference(lib, data, run_ahead=True):
-    ref = Ref(lib, data, False)
+    ref = Ref(lib, data, "en")
     got = {}
     for name, text, rate, pitch, blocks in CASES if block("bl") else ():
         pcm = ref.say(text, rate, pitch, blocks)
         got[name] = (len(pcm) // 2, fnv(pcm))
     lib.blv_destroy(ref.v)
-    ra = Ref(lib, data, False, run_ahead=1) if run_ahead and block("ra") else None
+    # 0.8's units, each on fresh units: the sentence (no number words: they read their own) and the import's probe
+    for lang, text, probe in LANGS if block("lang") else ():
+        if not has_lang(data, lang):
+            continue
+        for name, said in ((lang, text), (lang + "-probe", probe)):
+            unit = Ref(lib, data, lang)
+            pcm = unit.say(said, 0, 0, None)
+            got[name] = (len(pcm) // 2, fnv(pcm))
+            lib.blv_destroy(unit.v)
+    ra = Ref(lib, data, "en", run_ahead=1) if run_ahead and block("ra") else None
     for name, text, rate, pitch, blocks in RA_CASES if ra else ():
         pcm = ra.say(text, rate, pitch, blocks)
         got[name] = (len(pcm) // 2, fnv(pcm))
     if ra:
         lib.blv_destroy(ra.v)
-    if block("bl") and all(os.path.isfile(os.path.join(data, f)) for f in FILES["es"]):
-        es = Ref(lib, data, True)
+    if block("bl") and has_lang(data, "es"):
+        es = Ref(lib, data, "es")
         pcm = es.say(SPANISH, 0, 0, None)
         got["spanish"] = (len(pcm) // 2, fnv(pcm))
         lib.blv_destroy(es.v)
@@ -401,7 +445,7 @@ def numbers_reference(lib_path, data):
         if not all(os.path.isfile(os.path.join(data, f)) for f in FILES[lang]):
             continue
         for name, on in (("num-" + lang, 1), ("num-%s-off" % lang, 0)):
-            ref = Ref(lib, data, lang == "es", numbers_fn=fn)
+            ref = Ref(lib, data, lang, numbers_fn=fn)
             pcm = ref.say(NUM_TEXTS[lang], 0, 0, None, numbers=on)
             got[name] = (len(pcm) // 2, fnv(pcm))
             lib.blv_destroy(ref.v)
@@ -899,7 +943,19 @@ def data_folder(firmware, tmp):
             for f in FILES["es"]:
                 shutil.copy2(os.path.join(d, f), tmp)
             break
+    for lang, (sub, bns, state) in LANG_SOURCES.items():   # 0.8's units, under the app's flat names
+        src = [os.path.join(firmware, sub, f) for f in (bns, state)]
+        if all(os.path.isfile(f) for f in src):
+            for f, name in zip(src, FILES[lang]):
+                shutil.copy2(f, os.path.join(tmp, name))
     return tmp
+
+
+def lang_skips(data):
+    """Say which of 0.8's units have no cases: their files are not in the firmware folder."""
+    for lang, (sub, bns, state) in LANG_SOURCES.items():
+        if not has_lang(data, lang):
+            print("skip  the %s unit: no %s/%s + %s in the firmware folder" % (lang, sub, bns, state))
 
 
 def compare(label, got, want):
@@ -944,11 +1000,40 @@ def run_ahead_taken(label, got):
 
 
 def lift_heard(label, got):
-    """The line-start lift reached the unit: a fresh unit's first line, lifted, is not the same line unlifted."""
+    """The line-start lift reached the unit: a fresh unit's first line, lifted, is not the same line unlifted.  (On
+    the English unit: on 0.8's German, Italian and Slovak units bl_voice's own lift is byte-identical on and off, so
+    the sound cannot tell whether the setting arrived.)"""
     ok = got.get("lift-on") is not None and got.get("lift-on") != got.get("lift-off")
     print("%-5s %-8s lift-on differs from lift-off (the line-start lift reached bl_voice)" % ("ok" if ok else "FAIL",
                                                                                              label))
     return not ok
+
+
+def blazie_import_cases(exe, data):
+    """Each Blazie unit's .BNS, as ssa_import_firmware judges it: taken as the app's voice (7, 8, 9 for 0.8's units:
+    not bl_firmware.h's languages 2, 3, 4, which are the Accent SA's, the Speak-Out's and the Accent-mini's indexes)
+    and written as it came."""
+    bad = 0
+    for lang, (fw, _) in FILES.items():
+        path = os.path.join(data, fw)
+        if not os.path.isfile(path):
+            continue
+        blob = open(path, "rb").read()
+        src, out = os.path.join(data, "import.in"), os.path.join(data, "import.out")
+        with open(src, "wb") as f:
+            f.write(blob)
+        if os.path.exists(out):
+            os.remove(out)
+        r = subprocess.run([exe, "--import", src, out], capture_output=True, text=True)
+        m = re.match(r"^import (-?\d+) (.*)$", r.stdout.strip())
+        ok = bool(m) and int(m.group(1)) == BLAZIE_VOICE[lang] and os.path.isfile(out) and \
+            open(out, "rb").read() == blob
+        print("%-5s import   %s (%s): %s" % ("ok" if ok else "FAIL", fw, lang, m.group(0) if m else r.stdout + r.stderr))
+        bad += not ok
+    for f in ("import.in", "import.out"):
+        if os.path.exists(os.path.join(data, f)):
+            os.remove(os.path.join(data, f))
+    return bad
 
 
 def compare_texts(got, want):
@@ -981,7 +1066,9 @@ def main():
     tmp = tempfile.mkdtemp(prefix="ssi263-android-test-")
     try:
         data = data_folder(a.firmware, tmp)
-        want = reference(load_reference(a.lib, a.chip), data) if block("bl") or block("ra") else {}
+        if block("lang"):
+            lang_skips(data)
+        want = reference(load_reference(a.lib, a.chip), data) if block("bl") or block("ra") or block("lang") else {}
         if block("bl"):
             want["probe"] = want["default"]        # ssa_probe: a fresh unit speaks the first case as it did
         numbers = block("num") and numbers_reference(a.numbers_lib, data)
@@ -1034,6 +1121,8 @@ def main():
             bad += checks("desktop", run_desktop(exe, data, a.aicom))
         if block("accent"):
             bad += compare_texts(run_texts(exe), text_want)
+        if block("import"):
+            bad += blazie_import_cases(exe, data)
         if speakout and block("import"):
             bad += import_cases(exe, data)
         if (mb or any(mb_disks())) and block("import"):

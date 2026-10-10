@@ -24,11 +24,12 @@ checks first -- SSI263_SAPI_REF_BREAK=dist, the reference on nvda/dist's drivers
   - SAPI's abort after a few writes: Speak returns S_OK at once, nothing more is written (no events, no silence),
     and the next text comes out whole (voiced, as long as alone within 10 %);
   - the controls, in the same run (each must make its cases differ): SSI263_SAPI_TEST_BREAK=voice (English and
-    Spanish swapped; each Mockingboard spoken by the Braille Lite, as ssi_voice's fallback would), =setting (the
-    dialog's settings dropped) and =bl-numbers (BrailleLiteNumbers 0 ignored).
+    Spanish swapped; each Mockingboard, and the German, Italian and Slovak units, spoken by the English Braille Lite,
+    as ssi_voice's fallback would), =setting (the dialog's settings dropped) and =bl-numbers (BrailleLiteNumbers 0
+    ignored).
 
-The voices 0.7.0's drivers never had (NATIVE_ONLY: the Mockingboard, 1.1 and early, new in 0.8) have no Python
-server to be held to:
+The voices 0.7.0's drivers never had (NATIVE_ONLY: the Mockingboard, 1.1 and early, and the German, Italian and
+Slovak Braille units, new in 0.8) have no Python server to be held to:
 their reference is the native serve host (ssi263_serve.exe, build/win/x64) on the stage's firmware with the same
 settings on its command line -- the voice as the engine's own mapping makes it (sapi/ssi_native.c), so what is held is
 the DLL's side: SAPI's fragments, rates and pitches, the declared rate, the 150 ms of silence, the bookmark and the
@@ -68,10 +69,17 @@ DIALOG = {"Inflection": 0, "Whine": 2, "AccentInflection": 50, "RunAhead": 1, "S
 # its own: the setting is not a boot setting, so in the main run the units would carry the last case's state)
 NUMBERS = (("numbers unset", DEFAULTS), ("numbers on", dict(DEFAULTS, BrailleLiteNumbers=1)),
            ("numbers off", dict(DEFAULTS, BrailleLiteNumbers=0)))
-NUMBERS_TEXT = {"en": "1,234,567", "es": "1.234.567"}
+NUMBERS_TEXT = {"en": "1,234,567", "es": "1.234.567"}     # the units with number words (voices.c's bl_has_numbers)
 TEXT_EN = ["Hello, how are you??", "Room 12, $3.50 and 1,234,567 items; the 21st of 3, -2.5 degrees."]
 TEXT_ES = ["Mañana, ¿qué tal? Son 1.234.567 y 3,5."]
-NATIVE_ONLY = ("mockingboard:mockingboard", "mockingboard:early")
+TEXTS = {"en": TEXT_EN, "es": TEXT_ES, "de": ["Grüß Gott, wie geht's? Zimmer 12, schön."],
+         "it": ["Buongiorno, com'è? Camera 12, perché."], "sk": ["Dobrý deň, ako sa máte? Izba 12, ďakujem."]}
+# the text after an abort: "OK button" -- but the German unit reads a lone "OK" at the start as a word ("U U K")
+# except right after a ^X cut, where it spells it ("O Ka", as it does mid-sentence): its rules' own quirk, 0.15 s
+# longer than the reference that was never cut; a phrase it reads the same either way
+AFTER_ABORT = {"de": "Mein Computer"}
+NATIVE_ONLY = ("mockingboard:mockingboard", "mockingboard:early", "blazie:blazie_de", "blazie:blazie_it",
+               "blazie:blazie_sk")
 LONG = "This sentence is long enough to be cut somewhere in the middle of it, surely. And a few more words follow it."
 ABORT_AFTER = 6
 
@@ -87,7 +95,7 @@ def cases(voices):
     for group, s in (("", DEFAULTS), ("dialog settings", DIALOG), ("11025 Hz", dict(DEFAULTS, SampleRate=11025)),
                      ("44100 Hz", dict(DEFAULTS, SampleRate=44100))):
         for vid, _name, lang in voices:
-            texts = TEXT_ES if lang == "es" else TEXT_EN
+            texts = TEXTS.get(lang, TEXT_EN)
             if group.endswith("Hz") and vid != rates_voice:
                 continue                     # the rates: one voice shows the DLL declares and renders them (every
                                              # voice at every rate is test_native.py's, through the same mapping)
@@ -99,18 +107,19 @@ def cases(voices):
                     ("%s rate -6 pitch 10" % vid, vid, -6, 10, s, "-", 0, texts[0], None),
                     ("%s bookmark" % vid, vid, 0, 2, s, "-", 0, texts[0], "and the rest.")]
         if not group:
-            for vid, _name, _lang in voices:
+            for vid, _name, lang in voices:
                 out += [("%s abort" % vid, vid, 0, 0, s, "-", ABORT_AFTER, LONG, None),
-                        ("%s after the abort" % vid, vid, 0, 0, s, "-", 0, "OK button", None)]
+                        ("%s after the abort" % vid, vid, 0, 0, s, "-", 0, AFTER_ABORT.get(lang, "OK button"),
+                         None)]
     for tag, s in NUMBERS:
         for vid, _name, lang in voices:
-            if vid.startswith("blazie:"):
+            if vid.startswith("blazie:") and lang in NUMBERS_TEXT:
                 out.append(("%s %s" % (vid, tag), vid, 0, 0, s, "-", 0, NUMBERS_TEXT[lang], None))
     for vid, _name, lang in voices:                                 # the controls
-        texts = TEXT_ES if lang == "es" else TEXT_EN
+        texts = TEXTS.get(lang, TEXT_EN)
         if vid.startswith("blazie:") or vid in NATIVE_ONLY:
             out.append(("%s CONTROL voice" % vid, vid, 0, 0, DEFAULTS, "voice", 0, texts[0], None))
-        if vid.startswith("blazie:"):
+        if vid.startswith("blazie:") and lang in NUMBERS_TEXT:
             out.append(("%s CONTROL numbers ignored" % vid, vid, 0, 0, NUMBERS[2][1], "bl-numbers", 0,
                         NUMBERS_TEXT[lang], None))
         # the dialog has nothing for the Speak-Out or the Mockingboard: dropping it changes nothing
@@ -291,8 +300,8 @@ def main():
                     bad += not ok
                     lines.append("%-4s %s %-38s %s" % ("ok" if ok else "FAIL", a, label, what))
                 # across the numbers runs: no value = 1, and 0 changes the audio (each is the Python server's above)
-                for vid, _name, _lang in voices:
-                    if not vid.startswith("blazie:"):
+                for vid, _name, lang in voices:
+                    if not vid.startswith("blazie:") or lang not in NUMBERS_TEXT:
                         continue
                     pcm = {tag: results[a, next(k for k, c in enumerate(todo) if c[0] == "%s %s" % (vid, tag))][5]
                            for tag, _s in NUMBERS}

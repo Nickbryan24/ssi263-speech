@@ -51,6 +51,9 @@ def _declare_voice(lib):
     lib.blv_render.argtypes = [_P, ctypes.POINTER(ctypes.POINTER(ctypes.c_short)), ctypes.POINTER(_I)]
     lib.blv_render.restype = _I
     lib.blv_cancel.argtypes = [_P]
+    lib.blv_host.restype = _P            # the Italian and Slovak units' "no_echo" (voice.py)
+    lib.blv_host.argtypes = [_P]
+    lib.bh_set_int.argtypes = [_P, _S, _I]
 
 
 def chip_lib():

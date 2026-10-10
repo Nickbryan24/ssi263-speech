@@ -22,6 +22,9 @@ extern "C" {
                                       emulator's factory states), whose prompts come at the same points and take
                                       the same keys (bl_state.c) */
 #define BLV_STATE_SPANISH 1        /* ONCE's BL2SPA.BNS -> bl2spa_fresh.state */
+#define BLV_STATE_GERMAN 2         /* Blazie's September 2000 German Lite2000.BNS -> lite2000_de_fresh.state */
+#define BLV_STATE_ITALIAN 3        /* ... Italian -> lite2000_it_fresh.state */
+#define BLV_STATE_FRENCH 4         /* ... French (its state boots; its speech menu is not the 345-chord: no voice) */
 
 /* Called between runs with the share done so far (0..1); a nonzero return abandons the state. */
 typedef int (*blv_state_progress)(void *ctx, double done);

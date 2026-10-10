@@ -330,6 +330,16 @@ if os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(HERE)), "build", 
                         expect_fail=True,
                         fail_marks=[r"^DIFF dialog  x64 blazie:blazie text 0 ", r"^DIFF dialog  x64 blazie:blazie_es text 0 ",
                                     r"^DIFF dialog  x64 accentmini:sa text 0 ", r"^native: \d+ FAILED$"]))
+    # ... and on the native-only voices: the German, Italian and Slovak units' own inflection dropped with them (the
+    # Mockingboards, with nothing in the dialog, stay right)
+    CHECKS.append(check("SAPI native-only voices CONTROL (the dialog's settings dropped, must fail)",
+                        [PY, SAPI_NATIVE, "--only", "own", "--arch", "x64"], env={"SSI263_SERVE_BREAK": "setting"},
+                        expect_fail=True,
+                        fail_marks=[r"^FAIL own x64 blazie:blazie_de dialog settings, default: the SAME",
+                                    r"^FAIL own x64 blazie:blazie_it dialog settings, default: the SAME",
+                                    r"^FAIL own x64 blazie:blazie_sk dialog settings, default: the SAME",
+                                    r"^native only mockingboard:mockingboard: (\d+) of \1 checks right",
+                                    r"^native: \d+ FAILED$"]))
     CHECKS.append(check("SAPI native voices CONTROL (English and Spanish swapped, must fail)",
                         [PY, SAPI_NATIVE, "--only", "default", "--arch", "x64"], env={"SSI263_SERVE_BREAK": "voice"},
                         expect_fail=True,
@@ -355,14 +365,14 @@ if os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(HERE)), "build", 
                         expect_fail=True,
                         fail_marks=[r"^FAIL listing x64: mockingboard:mockingboard is not offered ",
                                     r"^FAIL listing x86: mockingboard:mockingboard is not offered ",
-                                    r"; native only: mockingboard:early$", r"^native: 2 FAILED$"]))
+                                    r"; native only: mockingboard:early, blazie:blazie_de, blazie:blazie_it, blazie:blazie_sk$", r"^native: 2 FAILED$"]))
     # ... and the early one's (disk 1's text-to-speech, mockingboard-tts-early.bin): named alone, 1.1 still checked
     CHECKS.append(check("SAPI native voices CONTROL (the early Mockingboard's firmware missing, must fail)",
                         [PY, SAPI_NATIVE, "--only", "own"], env={"SSI263_NATIVE_WITHOUT": "mockingboard:early"},
                         expect_fail=True,
                         fail_marks=[r"^FAIL listing x64: mockingboard:early is not offered ",
                                     r"^FAIL listing x86: mockingboard:early is not offered ",
-                                    r"; native only: mockingboard:mockingboard$",
+                                    r"; native only: mockingboard:mockingboard, blazie:blazie_de, blazie:blazie_it, blazie:blazie_sk$",
                                     r"^native only mockingboard:mockingboard: (\d+) of \1 checks right",
                                     r"^native: 2 FAILED$"]))
     # the number words alone, on random texts: the driver's _numbers against bl_numbers (English, and Spain's Spanish)
@@ -1061,6 +1071,10 @@ if os.path.isfile(ANDROID_TEST):
              [r"^FAIL +desktop +s-pitch-150 +got ", r"^ok +desktop +s-pitch-100 ", r"^FAILED: 7 case\(s\) differ$"]),
             ("speakout-settings", "Speak-Out: tone, join and short pauses dropped",
              [r"^FAIL +desktop +s-settings +got ", r"^ok +desktop +s-sliders ", r"^FAILED: 9 case\(s\) differ$"]),
+            ("import-lang", "Blazie import: the firmware's raw language, not the app's voice",
+             [r"^FAIL +import +Lite2000_de\.BNS \(de\): import 2 ", r"^FAIL +import +Lite2000_it\.BNS \(it\): import 3 ",
+              r"^FAIL +import +BS2SLL\.BNS \(sk\): import 4 ", r"^ok +import +BL2ENG\.BNS \(en\): import 0 ",
+              r"^FAILED: 3 case\(s\) differ$"]),
             ("import-hash", "Speak-Out and Mockingboard import: the sha256 dropped",
              [r"^FAIL +import +another HEX ", r"^ok +import +a HEX with one digit changed"] +
              ([r"^FAIL +import +mockingboard-tts-1\.1\.bin with one byte changed: Mockingboard",
@@ -1091,8 +1105,8 @@ if os.path.isfile(ANDROID_TEST):
         # each control runs the blocks its bug touches (SSI263_ANDROID_TEST_ONLY), not all seven voices: the gate's time
         only = {"1": "bl,accent", "accent-pitch": "accent,mini", "run-ahead": "bl,ra", "line-lift": "bl,lift",
                 "numbers": "num",
-                "speakout-pitch": "so", "speakout-settings": "so", "import-hash": "import", "import-dsk": "import"
-                }.get(brk, "mb" if brk.startswith("mockingboard-") else "accent")
+                "speakout-pitch": "so", "speakout-settings": "so", "import-hash": "import", "import-dsk": "import",
+                "import-lang": "import"}.get(brk, "mb" if brk.startswith("mockingboard-") else "accent")
         CHECKS.append(check("Android engine CONTROL (%s, must fail)" % what, [PY, ANDROID_TEST],
                             env={"SSI263_ANDROID_TEST_BREAK": brk, "SSI263_ANDROID_TEST_ONLY": only}, expect_fail=True,
                             fail_marks=marks))
@@ -1394,7 +1408,7 @@ CHECKS.append(check("bl_voice CONTROL (fault taken as busy, must fail)", [PY, "b
 CHECKS.append(check("bl_voice = the NVDA driver, byte for byte", [PY, "voice_equiv.py"]))
 CHECKS.append(check("bl_voice CONTROL (packing flipped, must fail)", [PY, "voice_equiv.py"],
                     env={"VOICE_EQUIV_BREAK": "1"}, expect_fail=True,
-                    fail_marks=[r"^DIFF ", r"^[0-9] of 10 utterances byte-identical to the NVDA driver$"]))
+                    fail_marks=[r"^DIFF ", r"^(?!16 )[0-9]+ of 16 utterances byte-identical to the NVDA driver$"]))
 # ... and with "run ahead" on (blv_set_run_ahead, the speech-dispatcher module's SSI263RunAhead): the driver's runAhead
 # path, byte for byte, the host running ahead on both sides wherever the driver does (short pauses on); its control
 # never turns it on in C, so the C side speaks the lockstep
@@ -1403,7 +1417,7 @@ CHECKS.append(check("bl_voice run ahead CONTROL (never turned on in C, must fail
                     env={"VOICE_EQUIV_BREAK": "ahead"}, expect_fail=True,
                     fail_marks=[r"^DIFF  en .*run ahead: driver 1, C 0, want 1  'Hello there\.'",
                                 r"^DIFF  es .*run ahead: driver 1, C 0, want 1",
-                                r"^[0-9] of 10 utterances byte-identical to the NVDA driver \(run ahead on\)$"]))
+                                r"^(?!16 )[0-9]+ of 16 utterances byte-identical to the NVDA driver \(run ahead on\)$"]))
 # bl_voice's text path (currencies, clean-up, lines, encoding) against the driver's, on random texts; and its control
 CHECKS.append(check("bl_voice text = the driver's, 5000 random texts", [PY, "voice_text_equiv.py", "5000", "1"]))
 CHECKS.append(check("bl_voice text CONTROL (no currencies, must fail)", [PY, "voice_text_equiv.py", "2000", "1"],

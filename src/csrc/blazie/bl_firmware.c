@@ -4,6 +4,7 @@
 #include <string.h>
 #include "bl_board.h"
 #include "bl_firmware.h"
+#include "bl_state.h"
 
 #define FILE_ROM_OFFSET 0x3000             /* bl_board.c's: where bl_create reads the image from */
 #define ROM_SIZE 0x40000
@@ -42,6 +43,19 @@ static const struct {
     {BLV_FW_SPANISH, 261746, "eedd606e3644c22bd24d5bebd6ebd79286e5f0e6bdb6f638f8f6955ab2be4ed7",
      "d69dd10541b413b0cf160f76894168aadc7648ed826f1cba395f58d0b67e888d",
      "Braille Lite Spanish: ONCE's September 20, 2000 revision"},
+    /* 0.8: Blazie's September 20, 2000 update disk, German and Italian (an anonymous donation): each booted with its
+       own recipe (the English one, its yes in the unit's language: bl_state.c) and heard -- "zwei tausend bereit",
+       "due mila pronto" -- and speaking its own language through the voice (code page 850).  The Slovak Braille 'n
+       Speak 2000 (the Slovak community's BS2SLL.BNS): the English recipe, code page 852. */
+    {BLV_FW_GERMAN, 261984, "9594b476b26f1e796c12094b1f42c430de01f7e38d9dc91a43a60416b4e9758d",
+     "db9b9b165337f9b6cb58a14e177e65c1a0de8706a8da719852fdf6681d38ce64",
+     "Braille Lite German: the September 20, 2000 revision"},
+    {BLV_FW_ITALIAN, 261906, "40bf2ad973687a6db6c99889f88f94cac159a02b782b06b00dfac11d70ce9678",
+     "737b6f224c1be189b9f798e594118be6ef1654e263f11c7b115695291a20fa8e",
+     "Braille Lite Italian: the September 20, 2000 revision"},
+    {BLV_FW_SLOVAK, 261962, "445203a81a8282dfaf139bf98c160d3e11b1f0489f29a37bd82d0242f9b5f796",
+     "6818720dc50c5f7df9a81a46f26667b74c74994de8de908442ec173a6ac27020",
+     "Braille 'n Speak 2000 Slovak"},
 };
 #define N_KNOWN ((int)(sizeof KNOWN / sizeof *KNOWN))
 
@@ -170,10 +184,11 @@ BL_API int blv_import_firmware(const unsigned char *data, long n, const char *ou
         snprintf(msg, msglen, "cannot write %s", out_bns);
         return BLV_FW_WRITE;
     }
-    /* the voice's own check: bl_create refuses an image whose sites it cannot find (another Blazie unit); the Braille
-       'n Speak 2000's, which the board runs (the emulator's), is not a voice yet */
+    /* the voice's own check: bl_create refuses an image whose sites it cannot find (another Blazie unit); of the
+       Braille 'n Speak 2000's, which the board runs (the emulator's), only the Slovak release is a voice (0.8) */
     u = bl_create(out_bns, NULL, 20.0, NULL, NULL, 0, msg, msglen);
-    if (!u || bl_model(u) != BL_MODEL_BRAILLE_LITE) {
+    if (!u || (bl_model(u) != BL_MODEL_BRAILLE_LITE
+               && !(bl_model(u) == BL_MODEL_BNS2000 && k >= 0 && KNOWN[k].language == BLV_FW_SLOVAK))) {
         bl_destroy(u);
         remove(out_bns);
         snprintf(msg, msglen, "Braille Lite firmware, but not a release this voice can run");
@@ -208,6 +223,14 @@ BL_API const char *blv_firmware_label(int release)
 BL_API int blv_firmware_language(int release)
 {
     return release >= 0 && release < N_KNOWN ? KNOWN[release].language : -1;
+}
+
+BL_API int blv_firmware_recipe(int language)
+{
+    return language == BLV_FW_ENGLISH || language == BLV_FW_SLOVAK ? BLV_STATE_ENGLISH
+         : language == BLV_FW_SPANISH ? BLV_STATE_SPANISH
+         : language == BLV_FW_GERMAN ? BLV_STATE_GERMAN
+         : language == BLV_FW_ITALIAN ? BLV_STATE_ITALIAN : -1;
 }
 
 /* A whole file, malloc'd; NULL when it cannot be read or is larger than `cap`. */

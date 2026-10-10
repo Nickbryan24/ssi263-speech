@@ -17,15 +17,18 @@ A cancel lands where the client's pipe lets it (both hosts stop at the same bloc
 different points, the cut audio must still agree as far as both go and the next utterance is checked as test_serve.py
 checks it (voiced, as long as alone within 10 %), with the difference said.
 
-Every voice of the reference, and every voice 0.7.0's drivers never had (NATIVE_ONLY: the Mockingboard, new in 0.8),
--- both its versions, 1.1 and the early one -- must be in the native host's listing on both widths, or the run FAILS
+Every voice of the reference, and every voice 0.7.0's drivers never had (NATIVE_ONLY: the Mockingboard, new in 0.8,
+-- both its versions, 1.1 and the early one -- and 0.8's German, Italian and Slovak Braille units) must be in the
+native host's listing on both widths, or the run FAILS
 naming it: a voice whose firmware is missing is not listed, and a request for it would quietly speak another
 (ssi_voice's fallback: the first voice there).
 
 The NATIVE_ONLY voices have no Python server to be held to.  They are held to themselves ("own", own_checks): on each
 width every utterance whole and voiced -- texts with numbers and money, SAPI's rates and pitches, each changing the
-audio the way it should; a cancel mid-utterance, and the next one as long as alone within 10 %; the dialog's settings
-(none of them its) leaving it byte for byte as it was; 11025 and 44100 Hz half and twice the samples -- and the x64 and
+audio the way it should; a cancel mid-utterance, and the next one as long as alone within 10 % (the German unit:
+"Mein Computer", not "OK button" -- after a ^X cut it spells a lone "OK", its rules' quirk); the dialog's settings
+leaving a Mockingboard byte for byte as it was (none of them are its) and changing a Braille unit (its inflection is
+one); 11025 and 44100 Hz half and twice the samples -- and the x64 and
 x86 widths byte-identical throughout (-msse2 -mfpmath=sse), the cut audio as far as both go.
 
     python sapi/test_native.py [--arch x64|x86|both] [--only <session>]      default both, every session
@@ -78,7 +81,9 @@ TEXTS = {
            "1.234.567"],
 }
 # the voices with no Python reference, held to themselves (own_checks)
-NATIVE_ONLY = ["mockingboard:mockingboard", "mockingboard:early"]
+NATIVE_ONLY = ["mockingboard:mockingboard", "mockingboard:early", "blazie:blazie_de", "blazie:blazie_it",
+               "blazie:blazie_sk"]
+OWN_AFTER = {"blazie:blazie_de": "Mein Computer"}   # the text alone and after the cancel (else "OK button")
 OWN = [("default", TEXTS["en"][0], 50, 50), ("numbers and money", TEXTS["en"][1], 50, 50),
        ("faster, higher", TEXTS["en"][0], 75, 60), ("slowest, highest", TEXTS["en"][0], 0, 100),
        ("lowest", TEXTS["en"][0], 50, 0), ("long", LONG_EN, 50, 50), ("OK button", "OK button", 50, 50)]
@@ -269,17 +274,18 @@ def numbers_checks(side, unset, on, off, requests):
 
 def own_play(cmd, voice, items, cancel=False):
     """A NATIVE_ONLY voice's utterances on one fresh native host: {label: (status, pcm)}; with cancel, LONG_EN cut
-    after 15 chunks ("cut") and "OK button" after it ("after the cancel")."""
+    after 15 chunks ("cut") and "OK button" (OWN_AFTER's text) after it ("after the cancel")."""
     c = Client(cmd)
     out = {}
+    after = OWN_AFTER.get(voice, "OK button")
     try:
         for label, text, rate, pitch in items:
-            c.send(voice, text, rate, pitch)
+            c.send(voice, after if label == "OK button" else text, rate, pitch)
             out[label] = c.response()
         if cancel:
             seq = c.send(voice, LONG_EN)
             out["cut"] = c.response(15, seq)
-            c.send(voice, "OK button")
+            c.send(voice, after)
             out["after the cancel"] = c.response()
     finally:
         c.close()
@@ -312,9 +318,14 @@ def own_checks(voice, runs):
         add(ok, a, "after the cancel against alone", "%.2f s against %.2f s" % (n["after the cancel"] / 22050,
                                                                                n["OK button"] / 22050))
         g = runs[a, "dialog"]
+        theirs = voice.startswith("blazie:")          # the Braille units' inflection is in the dialog
         for k in g:
-            add(g[k] == r[k], a, "dialog settings, " + k, "the same as without them" if g[k] == r[k] else
-                "CHANGED by settings that are not its")
+            if theirs:
+                add(g[k] != r[k] and g[k][0] == 0 and bool(voiced(g[k][1])), a, "dialog settings, " + k,
+                    "changed by them (its inflection off)" if g[k] != r[k] else "the SAME: its settings ignored")
+            else:
+                add(g[k] == r[k], a, "dialog settings, " + k, "the same as without them" if g[k] == r[k] else
+                    "CHANGED by settings that are not its")
         for rate, f in (("11025", 0.5), ("44100", 2.0)):
             st, pcm = runs[a, rate]["default"]
             ok = st == 0 and voiced(pcm) and abs(len(pcm) / 2 - f * n["default"]) <= 0.02 * f * n["default"]

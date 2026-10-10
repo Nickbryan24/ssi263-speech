@@ -68,11 +68,13 @@ object SsiImport {
     fun inspect(ctx: Context, source: Source): FirmwareImport.Plan =
         FirmwareImport.inspect(source.name, read(source), SsiData.staging(ctx), NativeIdentify)
 
-    fun probeText(language: Int) = if (language == FirmwareImport.SPANISH) "Hola." else "Hello."
+    /** What the import's check says, in the unit's language (test_android_native's LANGS probe the same words). */
+    fun probeText(language: Int) = when (language) {
+        FirmwareImport.SPANISH -> "Hola."; FirmwareImport.GERMAN -> "Hallo."; FirmwareImport.ITALIAN -> "Ciao."
+        FirmwareImport.SLOVAK -> "Ahoj."; else -> "Hello." }
 
     /** The unit's name in the import's messages. */
-    fun unitName(language: Int) =
-        if (language in FirmwareImport.NO_STATE) FirmwareImport.languageName(language) else "${FirmwareImport.languageName(language)} Braille Lite"
+    fun unitName(language: Int) = FirmwareImport.unitName(language)
 
     class Cancelled : IOException("cancelled")
 
@@ -90,8 +92,8 @@ object SsiImport {
         @Volatile private var making = 0.0
         private val total: Double = plan.found.sumOf { weight(it.language).toDouble() }.coerceAtLeast(1.0)
 
-        /** English's state is 150 million instructions, Spanish's 1150 million; the Speak-Out and the Mockingboard
-         * have no state to make, only their check. */
+        /** English's state is 150 million instructions, Spanish's 1150 million, German's, Italian's and Slovak's
+         * English's runs (150 million); the Speak-Out and the Mockingboard have no state to make, only their check. */
         private fun weight(language: Int) = when (language) {
             FirmwareImport.SPANISH -> 1150; in FirmwareImport.NO_STATE -> 15; else -> 150 }
 
