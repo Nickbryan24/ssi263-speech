@@ -21,7 +21,9 @@ What it is made of (plan(), written beside it as MANIFEST.json):
         replacement (it fails when REV's text is not found once); their text is in the key.  0.8: the Braille Lite's
         end tail (a last sound still decaying when the unit is done is rendered on, up to TAIL_MAX_S: the German
         unit's blip, Tomi) -- without it the Spanish voice, whose last sounds decay, ends a block earlier than the
-        native voices and every utterance after it starts from another chip state
+        native voices and every utterance after it starts from another chip state; and the Speak-Out's cancel
+        ending with a CR (the firmware's rules kept a cut word's context: "Hello" after "Custom ..." cut after K HF
+        read with an extra UH)
 The folder's name is the hash of that list with every file's own bytes (REV's by their git blob ids, this tree's by
 SHA-256): any changed binary, firmware or package file -- rebuilt from unchanged sources or not -- makes a new
 reference rather than reusing one made over other bytes.  A test points fake_nvda_driver_test.py at a folder by
@@ -64,8 +66,22 @@ TAIL_START_NEW = """            unit.say(lines)
             while not self._cancelFlag.is_set():
                 y = unit.run(BLOCK_S)
 """
+SO_CANCEL_OLD = """        while t < limit and self.busy():
+            self.skip(0.02)
+            t += 0.02
+
+    def skip(self, seconds, step=0.002):
+"""
+SO_CANCEL_NEW = """        while t < limit and self.busy():
+            self.skip(0.02)
+            t += 0.02
+        self.say("\\r")                     # 0.8's cancel: a line's end (the rules' word context)
+
+    def skip(self, seconds, step=0.002):
+"""
 # {REV's file: [(old, new)]}: each old text must be found exactly once in REV's file
-FIXES = {"nvda/blazie/synthDrivers/blazie.py": [(TAIL_START_OLD, TAIL_START_NEW), (TAIL_OLD, TAIL_NEW)]}
+FIXES = {"nvda/blazie/synthDrivers/blazie.py": [(TAIL_START_OLD, TAIL_START_NEW), (TAIL_OLD, TAIL_NEW)],
+         "src/hosts/speakout.py": [(SO_CANCEL_OLD, SO_CANCEL_NEW)]}
 ENGINE_INIT = ('"""The %s\'s engine package: this tree\'s chip under 0.7.0\'s drivers '
                '(nvda/tools/legacy_drivers.py)."""\n' % NAME)
 INIT_CODE = ("import hashlib, pickle, sys; sys.path.insert(0, %r)\n"
@@ -108,6 +124,7 @@ def _addon(addon):
         items = [(sd + "/speakout.py", "rev", "nvda/speakout/synthDrivers/speakout.py")] + _engine(eng)
         items += [(eng + "/" + d, "rev", "src/hosts/" + s) for s, d in (
             ("speakout.py", "speakout_host.py"), ("speakout_v40.py", "speakout_v40.py"), ("x86_api.py", "x86_api.py"))]
+        items = [(d, "fix" if s == "src/hosts/speakout.py" else k, s) for d, k, s in items]
         items += [(eng + "/bin/%s/speakout_v40.dll" % a, "tree", "nvda/dist/speakout-lib/%s/speakout_v40.dll" % a)
                   for a in ARCHES]
         items.append((eng + "/SPEAKOUT.HEX", "tree", "firmware/gw-micro-speakout/SPEAKOUT.HEX"))

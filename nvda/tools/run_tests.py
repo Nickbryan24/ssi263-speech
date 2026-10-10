@@ -79,7 +79,8 @@ if NATIVE_BUILT:
                         [PY, "native_driver_equiv.py"]))
     CHECKS.append(check("native drivers CONTROL (the job re-begun per text, must fail)", [PY, "native_driver_equiv.py"],
                         env={"NATIVE_EQUIV_BREAK": "per-text"}, expect_fail=True,
-                        fail_marks=[r"^same  speakout plain ", r"^DIFF  speakout indexes ", r"^DIFF  mini indexes ",
+                        # (speakout indexes reads the same since 0.8's cancel CR: the word context it lost was that)
+                    fail_marks=[r"^same  speakout plain ", r"^DIFF  speakout pieces apart ", r"^DIFF  mini indexes ",
                                     r"^DIFF  sa indexes ", r"^DIFF  speakout capital over an index ", NATIVE_EQ_SUM]))
     CHECKS.append(check("native drivers CONTROL (cancel one block late, must fail)", [PY, "native_driver_equiv.py"],
                         env={"NATIVE_EQUIV_BREAK": "cancel"}, expect_fail=True,
@@ -1281,6 +1282,17 @@ if os.path.isfile(os.path.join(SO_LIB, "test_v40_contract.exe")):
                             [os.path.join(SO_LIB, "so_render.exe"), SO_HEX, "Testing one two three.",
                              os.path.join(HERE, "out", "so_render_test.wav")],
                             ok=lambda out: bool(re.search(r"^[1-9]\d*\.\d\d s of audio in ", out, re.M))))
+    # the text after a cancel reads as alone (test_so_cancel.c: "Custom ..." cut after each of its first 8 phonemes,
+    # then "Hello there ..."); the control, the cancel without its CR, gives the extra UH after cuts 2 and 3
+    # (complete_fuzz speakout's step 12 under the suite's load)
+    if os.path.isfile(SO_HEX) and os.path.isfile(os.path.join(SO_LIB, "test_so_cancel.exe")):
+        CHECKS.append(check("Speak-Out: the text after a cancel reads as alone",
+                            [os.path.join(SO_LIB, "test_so_cancel.exe"), SO_HEX]))
+        CHECKS.append(check("Speak-Out: cancel CONTROL (no CR after the ^X, must fail)",
+                            [os.path.join(SO_LIB, "test_so_cancel_old.exe"), SO_HEX], expect_fail=True,
+                            fail_marks=[r"^ok +cut after K: ", r"^FAIL cut after K HF: HF EH EH LF LF UH O O U",
+                                        r"^FAIL cut after K HF UH: HF EH EH LF LF UH O O U",
+                                        r"^ok +cut after K HF UH UH UH S T HF: ", r"^cancel: FAILED$"]))
 
 # The Accent SA in C (src/csrc/accentsa: its board on MAME's 8085 and accent_sa.py's host; the add-on's default since
 # 0.7, SSI263_ACCENT_SA_CORE=c; the Python 8085 is the development reference): the board's rules (test_as_board.c; their must-fail

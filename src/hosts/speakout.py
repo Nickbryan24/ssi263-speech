@@ -266,6 +266,9 @@ class SpeakOut:
         while t < limit and self.busy():
             self.skip(0.02)
             t += 0.02
+        # 0.8: then a line's end -- the firmware's rules keep a cut word's context through the ^X ("Custom ..." cut
+        # after K HF: the next "Hello" read HF EH EH LF LF UH O O U); a CR ends the word, silently (so_host.c)
+        self.say("\r")
 
     def skip(self, seconds, step=0.002):
         """Run the firmware with the chip keeping time but making no sound."""

@@ -69,6 +69,17 @@ def main():
         (os.path.join(HERE, "so_render.c"), FRONT), (os.path.join(CSRC, "ssi263.c"), CHIP),
         (os.path.join(CSRC, "ssi263dsp.c"), CHIP)])
     subprocess.run([gxx] + LINK + ["-o", os.path.join(OUT, "so_render.exe")] + objs, env=env, check=True)
+    # the text after a cancel (test_so_cancel.c), and its control: so_host.c without the cancel's CR
+    lib = [o for o in objs if os.path.basename(o) != "so_render.o"]
+    t = os.path.join(OUT, "obj_render", "test_so_cancel.o")
+    subprocess.run([gcc] + FRONT + ["-I" + CPU, "-I" + HERE, "-I" + CSRC, "-c", "-o", t,
+                    os.path.join(HERE, "test_so_cancel.c")], env=env, check=True)
+    subprocess.run([gxx] + LINK + ["-o", os.path.join(OUT, "test_so_cancel.exe"), t] + lib, env=env, check=True)
+    old = os.path.join(OUT, "obj_render", "so_host_nocr.o")
+    subprocess.run([gcc] + CC + ["-DSO_NO_CANCEL_CR", "-I" + CPU, "-I" + HERE, "-c", "-o", old,
+                    os.path.join(HERE, "so_host.c")], env=env, check=True)
+    subprocess.run([gxx] + LINK + ["-o", os.path.join(OUT, "test_so_cancel_old.exe"), t]
+                   + [old if os.path.basename(o) == "so_host.o" else o for o in lib], env=env, check=True)
     # per architecture: the board as a DLL (what the add-on ships), and the board, host and voice importing ssi263.dll
     for arch, (key, extra) in ARCHES.items():
         bindir = repo_paths.bin_dir(key, path_fallback=(arch == "x64"))

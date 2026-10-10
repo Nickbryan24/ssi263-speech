@@ -12,6 +12,9 @@
 #include "../numwords.h"
 
 static const unsigned char CTRL_X[] = {0x18};
+#ifndef SO_NO_CANCEL_CR
+static const unsigned char CR[] = {0x0D};                  /* soh_cancel's line end */
+#endif
 
 struct so_host {
     so_board *b;
@@ -293,6 +296,13 @@ SO_API void soh_cancel(so_host *h, double limit)
         soh_skip(h, 0.02, 0.002);
         t += 0.02;
     }
+    /* 0.8: then a line's end.  The firmware's rules keep a cut word's context through the ^X: "Custom number
+       processing" cut after K HF (or K HF UH), the next "Hello" was read "HF EH EH LF LF UH O O U", an extra UH
+       (complete_fuzz speakout, step 12).  A CR ends the word: silent (the firmware loads nothing for it), and every
+       cut point then reads the next text as alone; a space does not (test_so_cancel.c). */
+#ifndef SO_NO_CANCEL_CR                                      /* test_so_cancel's must-fail control: as before 0.8 */
+    soh_say(h, CR, 1);
+#endif
 }
 
 SO_API int soh_fault(const so_host *h)
