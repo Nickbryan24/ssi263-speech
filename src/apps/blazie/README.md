@@ -289,6 +289,22 @@ Type 'n Speak's first start, the Braille Lite's reset -- is ~46 s of clicks, the
 "ready". A Braille Lite state is 768 KB (256 KB RAM + the flash's first 512 KB) while the rest of the flash is erased,
 2.25 MB once files reach it; both load.
 
+## The firmware update
+
+Since 0.8 the Braille Lite 2000 takes Blazie's own firmware updates, as Blazie's update guide gives them. Its program
+lives in a second flash chip, the "super flash": two banks, each a whole firmware, p-chord l switching between them.
+Put the update program (a `.bns`, such as `lite2000.bns`) into the unit's files -- over the serial port with YMODEM,
+or with Files > Import -- and run it with o-chord x, its name, e-chord, from the folder it is in (a file in flash
+needs "allow folder mode", status menu item 43, to move into the flash folder first). It speaks its own language:
+answer its questions, and when it asks which bank, b keeps your first language as it was (Blazie's advice). It checks
+the file for about 30 s, then erases the bank and programs it, clicking every few seconds, about two minutes; a steady
+tone means success (rapid beeping would mean it failed). Then close the program and start it again -- the unit, like
+a real one switched off and on, starts in bank a -- and p-chord l switches to the new firmware. Your files are kept.
+
+The emulator keeps the updated bank beside the unit's memory, as `english.state.program` (or `spanish`), and puts it
+back each time it starts that unit; Back to the factory state removes it. Only an update into bank b is kept: the
+unit's first bank must stay the firmware the emulator loads.
+
 ## Licence
 
 MIT (`LICENSE` beside the program), so it can be ported (to another screen-reader platform, a Linux device, ...),

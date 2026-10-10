@@ -1103,7 +1103,8 @@ chosen:
         case 5: {
             char path[PATH_MAX];
             emu_unit *old;
-            say("Put the %s back as it left the factory? Its files and settings are erased. Type yes:",
+            say("Put the %s back as it left the factory? "
+                "Its files and settings are erased, and a firmware update it was given. Type yes:",
                 KINDS[g_kind].name);
             read_line(line, sizeof line);
             if (strcmp(line, "yes")) {
@@ -1117,6 +1118,10 @@ chosen:
             emu_destroy(old);
             saved_path(g_kind, path, sizeof path);
             unlink(path);
+            if (strlen(path) + 9 <= sizeof path) {   /* and the program flash an update wrote (emu_save) */
+                strcat(path, ".program");
+                unlink(path);
+            }
             start_unit(g_kind, NULL);
             goto done;
         }

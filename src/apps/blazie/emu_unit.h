@@ -68,8 +68,16 @@ extern int emu_bars_break;
 /* the most cells emu_braille gives (bl_display.h BLD_MAX_CELLS) */
 #define EMU_CELLS 40
 /* saves what the unit keeps while switched off (its files and settings, its clock), in the state format emu_create
-   reads; 1 on success */
+   reads; 1 on success.  The Braille Lite's program flash too, once a firmware update has written its other bank
+   (bl_board.h bl_program_flash): beside the state as PATH.program (both banks, 512 KB), which emu_create puts back
+   when its bank a is the firmware it loads -- an update into bank b, Blazie's way, the unit still booting in bank a
+   and p-chord l reaching the update.  (A bank-a update is not kept: the board finds its code sites in bank a.)  A
+   PATH.program of this firmware whose bank b matches bank a again is removed; one of another firmware is left.  A
+   PATH ending in ".new" (a state written first and then put in place, as the Linux apps save) keeps its program
+   beside the name without ".new". */
 int emu_save(emu_unit *u, const char *path);
+/* the Braille Lite's program flash, bank a then bank b (0 for the Type 'n Speak): tests */
+long emu_program_flash(emu_unit *u, unsigned char **data);
 /* The unit's clock controller (../../csrc/blazie/bl_clock.h): emu_create switches it on, going on from the clock
    saved in the state (plus the time the unit was switched off: the controller keeps time on its battery) or, with
    none saved, starting at the host's local time -- the year as the unit can hold it (1989-2020: a later year goes

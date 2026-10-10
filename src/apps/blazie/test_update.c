@@ -20,7 +20,13 @@
  * after a power-on with that program flash (bl_program_flash), p-chord l restarts the unit into bank b, which then
  * speaks as the update's own unit starting (its first phonemes), not as the English one.
  *
- * Must fail: test_update_break.exe, built with BLAZIE_PROGRAM_FLASH_BREAK (the program flash's writes dropped, as
+ * Then the emulator keeping it (emu_unit.h emu_save): a unit with that program flash saves STATE.program beside its
+ * state, byte for byte -- saved as the Linux apps save (STATE.new, then put in place), beside the final name; a unit started from that state has bank b back; with bank b made bank a again, the save
+ * removes the file; and a .program made for another firmware (its bank a not this one's) is neither applied nor
+ * removed.
+ *
+ * Must fail: test_update_nokeep.exe, built with EMU_NO_PROGRAM_KEEP (nothing kept, nothing put back: the keeping
+ * checks fail, the update's pass); test_update_break.exe, built with BLAZIE_PROGRAM_FLASH_BREAK (the program flash's writes dropped, as
  * before 0.8: the update fails, bank b stays English); test_update_single.exe, built with FLASH29_NO_MULTI (a sector
  * erase takes no further sectors: three of the bank's sectors are never erased and their bytes cannot be programmed).
  */
@@ -37,6 +43,7 @@
 #include "../../csrc/blazie/bl_board.h"
 #include "../../csrc/blazie/bl_files.h"
 #include "../../csrc/blazie/bl_files_state.h"
+#include "emu_unit.h"
 
 #define STEP_CYCLES 122880ULL                /* 20 ms of the Braille Lite's 6.144 MHz */
 #define ROM_OFFSET 0x3000L                   /* the .BNS's program image starts here (bl_board.c FILE_ROM_OFFSET) */
@@ -198,6 +205,81 @@ static int script(int *keys, double *at)
     return n;
 }
 
+/* ---- the emulator keeping an updated bank (emu_save, emu_create) -------------------------------------------- */
+static long file_size(const char *path)
+{
+    long n = -1;
+    FILE *f = fopen(path, "rb");
+    if (f && fseek(f, 0, SEEK_END) == 0)
+        n = ftell(f);
+    if (f)
+        fclose(f);
+    return n;
+}
+
+static void keep_checks(const char *fw, const char *state, const unsigned char *updated, const unsigned char *other_a)
+{
+    char err[256], d[300], st[64], st_new[72], prog[80], prog_new[96];
+    unsigned char *pf, *file;
+    long n, m = 0;
+    int same;
+    emu_unit *u;
+    snprintf(st, sizeof st, "test_update_keep.%d.state", (int)_getpid());
+    snprintf(prog, sizeof prog, "%s.program", st);
+    snprintf(st_new, sizeof st_new, "%s.new", st);
+    snprintf(prog_new, sizeof prog_new, "%s.program", st_new);
+    remove(prog);
+    /* a unit with the updated program flash, saved */
+    u = emu_create(EMU_BRAILLE_LITE, fw, state, 22050.0, 0, err, sizeof err);
+    if (!u) { printf("FAIL emu_create: %s\n", err); failures++; return; }
+    n = emu_program_flash(u, &pf);
+    memcpy(pf, updated, (size_t)n);
+    emu_save(u, st_new);                     /* as the Linux apps save: NAME.new, then put in place */
+    remove(st);
+    rename(st_new, st);
+    emu_destroy(u);
+    file = read_all(prog, &m);
+    same = file && m == n && memcmp(file, updated, (size_t)n) == 0;
+    snprintf(d, sizeof d, "%s: %ld bytes%s%s", prog, file ? m : -1L, same ? ", the program flash byte for byte" : "",
+             file_size(prog_new) >= 0 ? "; ALSO under the temporary name" : "");
+    check("kept beside the state", same && file_size(prog_new) < 0, d);
+    remove(prog_new);
+    free(file);
+    /* started again from that state: bank b back */
+    u = emu_create(EMU_BRAILLE_LITE, fw, st, 22050.0, 0, err, sizeof err);
+    if (!u) { printf("FAIL emu_create: %s\n", err); failures++; return; }
+    emu_program_flash(u, &pf);
+    same = memcmp(pf + n / 2, updated + n / 2, (size_t)n / 2) == 0;
+    snprintf(d, sizeof d, "bank b %s the updated one", same ? "is" : "is NOT");
+    check("put back on the next start", same, d);
+    /* bank b made bank a again (the update undone), saved: the file goes */
+    memcpy(pf + n / 2, pf, (size_t)n / 2);
+    emu_save(u, st);
+    emu_destroy(u);
+    snprintf(d, sizeof d, "%s: %s", prog, file_size(prog) < 0 ? "removed" : "STILL THERE");
+    check("removed when the update is undone", file_size(prog) < 0, d);
+    /* a .program of another firmware: not applied, not removed */
+    file = (unsigned char *)malloc((size_t)n);
+    memcpy(file, other_a, (size_t)n / 2);
+    memcpy(file + n / 2, updated + n / 2, (size_t)n / 2);
+    {
+        FILE *f = fopen(prog, "wb");
+        if (f) { fwrite(file, 1, (size_t)n, f); fclose(f); }
+    }
+    u = emu_create(EMU_BRAILLE_LITE, fw, st, 22050.0, 0, err, sizeof err);
+    if (!u) { printf("FAIL emu_create: %s\n", err); failures++; free(file); return; }
+    emu_program_flash(u, &pf);
+    same = memcmp(pf + n / 2, pf, (size_t)n / 2) == 0;
+    emu_save(u, st);
+    emu_destroy(u);
+    snprintf(d, sizeof d, "bank b %s; the file %s", same ? "left as bank a" : "TAKEN from it",
+             file_size(prog) == n ? "kept" : "GONE");
+    check("another firmware's file left alone", same && file_size(prog) == n, d);
+    free(file);
+    remove(prog);
+    remove(st);
+}
+
 int main(int argc, char **argv)
 {
     char d[400], path[64];
@@ -295,6 +377,8 @@ int main(int argc, char **argv)
             printf(" %02X", wu.phones[i]);
         printf("\n");
     }
+    /* the emulator keeping it: the updated flash as it came out; another firmware's bank a = the update's image */
+    keep_checks(argv[1], argv[2], saved, want_b);
     remove(path);
     printf("update: %s\n", failures ? "FAILED" : "all passed");
     return failures ? 1 : 0;

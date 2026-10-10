@@ -145,6 +145,10 @@ def main():
     link("test_update.exe", [upd] + unit + files)
     link("test_update_break.exe", [upd] + chip + board("pf_break") + [emu, chords, setup] + files)
     link("test_update_single.exe", [upd] + chip + board("single") + [emu, chords, setup] + files)
+    # ... and the emulator not keeping an updated bank (emu_unit.c EMU_NO_PROGRAM_KEEP)
+    emu_nokeep = compile_c(os.path.join(HERE, "emu_unit.c"), APP, name="emu_unit_nokeep",
+                           defines=("EMU_NO_PROGRAM_KEEP",))
+    link("test_update_nokeep.exe", [upd] + chip + board() + [emu_nokeep, chords, setup] + files)
     # files in and out against the units' own commands (test_files.c; its controls: --break=N)
     link("test_files.exe", [compile_c(os.path.join(HERE, "test_files.c"), APP)] + unit + files)
     # Blazie's games run from the unit's files (test_games.c; RetroBunn, PR #9: Simon); its control: TEST_GAMES_BREAK

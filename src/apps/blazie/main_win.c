@@ -955,7 +955,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         case ID_FACTORY: {
             char path[MAX_PATH];
             emu_unit *old;
-            if (MessageBoxA(w, "Put this unit back as it left the factory? Its files and settings are erased.",
+            if (MessageBoxA(w, "Put this unit back as it left the factory? Its files and settings are erased, and a "
+                            "firmware update it was given.",
                             "Blazie emulator", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
                 return 0;
             EnterCriticalSection(&g_lock);
@@ -965,6 +966,10 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             emu_destroy(old);
             saved_path(g_kind, path, sizeof path);
             DeleteFileA(path);
+            if (strlen(path) + 9 <= sizeof path) {   /* and the program flash an update wrote (emu_save) */
+                strcat(path, ".program");
+                DeleteFileA(path);
+            }
             start_unit(g_kind);
             return 0;
         }

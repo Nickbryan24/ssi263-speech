@@ -988,6 +988,11 @@ BL_API int bh_memory(const bl_host *h, int which, const unsigned char **bytes)
     return bl_memory(h->unit, which, bytes);
 }
 
+BL_API long bh_program_flash(bl_host *h, unsigned char **data, unsigned long *writes)
+{
+    return bl_program_flash(h->unit, data, writes);
+}
+
 BL_API int bh_braille(const bl_host *h, unsigned char *cells, int capacity)
 {
     return bl_braille(h->unit, cells, capacity);

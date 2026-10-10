@@ -1294,7 +1294,8 @@ static void do_factory(int unused)
     char path[PATH_MAX], q[300];
     emu_unit *old;
     (void)unused;
-    snprintf(q, sizeof q, "Put the %s back as it left the factory? Its files and settings are erased.",
+    snprintf(q, sizeof q, "Put the %s back as it left the factory? "
+                          "Its files and settings are erased, and a firmware update it was given.",
              KINDS[g_kind].name);
     if (!ask_yes_no("Back to the factory state", q))
         return;
@@ -1306,6 +1307,10 @@ static void do_factory(int unused)
     emu_destroy(old);
     saved_path(g_kind, path, sizeof path);
     unlink(path);
+    if (strlen(path) + 9 <= sizeof path) {   /* and the program flash an update wrote (emu_save) */
+        strcat(path, ".program");
+        unlink(path);
+    }
     if (start_unit(g_kind))
         set_status(1, "The %s is as it left the factory.", KINDS[g_kind].name);
 }

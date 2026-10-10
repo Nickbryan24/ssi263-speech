@@ -27,6 +27,86 @@
 
 void ssi_onepole(double *x, int n, double b0, double b1, double a1, double *state);   /* ssi263dsp.c */
 
+/* ---- the program flash kept beside the state (emu_unit.h emu_save) ---------------------------------------------- */
+/* STATE.program -- for a state written as NAME.new and then put in place (the Linux apps: whole or not at all),
+   beside NAME, the name it will have */
+static void program_path(char *out, size_t n, const char *state)
+{
+    size_t k = strlen(state);
+    if (k > 4 && !strcmp(state + k - 4, ".new"))
+        k -= 4;
+    snprintf(out, n, "%.*s.program", (int)k, state);
+}
+
+/* the file's 512 KB if it is a whole program flash (else NULL; the caller frees it) */
+static unsigned char *program_read(const char *path, long n)
+{
+    FILE *f = fopen(path, "rb");
+    unsigned char *p = f ? (unsigned char *)malloc((size_t)n) : NULL;
+    if (p && (fread(p, 1, (size_t)n, f) != (size_t)n || fgetc(f) != EOF)) {
+        free(p);
+        p = NULL;
+    }
+    if (f)
+        fclose(f);
+    return p;
+}
+
+/* a bank the firmware update wrote, put back: the file's bank a must be the one this firmware loaded */
+static void program_restore(bl_host *h, const char *state)
+{
+    char path[1024];
+    unsigned char *pf, *saved;
+    long n = bh_program_flash(h, &pf, NULL);
+#ifdef EMU_NO_PROGRAM_KEEP                  /* test_update's must-fail control: nothing put back, nothing kept */
+    return;
+#endif
+    if (!state || n <= 0)
+        return;
+    program_path(path, sizeof path, state);
+    saved = program_read(path, n);
+    if (saved && memcmp(saved, pf, (size_t)n / 2) == 0)
+        memcpy(pf + n / 2, saved + n / 2, (size_t)n / 2);
+    free(saved);
+}
+
+/* after a save: an updated bank b written beside the state (as NAME.new, then put in place); a file of ours (its bank
+   a this firmware's) whose update was undone removed; a file for another firmware left alone.  1 on success. */
+static int program_keep(bl_host *h, const char *state)
+{
+    char path[1024], tmp[1040];
+    unsigned char *pf, *old;
+    long n = bh_program_flash(h, &pf, NULL);
+    int ok;
+    FILE *f;
+#ifdef EMU_NO_PROGRAM_KEEP
+    return 1;
+#endif
+    if (n <= 0)
+        return 1;
+    program_path(path, sizeof path, state);
+    if (memcmp(pf, pf + n / 2, (size_t)n / 2) != 0) {
+        snprintf(tmp, sizeof tmp, "%s.new", path);
+        ok = (f = fopen(tmp, "wb")) != NULL;
+        if (ok) {
+            ok = fwrite(pf, 1, (size_t)n, f) == (size_t)n;
+            ok = (fclose(f) == 0) && ok;
+        }
+        if (ok) {
+            remove(path);                    /* (Windows' rename will not replace a file) */
+            ok = rename(tmp, path) == 0;
+        }
+        if (!ok)
+            remove(tmp);
+        return ok;
+    }
+    old = program_read(path, n);
+    if (old && memcmp(old, pf, (size_t)n / 2) == 0)
+        remove(path);
+    free(old);
+    return 1;
+}
+
 static long long g_fake_now = -1;   /* emu_fake_host_time */
 
 /* the host's local time as a calendar time, and its seconds since 1970 (for the time a unit was switched off) */
@@ -185,6 +265,7 @@ emu_unit *emu_create(int kind, const char *firmware, const char *state, double o
                 bh_destroy(u->host); ssi263_free(u->chip); free(u); return NULL;
             }
         }
+        program_restore(u->host, state);   /* a bank an earlier firmware update wrote (the unit boots in bank a) */
     }
     emu_set_flash_timed(u, 1);      /* erases take the chip's time: the unit chirps while it initialises its flash */
     u->out_rate = out_rate;
@@ -401,7 +482,14 @@ int emu_save(emu_unit *u, const char *path)
         return tns_save_state(u->tns, path);
     }
     bh_clock_wall(u->host, secs);
-    return bh_save_state(u->host, path);
+    return bh_save_state(u->host, path) && program_keep(u->host, path);
+}
+
+long emu_program_flash(emu_unit *u, unsigned char **data)
+{
+    if (!u->host)
+        return 0;
+    return bh_program_flash(u->host, data, NULL);
 }
 
 void emu_keys_down(emu_unit *u, int bits)

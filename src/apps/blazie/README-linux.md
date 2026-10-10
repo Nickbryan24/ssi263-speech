@@ -191,7 +191,8 @@ held at power-on) asks how to set itself up, and the program says so. Press y fo
 s), seven times: initialize file system, are you sure; initialize flash system, are you sure (then the flash chip's
 ~46 seconds of clicks); initialize folder system (it says it is ready and opens its help); delete all data in file
 area, are you sure (then about 35 seconds of silence while it clears its memory, and it starts again). README.md,
-"The Type 'n Speak's first start", says why each one matters.
+"The Type 'n Speak's first start", says why each one matters. A Braille Lite given a firmware update keeps the
+updated bank beside its memory as `english.state.program` (README.md, "The firmware update").
 
 A Type 'n Speak saved by the 0.6 or 0.7 previews was never set up (their first start missed the unit's cold reset:
 a new file lost its first letter, a file moved to flash was lost). When such a unit starts, the program says so and

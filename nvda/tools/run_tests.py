@@ -595,7 +595,8 @@ if os.path.isfile(CLOCK):
 # the firmware update (src/apps/blazie/test_update.c; Fireborn, Tomi: "it rapidly beeps after starting the update"):
 # the German update program run on the English unit into the program flash's second bank -- it ends on its steady
 # tone, bank a stays English and bank b is the German image byte for byte, and after a power-on p-chord l starts the
-# unit in German.  Controls: the program flash's writes dropped (as before 0.8) and a sector erase taking no more
+# unit in German; and the emulator keeps that bank beside its state (emu_save's STATE.program) and puts it back.
+# Controls: the program flash's writes dropped (as before 0.8), the bank not kept, and a sector erase taking no more
 # sectors, each failing where it must.
 UPDATE = os.path.join(EMU, "test_update.exe")
 UPD_DE = [os.path.join(ENG, n) for n in ("Lite2000_de.BNS", "lite2000_de_fresh.state")]
@@ -607,6 +608,11 @@ if os.path.isfile(UPDATE) and all(os.path.isfile(p) for p in UPD_DE):
                         fail_marks=[r"^FAIL the update ends on its tone .*; 0 program flash writes$",
                                     r"^ok +bank a: the English unit, untouched",
                                     r"^FAIL p-chord l starts the updated bank .*AS the English one's$",
+                                    r"^update: FAILED$"]))
+    CHECKS.append(check("Blazie emulator: firmware update CONTROL (an updated bank not kept, must fail)",
+                        [os.path.join(EMU, "test_update_nokeep.exe")] + UPD_ARGS, expect_fail=True,
+                        fail_marks=[r"^ok +bank b: the update's image ", r"^FAIL kept beside the state ",
+                                    r"^FAIL put back on the next start +bank b is NOT the updated one",
                                     r"^update: FAILED$"]))
     CHECKS.append(check("Blazie emulator: firmware update CONTROL (one sector per erase, must fail)",
                         [os.path.join(EMU, "test_update_single.exe")] + UPD_ARGS, expect_fail=True,

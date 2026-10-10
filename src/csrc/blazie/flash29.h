@@ -14,7 +14,7 @@
  * while it waits (the Blazie units chirp through the speech chip during an erase).  hz = 0: every operation is done
  * at once (the screen-reader drivers and their state recipes, which press keys at fixed instruction counts).
  *
- * Multi-sector erase (both data sheets): after a sector erase's 30h, more 30h writes within the sector erase
+ * Multi-sector erase (the data sheets): after a sector erase's 30h, more 30h writes within the sector erase
  * time-out (FLASH29_SECTOR_WINDOW_S, from the last one) add their sectors to the same erase; the status reads DQ3 = 0 while that
  * window is open, 1 once the erase runs.  The Braille Lite 2000's firmware update erases its program bank's four
  * sectors so.  With hz = 0 the window stays open until any other write.  (A command other than 30h inside the window
@@ -43,10 +43,12 @@ typedef struct {
 #define FLASH29_SECTOR_ERASE_S 1.0
 #define FLASH29_CHIP_ERASE_S 32.0
 #define FLASH29_PROGRAM_S 7e-6
-/* The sector erase time-out: more sectors may be added within it.  The data sheets give 50 us; the Braille Lite's
-   update writes its four 30h 457 cycles apart (74.4 us on this board's 6.144 MHz, measured) and works on real units,
-   so the real window is longer than that, or the real loop faster: 100 us here (with 50, its update erased one
-   sector and failed at 10000h -- test_update.c). */
+/* The sector erase time-out: more sectors may be added within it.  AMD's original Am29F040 data sheet (publication
+   17113 Rev. D, November 1995, Sector Erase, printed page 1-108) asks for less than 80 us between additional sector
+   commands, and the same page's automatic-start paragraph says 100 us (Astra, Reply 167); the Braille Lite's update
+   writes its four 30h 457 cycles apart, 74.4 us on this board's 6.144 MHz (measured), within that.  100 us here;
+   with 50 (a figure for other parts) its update erased one sector and failed at 10000h -- test_update.c.  Which
+   revision of the part a given unit carries is not known. */
 #define FLASH29_SECTOR_WINDOW_S 100e-6
 #define FLASH29_CHIP_PROGRAM_S 14.4        /* the whole 2 MB, typical: the erase's preprogramming, pro rata per byte */
 #define FLASH29_CHIP_BYTES 0x200000UL
