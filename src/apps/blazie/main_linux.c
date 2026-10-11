@@ -1040,7 +1040,7 @@ static int choose(const char *title, const char *const *items, int n, int curren
     return k >= 0 && k < n ? k : current;
 }
 
-/* Menu p, Load programs into flash: the files' paths typed one to a line, then added to the flash startup folder as
+/* Menu p, Load programs and files into flash: the files' paths typed one to a line, then added to the flash startup folder as
    one batch, all or nothing (bl_files_xfer.h blx_add_cp), the unit switched off and on once (main_win.c's
    add_programs; blazie_files add does the same on a saved unit) */
 #define ADD_MAX 64
@@ -1087,7 +1087,7 @@ static void load_programs(void)
     blf_fs *fs;
     blx_report r;
     int n = 0, i, busy, ok = 0, got = 0;
-    say("Load programs into flash: type a file's path and Enter, one to a line (~ is your home folder); Enter alone "
+    say("Load programs and files into flash: type a file's path and Enter, one to a line (~ is your home folder); Enter alone "
         "when the list is done.");
     for (;;) {
         read_line(line, sizeof line);
@@ -1179,11 +1179,13 @@ static void load_programs(void)
         fputs(r.log, stdout);
     if (!ok)
         say("Nothing was loaded: %s. The unit's files are as they were.", err);
-    else
-        say("Loaded %d file%s into flash: %d added, %d replaced. Run a program with %s, its name, then %s. (The unit "
-            "as it was before is kept in %s.before-import.)", n, n == 1 ? "" : "s", r.added, r.replaced,
-            KINDS[g_kind].kind == EMU_TYPE_N_SPEAK ? "F9 x" : "o-chord x",
-            KINDS[g_kind].kind == EMU_TYPE_N_SPEAK ? "Enter" : "e-chord", st);
+    else {
+        int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
+        say("Loaded %d file%s into flash: %d added, %d replaced. Run a program with %s, its name, then %s; open a "
+            "document with %s, its name, then %s. (The unit as it was before is kept in %s.before-import.)", n,
+            n == 1 ? "" : "s", r.added, r.replaced, tns ? "F9 x" : "o-chord x", tns ? "Enter" : "e-chord",
+            tns ? "F1 o" : "o-chord f o", tns ? "Enter" : "e-chord", st);
+    }
     blx_report_free(&r);
 done:
     for (i = 0; i < n; i++)
@@ -1241,7 +1243,7 @@ static void menu(void)
         say("  13 Braille Lite keyboard: %s", g_blk.mode == BLK_LETTERS
             ? "letters (each character its braille cell)" : "keys (F D S J K L)");
         say("  14 Keys (help)");
-        say("  p Load programs into flash (.bns): Blazie's programs and games, several at once");
+        say("  p Load programs and files into flash: programs and games (.bns), BASIC, text, braille; several at once");
         for (k = N_FIRST_KINDS; k < N_KINDS; k++)   /* in number order: 15, 16, the sound buffer's 17, 18 on */
             if (kind_offered(k) && kind_menu_number(k) < MENU_BUFFER)
                 say("  %d %s%s", kind_menu_number(k), KINDS[k].name, k == g_kind ? " (on now)" : "");

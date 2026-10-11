@@ -1,5 +1,6 @@
 """blazie_files add: PC files into a saved unit's flash startup folder, one batch, all or nothing (the emulator's
-Firmware > "Load programs into flash", people's ask: Blazie's programs and games without an image or a cable).
+Firmware > "Load programs and files into flash", people's ask: Blazie's programs and games -- and documents,
+braille and BASIC -- without an image or a cable).
 
   1. a program (NUL bytes) and a PC text file (CR LF) added together: both in flash startup, the program byte for
      byte, the text with the unit's lone CR, the file system's rules kept, the unit as it was in .before-import;
@@ -16,6 +17,7 @@ deleted mark) must fail: the unit has no such files, and the batch breaks the fi
 """
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -34,7 +36,7 @@ def check(name, ok, detail):
 
 def run(argv):
     r = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    return r.returncode, r.stdout.decode("utf-8", "replace")
+    return r.returncode, r.stdout.decode("utf-8", "replace").replace("\r\n", "\n")
 
 
 def last(out):
@@ -72,18 +74,33 @@ def main():
         unit = os.path.join(work, "unit.state")
         shutil.copyfile(state, unit)
         prog, text = os.path.join(work, "pc", "Pinball.BNS"), os.path.join(work, "pc", "read me.txt")
+        brl, bas = os.path.join(work, "pc", "Story.BRL"), os.path.join(work, "pc", "guess.bas")
         write(prog, PROGRAM)
         write(text, TEXT)
+        write(brl, b",! qk br{n fox\r\n")
+        write(bas, b'10 PRINT "HELLO"\r\n20 GOTO 10\r\n')
 
-        # 1. the batch
-        rc, out = run([tool, "add", unit, prog, text])
+        # 1. the batch: a program, a text, a braille file and a BASIC program (Tomi: documents, braille files and
+        # BASIC programs loadable too)
+        rc, out = run([tool, "add", unit, prog, text, brl, bas])
         files = extracted(tool, unit, work, "1")
         got_p, got_t = files.get("flash startup/pinball.bns"), files.get("flash startup/read me.txt")
-        check("1. the batch added", rc == 0 and "2 added, 0 rewritten" in out, "exit %d: %s" % (rc, last(out)))
+        check("1. the batch added", rc == 0 and "4 added, 0 rewritten" in out, "exit %d: %s" % (rc, last(out)))
         check("1. the program in flash startup, byte for byte", got_p == PROGRAM,
               "%s bytes" % (len(got_p) if got_p is not None else "no file"))
         check("1. the text in flash startup, its line ends the unit's",
               got_t == b"first line\rsecond line\r", repr(got_t)[:60])
+        rc, listing = run([tool, "list", unit])
+        types = {n: re.search(r"^%s +\d+ bytes +flash folder +1 +type (\w)$" % re.escape(n), listing, re.M)
+                 for n in ("pinball.bns", "read me.txt", "story.brl", "guess.bas")}
+        types = {n: m.group(1) if m else None for n, m in types.items()}
+        check("1. each in flash startup with the unit's type for its name",
+              types == {"pinball.bns": "X", "read me.txt": "A", "story.brl": "B", "guess.bas": "A"},
+              ", ".join("%s %s" % kv for kv in types.items()))
+        check("1. the braille and BASIC files with the unit's line ends",
+              files.get("flash startup/story.brl") == b",! qk br{n fox\r"
+              and files.get("flash startup/guess.bas") == b'10 PRINT "HELLO"\r20 GOTO 10\r',
+              "%r, %r" % (files.get("flash startup/story.brl"), files.get("flash startup/guess.bas")))
         rc, out = run([tool, "check", unit])
         check("1. the file system's rules hold", rc == 0, last(out))
         before = unit + ".before-import"

@@ -1141,23 +1141,32 @@ static void import_files(void)
     blx_report_free(&r);
 }
 
-/* Firmware > Load programs into flash: one or more files chosen together go into the flash startup folder as one
-   batch, all or nothing (bl_files_xfer.h blx_add_cp), the unit switched off and on once (main_win.c's add_programs) */
+/* Firmware > Load programs and files into flash (programs, BASIC, text, braille): one or more files chosen together
+   go into the flash startup folder as one batch, all or nothing (bl_files_xfer.h blx_add_cp), the unit switched off
+   and on once (main_win.c's add_programs) */
 #define ADD_MAX 256
+
+static const char *const DOC_PATTERNS[] = {"*.bns", "*.BNS", "*.bas", "*.BAS", "*.txt", "*.TXT", "*.brl", "*.BRL",
+                                           "*.brf", "*.BRF"};
 
 /* GTK's chooser, several files at once; their paths (g_free each, g_slist_free the list), NULL when cancelled */
 static GSList *add_dialog(void)
 {
-    GtkWidget *d = gtk_file_chooser_dialog_new("Load programs into the unit's flash", GTK_WINDOW(g_win),
+    GtkWidget *d = gtk_file_chooser_dialog_new("Load programs and files into the unit's flash", GTK_WINDOW(g_win),
                                                GTK_FILE_CHOOSER_ACTION_OPEN, "_Cancel", GTK_RESPONSE_CANCEL, "_Load",
                                                GTK_RESPONSE_ACCEPT, NULL);
-    GtkFileFilter *bns = gtk_file_filter_new(), *all = gtk_file_filter_new();
+    GtkFileFilter *docs = gtk_file_filter_new(), *bns = gtk_file_filter_new(), *all = gtk_file_filter_new();
     GSList *files = NULL;
+    int i;
+    gtk_file_filter_set_name(docs, "Programs and documents (*.bns, *.bas, *.txt, *.brl, *.brf)");
+    for (i = 0; i < (int)(sizeof DOC_PATTERNS / sizeof DOC_PATTERNS[0]); i++)
+        gtk_file_filter_add_pattern(docs, DOC_PATTERNS[i]);
     gtk_file_filter_set_name(bns, "Blazie programs (*.bns)");
     gtk_file_filter_add_pattern(bns, "*.bns");
     gtk_file_filter_add_pattern(bns, "*.BNS");
     gtk_file_filter_set_name(all, "All files");
     gtk_file_filter_add_pattern(all, "*");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(d), docs);
     gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(d), bns);
     gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(d), all);
     gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(d), TRUE);
@@ -1214,14 +1223,14 @@ static void add_programs(void)
         }
         if (!data[n]) {
             snprintf(msg, sizeof msg, "Could not read %s. Nothing was loaded.", path);
-            message(GTK_MESSAGE_ERROR, "Load programs", msg);
+            message(GTK_MESSAGE_ERROR, "Load into flash", msg);
             n++;
             g_slist_free_full(files, g_free);
             goto done;
         }
     }
     g_slist_free_full(files, g_free);
-    if (!unit_off("Load programs", "Load the programs", st, sizeof st))
+    if (!unit_off("Load into flash", "Load the files", st, sizeof st))
         goto done;
     blx_report_init(&r);
     if (open_saved(st, &u, &fs)) {
@@ -1238,7 +1247,7 @@ static void add_programs(void)
                 line = e ? e + 1 : line + len;
             }
             snprintf(ask + k, sizeof ask - k, "\n\nReplace them (each rewritten where it is)? No loads nothing.");
-            if (ask_yes_no("Load programs", ask)) {
+            if (ask_yes_no("Load into flash", ask)) {
                 blx_report_free(&r);
                 blx_report_init(&r);
                 got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
@@ -1261,17 +1270,18 @@ static void add_programs(void)
         snprintf(summary, sizeof summary, "Nothing was loaded: %s\n\nThe unit was restarted with its files as they "
                  "were.", err);
         report_text(msg, sizeof msg, summary, &r);
-        message(GTK_MESSAGE_ERROR, "Load programs", msg);
+        message(GTK_MESSAGE_ERROR, "Load into flash", msg);
     } else {
         int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
         snprintf(summary, sizeof summary, "Loaded %d file%s into flash: %d added, %d replaced. The unit was "
-                 "restarted. Run a program with %s, its name, then %s. (The unit as it was before is kept in "
-                 "%s.before-import.)", n, n == 1 ? "" : "s", r.added, r.replaced, tns ? "F9 x" : "o-chord x",
+                 "restarted. Run a program with %s, its name, then %s; open a document with %s, its name, then %s. "
+                 "(The unit as it was before is kept in %s.before-import.)", n, n == 1 ? "" : "s", r.added,
+                 r.replaced, tns ? "F9 x" : "o-chord x", tns ? "Enter" : "e-chord", tns ? "F1 o" : "o-chord f o",
                  tns ? "Enter" : "e-chord", st);
         report_text(msg, sizeof msg, summary, &r);
         set_status(0, "Loaded %d file%s into flash: %d added, %d replaced.", n, n == 1 ? "" : "s", r.added,
                    r.replaced);
-        message(GTK_MESSAGE_INFO, "Load programs", msg);
+        message(GTK_MESSAGE_INFO, "Load into flash", msg);
     }
     blx_report_free(&r);
 done:
@@ -1730,7 +1740,7 @@ static GtkWidget *make_menu(GtkAccelGroup *accel)
     add_separator(fw);
     add_item(fw, "Exp_ort files to disk image (.img)...", G_CALLBACK(on_plain_item), (gpointer)do_export);
     add_item(fw, "_Import files from disk image (.img)...", G_CALLBACK(on_plain_item), (gpointer)do_import);
-    add_item(fw, "_Load programs into flash (.bns)...", G_CALLBACK(on_plain_item), (gpointer)do_addprog);
+    add_item(fw, "_Load programs and files into flash...", G_CALLBACK(on_plain_item), (gpointer)do_addprog);
     add_separator(fw);
     add_item(fw, "Back to the _factory state (erases this unit's files)...", G_CALLBACK(on_plain_item),
              (gpointer)do_factory);

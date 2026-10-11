@@ -517,8 +517,9 @@ static void import_files(void)
     blx_report_free(&r);
 }
 
-/* Firmware > Load programs into flash: one or more files chosen together go into the flash startup folder as one
-   batch, all or nothing (bl_files_xfer.h blx_add_cp), the unit switched off and on once, as import does */
+/* Firmware > Load programs and files into flash (programs, BASIC, text, braille): one or more files chosen together
+   go into the flash startup folder as one batch, all or nothing (bl_files_xfer.h blx_add_cp), the unit switched off
+   and on once, as import does */
 #define ADD_MAX 256
 
 static int add_dialog(wchar_t *buf, DWORD cap)
@@ -527,10 +528,11 @@ static int add_dialog(wchar_t *buf, DWORD cap)
     memset(&o, 0, sizeof o);
     o.lStructSize = sizeof o;
     o.hwndOwner = g_wnd;
-    o.lpstrFilter = L"Blazie programs (*.bns)\0*.bns\0All files (*.*)\0*.*\0";
+    o.lpstrFilter = L"Programs and documents (*.bns, *.bas, *.txt, *.brl, *.brf)\0*.bns;*.bas;*.txt;*.brl;*.brf\0"
+                    L"Blazie programs (*.bns)\0*.bns\0All files (*.*)\0*.*\0";
     o.lpstrFile = buf;
     o.nMaxFile = cap;
-    o.lpstrTitle = L"Load programs into the unit's flash";
+    o.lpstrTitle = L"Load programs and files into the unit's flash";
     o.Flags = OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
     buf[0] = 0;
     return GetOpenFileNameW(&o);
@@ -601,11 +603,11 @@ static void add_programs(void)
         names[i] = name8[i];
         if (!data[i]) {
             snprintf(msg, sizeof msg, "Could not read %s. Nothing was loaded.", name8[i]);
-            MessageBoxA(g_wnd, msg, "Load programs", MB_OK | MB_ICONERROR);
+            MessageBoxA(g_wnd, msg, "Load into flash", MB_OK | MB_ICONERROR);
             goto done;
         }
     }
-    if (!unit_off("Load programs", "Load the programs", st, sizeof st))
+    if (!unit_off("Load into flash", "Load the files", st, sizeof st))
         goto done;
     blx_report_init(&r);
     if (open_saved(st, &u, &fs)) {
@@ -622,7 +624,7 @@ static void add_programs(void)
                 line = e ? e + 1 : line + len;
             }
             snprintf(ask + k, sizeof ask - k, "\n\nReplace them (each rewritten where it is)? No loads nothing.");
-            if (MessageBoxA(g_wnd, ask, "Load programs", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES) {
+            if (MessageBoxA(g_wnd, ask, "Load into flash", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES) {
                 blx_report_free(&r);
                 blx_report_init(&r);
                 got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
@@ -642,21 +644,22 @@ static void add_programs(void)
     }
     start_unit(g_kind);                     /* switched on again */
     if (cancelled)
-        MessageBoxA(g_wnd, "Nothing was loaded. The unit's files are as they were.", "Load programs",
+        MessageBoxA(g_wnd, "Nothing was loaded. The unit's files are as they were.", "Load into flash",
                     MB_OK | MB_ICONINFORMATION);
     else if (!ok) {
         snprintf(summary, sizeof summary, "Nothing was loaded: %s\n\nThe unit was restarted with its files as they "
                  "were.", err);
         report_text(msg, sizeof msg, summary, &r);
-        MessageBoxA(g_wnd, msg, "Load programs", MB_OK | MB_ICONERROR);
+        MessageBoxA(g_wnd, msg, "Load into flash", MB_OK | MB_ICONERROR);
     } else {
+        int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
         snprintf(summary, sizeof summary, "Loaded %d file%s into flash: %d added, %d replaced. The unit was "
-                 "restarted. Run a program with %s, its name, then %s. (The unit as it was before is kept in "
-                 "%s.before-import.)", n, n == 1 ? "" : "s", r.added, r.replaced,
-                 KINDS[g_kind].kind == EMU_TYPE_N_SPEAK ? "F9 x" : "o-chord x",
-                 KINDS[g_kind].kind == EMU_TYPE_N_SPEAK ? "Enter" : "e-chord", st);
+                 "restarted. Run a program with %s, its name, then %s; open a document with %s, its name, then %s. "
+                 "(The unit as it was before is kept in %s.before-import.)", n, n == 1 ? "" : "s", r.added,
+                 r.replaced, tns ? "F9 x" : "o-chord x", tns ? "Enter" : "e-chord", tns ? "F1 o" : "o-chord f o",
+                 tns ? "Enter" : "e-chord", st);
         report_text(msg, sizeof msg, summary, &r);
-        MessageBoxA(g_wnd, msg, "Load programs", MB_OK | MB_ICONINFORMATION);
+        MessageBoxA(g_wnd, msg, "Load into flash", MB_OK | MB_ICONINFORMATION);
     }
     blx_report_free(&r);
 done:
@@ -990,7 +993,7 @@ static HMENU make_menu(void)
     AppendMenuA(unit, MF_SEPARATOR, 0, NULL);
     AppendMenuA(unit, MF_STRING, ID_EXPORT, "Exp&ort files to disk image (.img)...");
     AppendMenuA(unit, MF_STRING, ID_IMPORT, "&Import files from disk image (.img)...");
-    AppendMenuA(unit, MF_STRING, ID_ADDPROG, "&Load programs into flash (.bns)...");
+    AppendMenuA(unit, MF_STRING, ID_ADDPROG, "&Load programs and files into flash...");
     AppendMenuA(unit, MF_SEPARATOR, 0, NULL);
     AppendMenuA(unit, MF_STRING, ID_FACTORY, "Back to the &factory state (erases this unit's files)...");
     AppendMenuA(unit, MF_STRING, ID_EXIT, "E&xit");

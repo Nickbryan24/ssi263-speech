@@ -13,7 +13,7 @@ FIRMWARE_DIR as test_emu_linux.py's (BL2ENG.BNS + bl2_2003_warm.state; BL2SPA.BN
              role, the status bar
   chord      the Braille Lite boots and speaks; F (dot 1) typed is sent as dot 1 and the unit answers
   export     Firmware > Export: GTK's file chooser, a path typed, the image written; the result announced
-  addprog    Firmware > Load programs into flash: a program's path typed in the chooser, its summary read from the
+  addprog    Firmware > Load programs and files into flash: a program's path typed in the chooser, its summary read from the
              alert (added to flash startup, how to run it), the result announced
   menu       F11 and Alt+Shift+F open the Firmware menu; Escape gives the keyboard back
   dialog     Help > About through the screen reader's own action: its text read from the alert, closed with OK
@@ -348,7 +348,7 @@ def run_main(exe, fw, tmp, want):
                 (menu_items(hlp) if hlp else [])
             need = ["Braille Lite 2000, English", "Braille Lite 2000, Spanish", "Type 'n Speak, English",
                     "Type 'n Speak, Spanish", "Export files to disk image (.img)...",
-                    "Import files from disk image (.img)...", "Load programs into flash (.bns)...",
+                    "Import files from disk image (.img)...", "Load programs and files into flash...",
                     "Back to the factory state (erases this unit's files)...", "Exit", "Sample rate", "Sound buffer",
                     "Serial port",
                     "Quick key response (faster than the real unit)", "Keys", "About"]
@@ -406,7 +406,7 @@ def run_main(exe, fw, tmp, want):
             emu.focus()
 
         if want("addprog"):
-            item = find(app, "menu item", "Load programs into flash (.bns)...")
+            item = find(app, "menu item", "Load programs and files into flash...")
             prog = os.path.join(tmp, "tetris.bns")
             with open(prog, "wb") as h:
                 h.write(bytes([0x18, 0x0C]) + b"BNS\x00" + bytes(range(256)))
