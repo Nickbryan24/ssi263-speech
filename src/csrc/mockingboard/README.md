@@ -63,8 +63,11 @@ MKB:RULE files), back to back, each exactly as DOS stores it. It refuses any oth
 
 ## Open
 
-- Its entry in `../voices.h`, which `tools/check_uniform.py` then requires on every platform (NVDA, SAPI, Linux,
-  Android), with the firmware file in each release package.
-- The firmware file into `firmware/` with its notice, once its provenance ledger is written.
-- The earlier SSI-263 version on the Mockingboard C's own disk (one program at 6600h, a different rule table):
-  a second voice only if it sounds different.
+Both versions are voices (`../voices.h`: `mockingboard:mockingboard` and `mockingboard:early`, on every platform as
+`tools/check_uniform.py` requires), and their firmware stays out of the repository: `../../../docs/
+mockingboard-firmware.md` names the disk images and files by sha256 and where they are kept. Still open:
+
+- The Mockingboard's disk 2 (the early program with other rules): the importers refuse it (`test_mb_dsk.c`); a
+  possible later voice.
+- From the card recording (Evidence, above): its durations 0.8% longer than ours at the measured clock, and its much
+  darker sound -- the card's output stage or the recording's chain, not yet told apart.
