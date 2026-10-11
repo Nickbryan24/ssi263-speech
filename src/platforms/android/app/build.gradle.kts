@@ -119,6 +119,9 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // UpdatesTest reads release lists on the JVM: org.json is the real library there, as android.jar's copy is
+    // only stubs off the device (Panthera Speech's choice)
+    testImplementation("org.json:json:20240303")
 }
 
 // The JVM tests' must-fail controls: -Pssi263ImportBreak=1 switches FirmwareImport's layout rules off,

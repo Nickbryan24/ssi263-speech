@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- "Check for updates" only (Updates.kt): one request to GitHub's release list when the button is pressed,
+         never on its own; the speech and the firmware never use the network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- The firmware import asks the system's file picker; Android 11's package visibility hides who answers
          unless the app says it will ask (as outspoken's). -->
     <queries>

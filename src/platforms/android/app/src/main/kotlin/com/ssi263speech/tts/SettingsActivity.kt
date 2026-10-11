@@ -51,6 +51,7 @@ class SettingsActivity : Activity() {
     private var importAnnounced = -1
     private var importAnnouncedAt = 0L
     private var importLogged = 0
+    private var updateStatus: TextView? = null
     private val ticker = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -247,6 +248,15 @@ class SettingsActivity : Activity() {
 
         root.addView(ui.body("\nThen choose this engine in the system's Text-to-speech settings:"))
         root.addView(Button(this).apply { text = "Open Text-to-speech settings"; setOnClickListener { openTtsSettings() } })
+
+        root.addView(ui.heading("Updates"))
+        // only when pressed: the app never asks the network on its own (a pop-up would steal the focus); and the
+        // answer is a download in the browser, so the app needs no permission to install apps (Updates.kt)
+        root.addView(ui.body(
+            "Looks for a newer version on the project's release page. The download opens in your browser; once it " +
+            "has finished, opening it from the download notification installs it."))
+        root.addView(Button(this).apply { text = "Check for updates"; setOnClickListener { checkForUpdates() } })
+        updateStatus = ui.body("").also { root.addView(it) }
 
         root.addView(ui.heading("Licenses and source"))
         root.addView(ui.body(
@@ -471,6 +481,49 @@ class SettingsActivity : Activity() {
             catch (e: Exception) { /* try the next */ }
         }
         Toast.makeText(this, "Couldn't open settings on this device.", Toast.LENGTH_SHORT).show()
+    }
+
+    // ---- updates (Updates.kt; Panthera Speech's) ----------------------------------------------------------------
+
+    private fun installedVersion(): String =
+        try { packageManager.getPackageInfo(packageName, 0).versionName ?: "?" } catch (e: Exception) { "?" }
+
+    private fun checkForUpdates() {
+        val installed = installedVersion()
+        updateStatus?.text = "Checking…"
+        Thread {
+            val answer = Updates.check(installed)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                when (answer) {
+                    is Updates.Answer.UpToDate -> updateStatus?.text = "You have the newest version, $installed."
+                    is Updates.Answer.Failed -> updateStatus?.text = "Could not check: ${answer.reason}."
+                    is Updates.Answer.Available -> offerUpdate(answer.release, installed)
+                }
+                try { updateStatus?.announceForAccessibility(updateStatus?.text) } catch (e: Throwable) {}
+            }
+        }.start()
+    }
+
+    private fun offerUpdate(release: Updates.Release, installed: String) {
+        updateStatus?.text = "Version ${release.version} is available; you have $installed."
+        AlertDialog.Builder(this)
+            .setTitle("Version ${release.version} is available")
+            .setMessage("You have $installed.\n\nDownload opens the new version in your browser. When the download " +
+                "finishes, open it from the notification and Android installs it; the first time, it asks you to " +
+                "allow the browser to install apps. Your imported firmware and settings are kept.")
+            .setPositiveButton("Download") { _, _ -> openUrl(release.apk) }
+            .setNeutralButton("Release notes") { _, _ -> openUrl(release.page) }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun openUrl(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) {
+            updateStatus?.text = "No browser could open $url."
+        }
     }
 
     /** outspoken's flow: the distribution notice, then every licence the APK carries. */
