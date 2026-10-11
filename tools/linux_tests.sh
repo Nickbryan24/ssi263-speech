@@ -261,6 +261,15 @@ if [ -f "$DATA/games/simon.bns" ]; then
         "^FAIL the game goes on: its time-out answered" "^FAILED$" \
         -- env TEST_GAMES_BREAK=1 ./build/linux/test_games simon bl "$DATA/BL2ENG.BNS" "$DATA/bl2_2003_warm.state" \
         "$DATA/games/simon.bns"
+    # ... and from the flash startup folder, put there as "Load programs into flash" puts it (with a text file, one
+    # batch); its control writes the entry in folder 0 (bl_files.h blf_break 7): the unit cannot find the game
+    check "emulator: Simon from flash (Braille Lite)" ./build/linux/test_games simon bl "$DATA/BL2ENG.BNS" \
+        "$DATA/bl2_2003_warm.state" "$DATA/games/simon.bns" --flash
+    control "emulator: Simon from flash CONTROL (entry in folder 0, must fail)" \
+        "^FAIL the game in flash startup, a program +simon\.bns: the unit's directory has no such file" \
+        "^FAIL the first tone after the start key +none in 2 s" "^FAILED$" \
+        -- env TEST_GAMES_FILES_BREAK=7 ./build/linux/test_games simon bl "$DATA/BL2ENG.BNS" \
+        "$DATA/bl2_2003_warm.state" "$DATA/games/simon.bns" --flash
 fi
 # blazie_files, a saved unit's files from the command line: export, unpack, a new file, pack, import, on a copy of
 # the shipped state; its control leaves a new flash file's blocks unmarked (bl_files.h blf_break 2)
@@ -269,6 +278,14 @@ check "emulator: blazie_files round trip (export, unpack, pack, import)" sh tool
 control "emulator: blazie_files round trip CONTROL (flash blocks not marked used, must fail)" \
     "^NOT saved: .*not marked used" "^FAIL import$" "^round trip: FAILED$" \
     -- env TEST_FILES_BREAK=2 sh tools/blazie_files_roundtrip.sh build/linux/blazie_files "$DATA/bl2_2003_warm.state"
+# blazie_files add (the menu's "Load programs into flash"): one batch, all or nothing; its control writes the new
+# entries in folder 0 (bl_files.h blf_break 7)
+check "emulator: programs into flash (blazie_files add)" python3 nvda/tools/files_add.py build/linux/blazie_files \
+    "$DATA/bl2_2003_warm.state"
+control "emulator: programs into flash CONTROL (entries in folder 0, must fail)" \
+    "^FAIL 1\. the batch added .*marked used but no file's" "^FAIL 1\. the program in flash startup, byte for byte +no file" \
+    "^ok +4\. too big for the flash" "^FAILED$" \
+    -- env TEST_FILES_BREAK=7 python3 nvda/tools/files_add.py build/linux/blazie_files "$DATA/bl2_2003_warm.state"
 if [ -x "$EMU" ]; then
     check "emulator: the program headless" python3 src/apps/blazie/test_emu_linux.py "$EMU" "$DATA"
     control "emulator: program CONTROL (dots 1 and 4 swapped, must fail)" \

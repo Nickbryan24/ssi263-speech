@@ -119,8 +119,7 @@ $CC $APPF -c -o "$OUT/obj_emu/test_rescue.o" "$APP/test_rescue.c"
 $CXX $SHARED_CXX -o "$OUT/test_rescue" "$OUT/obj_emu/test_rescue.o" $RESCUE_OBJS $EMU_OBJS -lm
 # Blazie's games run from the unit's files (test_games.c: Simon, Hangman; the games themselves never in the repo)
 $CC $APPF -c -o "$OUT/obj_emu/test_games.o" "$APP/test_games.c"
-$CXX $SHARED_CXX -o "$OUT/test_games" "$OUT/obj_emu/test_games.o" "$OUT/obj_emu/bl_files.o" "$OUT/obj_emu/bl_files_state.o" \
-    $EMU_OBJS -lm
+$CXX $SHARED_CXX -o "$OUT/test_games" "$OUT/obj_emu/test_games.o" $FILES_OBJS $EMU_OBJS -lm
 # the sound buffer (audio_pace.c, portable) against a simulated sound card, and the Linux shells' reading of the
 # device's queue and played position; --old: its must-fail control (the 0.7.0 draft's queue), as on Windows
 $CC $APPF -o "$OUT/test_audio" "$APP/test_audio.c" "$OUT/obj_emu/audio_pace.o"
@@ -138,7 +137,8 @@ if [ -n "$AUDIO_LIBS" ]; then
     # bt_handover: [input] bt = frontend hands over to blazie_emu_bt; otherwise on a BT Speak or BT Braille this
     # program reads the device's keyboard server and BRLTTY's display itself (BrlAPI, loaded when it runs: -ldl)
     $CXX $SHARED_CXX -o "$OUT/blazie_emu" "$OUT/obj_emu/main_linux.o" "$OUT/obj_emu/bt_handover.o" "$OUT/obj_emu/audio_linux.o" \
-        "$OUT/obj_emu/audio_pace.o" "$OUT/obj_emu/serial_linux.o" "$OUT/obj_emu/evdev_linux.o" $BT_OBJS $KEY_OBJS $RESCUE_OBJS $EMU_OBJS $AUDIO_LIBS \
+        "$OUT/obj_emu/audio_pace.o" "$OUT/obj_emu/serial_linux.o" "$OUT/obj_emu/evdev_linux.o" $BT_OBJS $KEY_OBJS $RESCUE_OBJS \
+        "$OUT/obj_emu/bl_files_xfer.o" "$OUT/obj_emu/fat_img.o" $EMU_OBJS $AUDIO_LIBS \
         -lpthread -ldl -lm
     echo "built $OUT/blazie_emu (sound: $SOUND)"
     # Native worker for the BT Speak / BT Braille Python frontend. Shares the same board and audio code.

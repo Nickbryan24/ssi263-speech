@@ -8,10 +8,13 @@ unit); --trace tells the test the unit's level, its keys and its status lines.
 
 FIRMWARE_DIR as test_emu_linux.py's (BL2ENG.BNS + bl2_2003_warm.state; BL2SPA.BNS; tns/TNSENG.TNS).  The checks:
   settings   the settings file the GTK shell writes the first time is the terminal shell's, word for word
-  tree       the menu bar's items by name (Firmware, Settings, Help; the units, Export, Import, Exit, Sample rate,
-             Sound buffer, Serial port, Keys, About), the keyboard area focused with its name and role, the status bar
+  tree       the menu bar's items by name (Firmware, Settings, Help; the units, Export, Import, Load programs,
+             Exit, Sample rate, Sound buffer, Serial port, Keys, About), the keyboard area focused with its name and
+             role, the status bar
   chord      the Braille Lite boots and speaks; F (dot 1) typed is sent as dot 1 and the unit answers
   export     Firmware > Export: GTK's file chooser, a path typed, the image written; the result announced
+  addprog    Firmware > Load programs into flash: a program's path typed in the chooser, its summary read from the
+             alert (added to flash startup, how to run it), the result announced
   menu       F11 and Alt+Shift+F open the Firmware menu; Escape gives the keyboard back
   dialog     Help > About through the screen reader's own action: its text read from the alert, closed with OK
   announce   Firmware > the Spanish Braille Lite: "Switched to ..." announced (object:announcement), the area renamed
@@ -345,7 +348,7 @@ def run_main(exe, fw, tmp, want):
                 (menu_items(hlp) if hlp else [])
             need = ["Braille Lite 2000, English", "Braille Lite 2000, Spanish", "Type 'n Speak, English",
                     "Type 'n Speak, Spanish", "Export files to disk image (.img)...",
-                    "Import files from disk image (.img)...",
+                    "Import files from disk image (.img)...", "Load programs into flash (.bns)...",
                     "Back to the factory state (erases this unit's files)...", "Exit", "Sample rate", "Sound buffer",
                     "Serial port",
                     "Quick key response (faster than the real unit)", "Keys", "About"]
@@ -400,6 +403,33 @@ def run_main(exe, fw, tmp, want):
             check("export: file chooser, image, announced", chooser is not None and size > 0 and bool(ann)
                   and out in ann[0], "chooser %s; %s %d bytes; announced %r" % (
                       "shown" if chooser is not None else "NOT shown", out, size, ann[0] if ann else None))
+            emu.focus()
+
+        if want("addprog"):
+            item = find(app, "menu item", "Load programs into flash (.bns)...")
+            prog = os.path.join(tmp, "tetris.bns")
+            with open(prog, "wb") as h:
+                h.write(bytes([0x18, 0x0C]) + b"BNS\x00" + bytes(range(256)))
+            n0 = len(events)
+            if item is not None:
+                click(item)
+            chooser = wait(lambda: find(app, "file chooser"), 10)
+            if chooser is not None:
+                time.sleep(0.5)
+                xdo("key", "ctrl+l")
+                xdo("type", "--delay", "5", prog)
+                xdo("key", "Return")
+            alert = wait(lambda: find(app, "alert"), 20)
+            text = " ".join(labels(alert)) if alert is not None else ""
+            ok_btn = button(alert, "OK") if alert is not None else None
+            if ok_btn is not None:
+                click(ok_btn)
+            ann = wait(lambda: said("Loaded ", n0), 10)
+            check("load programs: chooser, the batch added, read out", item is not None and chooser is not None
+                  and "Loaded 1 file into flash: 1 added" in text and "added tetris.bns to flash startup" in text
+                  and "o-chord x" in text and bool(ann), "item %s; chooser %s; alert %r; announced %r" % (
+                      "found" if item is not None else "NOT found", "shown" if chooser is not None else "NOT shown",
+                      text[:160], ann[0] if ann else None))
             emu.focus()
 
         if want("menu"):
@@ -617,8 +647,8 @@ def main():
         return only is None or n in only
     tmp = tempfile.mkdtemp(prefix="blazie_emu_gtk_test.")
     try:
-        if any(want(n) for n in ("settings", "tree", "chord", "export", "menu", "dialog", "announce", "bns", "tns",
-                                 "exit")):
+        if any(want(n) for n in ("settings", "tree", "chord", "export", "addprog", "menu", "dialog", "announce",
+                                 "bns", "tns", "exit")):
             run_main(exe, fw, tmp, want)
         if want("kind"):
             run_kind(exe, fw, tmp)

@@ -95,6 +95,7 @@ Enter; Enter alone goes back to the unit:
 | 15, 16 | The Braille 'n Speak 2000, English and Slovak (listed when its firmware is there: README.md, "Firmware"); the Braille Lite's keys |
 | 17 | The sound buffer: automatic, medium or long (below, "Sound") |
 | 18, 19 | The German and Italian Braille Lite 2000 (listed when their firmware is there) |
+| p | Load programs into flash (.bns): each file's path on a line of its own (~ is your home folder), Enter alone to load them -- one batch, all or nothing, as on Windows (README.md, "Programs into flash"); a letter, as the units' numbers grow |
 | 0 | Exit: the unit's memory is saved |
 
 After a choice the menu says one line; `?` lists it again.
@@ -118,7 +119,8 @@ Run one at a time (each saves its unit when it closes).
 - **The menu bar**, the Windows app's item for item, with its mnemonics: Firmware (Alt+F: the four units -- six
   when the Braille 'n Speak 2000's firmware and factory states are there; the Slovak one's file names go in and out
   in code page 852 -- Export
-  files to disk image (.img), Import files from disk image (.img), Back to the factory state, Exit), Settings (Alt+E:
+  files to disk image (.img), Import files from disk image (.img), Load programs into flash (.bns) -- several files
+  at once in GTK's chooser --, Back to the factory state, Exit), Settings (Alt+E:
   the idle channel, keep the channel open, the pop and the click, the 10 Hz tick, quick key response, Sample rate,
   Sound buffer (below, "Sound"), Serial port: none, the serial devices present, or a pseudo-terminal), Help (Alt+H: Keys, About). Ctrl+Q exits
   (with the Braille Lite; on the Type 'n Speak Ctrl+Q is the unit's).
@@ -203,8 +205,9 @@ asks: `k` sets it up now and keeps its RAM files (its settings go back to the fa
 factory state (its own questions again), Enter alone starts it as it is. `k` and `f` keep the old memory beside it
 as `tns_english.state.before-setup`.
 
-`blazie_files` (in the package's `bin`, beside `blazie_emu`) lists, exports, imports, extracts, packs and unpacks a
-saved unit's files from the command line, as on Windows (README.md, "Files in and out"); close the emulator first.
+`blazie_files` (in the package's `bin`, beside `blazie_emu`) lists, exports, imports, adds (`add`: programs into
+flash), extracts, packs and unpacks a saved unit's files from the command line, as on Windows (README.md, "Files
+in and out"); close the emulator first.
 
 ## Keys
 

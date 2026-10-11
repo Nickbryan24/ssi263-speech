@@ -1018,6 +1018,53 @@ static void export_files(void)
     bls_free(&u);
 }
 
+/* the unit switched off for its files to change: only while it is not writing its flash; its memory saved to st
+   first.  1 off, or 0 with a message (`doing`: "Import the files", ...) and the unit running on (main_win.c's) */
+static int unit_off(const char *title, const char *doing, char *st, size_t cap)
+{
+    emu_unit *old;
+    int busy, ok;
+    char msg[300];
+    make_dirs(g_cfg_dir);
+    saved_path(g_kind, st, cap);
+    pthread_mutex_lock(&g_lock);
+    busy = emu_flash(g_unit, NULL);
+    ok = !busy && emu_save(g_unit, st);
+    old = ok ? g_unit : NULL;
+    if (ok)
+        g_unit = NULL;                          /* switched off: nothing runs while its memory changes */
+    pthread_mutex_unlock(&g_lock);
+    if (!ok) {
+        if (busy)
+            snprintf(msg, sizeof msg, "The unit is writing its flash memory. %s when it has finished (when it is "
+                     "quiet).", doing);
+        else
+            snprintf(msg, sizeof msg, "Could not save the unit's memory; nothing was changed.");
+        message(GTK_MESSAGE_WARNING, title, msg);
+        return 0;
+    }
+    emu_destroy(old);
+    return 1;
+}
+
+/* the unit as it was, kept beside its state as STATE.before-import: undone by one file copy */
+static void keep_before(const char *st)
+{
+    char before[PATH_MAX + 20];
+    FILE *a, *b;
+    snprintf(before, sizeof before, "%s.before-import", st);
+    a = fopen(st, "rb");
+    b = fopen(before, "wb");
+    if (a && b) {
+        char buf[65536];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof buf, a)) > 0)
+            fwrite(buf, 1, n, b);
+    }
+    if (a) fclose(a);
+    if (b) fclose(b);
+}
+
 /* the image's files into the unit: only while it is not writing its flash; it is switched off, its files changed,
    and switched on again -- the firmware then finds them as if it had written them (main_win.c's import_files) */
 static void import_files(void)
@@ -1026,11 +1073,10 @@ static void import_files(void)
     unsigned char *img;
     unsigned long size;
     fat_volume *v;
-    emu_unit *old;
     bls_unit u;
     blf_fs *fs;
     blx_report r;
-    int busy, ok, cancelled = 0;
+    int ok, cancelled = 0;
     if (!g_unit) return;
     if (!image_dialog(0, path, sizeof path)) return;
     img = read_bytes(path, &size);
@@ -1042,22 +1088,10 @@ static void import_files(void)
         return;
     }
     fat_close(v);
-    make_dirs(g_cfg_dir);
-    saved_path(g_kind, st, sizeof st);
-    pthread_mutex_lock(&g_lock);
-    busy = emu_flash(g_unit, NULL);
-    ok = !busy && emu_save(g_unit, st);
-    old = ok ? g_unit : NULL;
-    if (ok)
-        g_unit = NULL;                          /* switched off: nothing runs while its memory changes */
-    pthread_mutex_unlock(&g_lock);
-    if (!ok) {
-        message(GTK_MESSAGE_WARNING, "Import files", busy ? "The unit is writing its flash memory. Import the files "
-                "when it has finished (when it is quiet)." : "Could not save the unit's memory; nothing was imported.");
+    if (!unit_off("Import files", "Import the files", st, sizeof st)) {
         free(img);
         return;
     }
-    emu_destroy(old);
     blx_report_init(&r);
     ok = open_saved(st, &u, &fs);
     if (ok) {
@@ -1079,20 +1113,8 @@ static void import_files(void)
             if (!ask_yes_no("Import files", ask))
                 ok = 0, cancelled = 1;
         }
-        if (ok) {                               /* the unit as it was, kept beside it: undone by one file copy */
-            char before[PATH_MAX + 20];
-            FILE *a, *b;
-            snprintf(before, sizeof before, "%s.before-import", st);
-            a = fopen(st, "rb");
-            b = fopen(before, "wb");
-            if (a && b) {
-                char buf[65536];
-                size_t n;
-                while ((n = fread(buf, 1, sizeof buf, a)) > 0)
-                    fwrite(buf, 1, n, b);
-            }
-            if (a) fclose(a);
-            if (b) fclose(b);
+        if (ok) {
+            keep_before(st);
             ok = bls_save(st, &u, err, sizeof err);
         }
         blf_close(fs);
@@ -1117,6 +1139,144 @@ static void import_files(void)
         message(r.skipped || r.kept ? GTK_MESSAGE_WARNING : GTK_MESSAGE_INFO, "Import files", msg);
     }
     blx_report_free(&r);
+}
+
+/* Firmware > Load programs into flash: one or more files chosen together go into the flash startup folder as one
+   batch, all or nothing (bl_files_xfer.h blx_add_cp), the unit switched off and on once (main_win.c's add_programs) */
+#define ADD_MAX 256
+
+/* GTK's chooser, several files at once; their paths (g_free each, g_slist_free the list), NULL when cancelled */
+static GSList *add_dialog(void)
+{
+    GtkWidget *d = gtk_file_chooser_dialog_new("Load programs into the unit's flash", GTK_WINDOW(g_win),
+                                               GTK_FILE_CHOOSER_ACTION_OPEN, "_Cancel", GTK_RESPONSE_CANCEL, "_Load",
+                                               GTK_RESPONSE_ACCEPT, NULL);
+    GtkFileFilter *bns = gtk_file_filter_new(), *all = gtk_file_filter_new();
+    GSList *files = NULL;
+    gtk_file_filter_set_name(bns, "Blazie programs (*.bns)");
+    gtk_file_filter_add_pattern(bns, "*.bns");
+    gtk_file_filter_add_pattern(bns, "*.BNS");
+    gtk_file_filter_set_name(all, "All files");
+    gtk_file_filter_add_pattern(all, "*");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(d), bns);
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(d), all);
+    gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(d), TRUE);
+    gtk_dialog_set_default_response(GTK_DIALOG(d), GTK_RESPONSE_ACCEPT);
+    if (getenv("HOME"))
+        gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(d), getenv("HOME"));
+    trace("dialog addprog");
+    if (gtk_dialog_run(GTK_DIALOG(d)) == GTK_RESPONSE_ACCEPT)
+        files = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(d));
+    gtk_widget_destroy(d);
+    focus_area();
+    return files;
+}
+
+static void dos_time_of(const char *path, unsigned *t, unsigned *d)
+{
+    struct stat s;
+    struct tm *m;
+    *t = *d = 0;
+    if (stat(path, &s) == 0 && (m = localtime(&s.st_mtime)) != NULL) {
+        int y = m->tm_year + 1900 < 1980 ? 1980 : m->tm_year + 1900;
+        *t = (unsigned)((m->tm_hour << 11) | (m->tm_min << 5) | (m->tm_sec / 2));
+        *d = (unsigned)(((y - 1980) << 9) | ((m->tm_mon + 1) << 5) | m->tm_mday);
+    }
+}
+
+static void add_programs(void)
+{
+    static char name8[ADD_MAX][800];
+    const char *names[ADD_MAX];
+    const unsigned char *data[ADD_MAX];
+    unsigned long sizes[ADD_MAX];
+    unsigned times[ADD_MAX], dates[ADD_MAX];
+    char st[PATH_MAX], err[400] = "the unit's memory could not be read", summary[PATH_MAX + 1600], msg[PATH_MAX + 4000];
+    GSList *files, *l;
+    bls_unit u;
+    blf_fs *fs;
+    blx_report r;
+    int n = 0, i, ok = 0, got = 0, cancelled = 0;
+    if (!g_unit) return;
+    files = add_dialog();
+    if (!files) return;
+    for (l = files; l && n < ADD_MAX; l = l->next, n++) {
+        const char *path = (const char *)l->data, *base = strrchr(path, '/');
+        char *u8 = g_filename_to_utf8(base ? base + 1 : path, -1, NULL, NULL, NULL);
+        snprintf(name8[n], sizeof name8[n], "%s", u8 ? u8 : base ? base + 1 : path);
+        g_free(u8);
+        names[n] = name8[n];
+        data[n] = read_bytes(path, &sizes[n]);
+        dos_time_of(path, &times[n], &dates[n]);
+        if (!data[n] && access(path, R_OK) == 0) {   /* an empty file (read_bytes gives no buffer for one): */
+            data[n] = (const unsigned char *)malloc(1);    /* refused by blx_add_cp with its own reason */
+            sizes[n] = 0;
+        }
+        if (!data[n]) {
+            snprintf(msg, sizeof msg, "Could not read %s. Nothing was loaded.", path);
+            message(GTK_MESSAGE_ERROR, "Load programs", msg);
+            n++;
+            g_slist_free_full(files, g_free);
+            goto done;
+        }
+    }
+    g_slist_free_full(files, g_free);
+    if (!unit_off("Load programs", "Load the programs", st, sizeof st))
+        goto done;
+    blx_report_init(&r);
+    if (open_saved(st, &u, &fs)) {
+        got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 0, &r, err, sizeof err);
+        if (got == BLX_ADD_EXISTS) {            /* names the unit has: asked once for the whole batch */
+            char ask[3000];
+            const char *line = r.log ? r.log : "";
+            size_t k = (size_t)snprintf(ask, sizeof ask, "The unit has files of these names already:\n");
+            while (*line && k + 80 < sizeof ask) {
+                const char *e = strchr(line, '\n');
+                size_t len = e ? (size_t)(e - line) : strlen(line);
+                if (len > 7 && !strncmp(line, "exists ", 7))
+                    k += (size_t)snprintf(ask + k, sizeof ask - k, "\n%.*s", (int)(len - 7), line + 7);
+                line = e ? e + 1 : line + len;
+            }
+            snprintf(ask + k, sizeof ask - k, "\n\nReplace them (each rewritten where it is)? No loads nothing.");
+            if (ask_yes_no("Load programs", ask)) {
+                blx_report_free(&r);
+                blx_report_init(&r);
+                got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
+                                 sizeof err);
+            } else
+                cancelled = 1;
+        }
+        ok = got == 1 && blf_check(fs, err, sizeof err);
+        if (ok) {
+            keep_before(st);
+            ok = bls_save(st, &u, err, sizeof err);
+        }
+        blf_close(fs);
+        bls_free(&u);
+    }
+    start_unit(g_kind);                         /* switched on again */
+    if (cancelled)
+        set_status(1, "Nothing was loaded. The unit's files are as they were.");
+    else if (!ok) {
+        snprintf(summary, sizeof summary, "Nothing was loaded: %s\n\nThe unit was restarted with its files as they "
+                 "were.", err);
+        report_text(msg, sizeof msg, summary, &r);
+        message(GTK_MESSAGE_ERROR, "Load programs", msg);
+    } else {
+        int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
+        snprintf(summary, sizeof summary, "Loaded %d file%s into flash: %d added, %d replaced. The unit was "
+                 "restarted. Run a program with %s, its name, then %s. (The unit as it was before is kept in "
+                 "%s.before-import.)", n, n == 1 ? "" : "s", r.added, r.replaced, tns ? "F9 x" : "o-chord x",
+                 tns ? "Enter" : "e-chord", st);
+        report_text(msg, sizeof msg, summary, &r);
+        set_status(0, "Loaded %d file%s into flash: %d added, %d replaced.", n, n == 1 ? "" : "s", r.added,
+                   r.replaced);
+        message(GTK_MESSAGE_INFO, "Load programs", msg);
+    }
+    blx_report_free(&r);
+done:
+    for (i = 0; i < n; i++)
+        free((void *)data[i]);
 }
 
 /* ---- the keyboard -------------------------------------------------------------------------------------------------- */
@@ -1324,6 +1484,7 @@ static void do_factory(int unused)
 
 static void do_export(int unused) { (void)unused; release_keys(); export_files(); }
 static void do_import(int unused) { (void)unused; release_keys(); import_files(); }
+static void do_addprog(int unused) { (void)unused; release_keys(); add_programs(); }
 
 static void do_rate(int r)
 {
@@ -1569,6 +1730,7 @@ static GtkWidget *make_menu(GtkAccelGroup *accel)
     add_separator(fw);
     add_item(fw, "Exp_ort files to disk image (.img)...", G_CALLBACK(on_plain_item), (gpointer)do_export);
     add_item(fw, "_Import files from disk image (.img)...", G_CALLBACK(on_plain_item), (gpointer)do_import);
+    add_item(fw, "_Load programs into flash (.bns)...", G_CALLBACK(on_plain_item), (gpointer)do_addprog);
     add_separator(fw);
     add_item(fw, "Back to the _factory state (erases this unit's files)...", G_CALLBACK(on_plain_item),
              (gpointer)do_factory);

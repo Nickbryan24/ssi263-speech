@@ -20,6 +20,8 @@ The checks:
   buffer         the program in a pseudo-terminal: menu 17, the sound buffer (Tomi: the emulator's speech stutters),
                  chosen long, written to the settings as the Windows app writes it ([sound] buffer = long), and
                  shown so when the program starts again
+  programs       the program in a pseudo-terminal: menu p, two programs' paths typed, loaded into flash in one batch
+                 (the saved memory lists them in flash startup); again with a name the unit has: asked, no loads none
   btspeak        the program in a pseudo-terminal with a BT Speak keyboard server of the test's own (the device's
                  protocol: btkb_linux.h): it takes the keyboard exclusively and consumes every key; dot 1 down and up
                  is the unit's chord; dot 8 tapped is the advance bar, down and up; R3 the advance bar too and L2
@@ -400,6 +402,35 @@ def main():
             check("menu 17: no short sound buffer offered", re.search(r"^ +\d+ short", first, re.M | re.I) is None,
                   "the choices: %s" % ", ".join(re.findall(r"^ +\d+ ((?:automatic|short|medium|long)\b[^(]*)",
                                                            first, re.M | re.I)))
+
+        if want("programs"):
+            # menu p, Load programs into flash: two programs' paths typed, Enter alone loads them in one batch; the
+            # unit's saved memory then lists them in flash startup (blazie_files beside the program, when built).
+            # Again with one of the same names: asked, "no" loads nothing
+            cfg = os.path.join(tmp, "programs")
+            progs = []
+            for n in ("pinball.bns", "tetris.bns"):
+                progs.append(os.path.join(tmp, n))
+                with open(progs[-1], "wb") as h:
+                    h.write(bytes([0x18, 0x0C]) + b"BNS\x00" + bytes(range(256)) + n.encode())
+            first = menu_session(exe, fw, cfg, ["p"] + progs + ["", "0"])
+            again = menu_session(exe, fw, cfg, ["p", progs[0], "", "no", "0"])
+            bf = os.path.join(os.path.dirname(exe), "blazie_files")
+            listed = ""
+            if os.path.isfile(bf):
+                listed = subprocess.run([bf, "list", os.path.join(cfg, "english.state")], stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT).stdout.decode("utf-8", "replace")
+            in_flash = all(re.search(r"^%s +\d+ bytes +flash folder +1 +type X$" % re.escape(n), listed, re.M)
+                           for n in ("pinball.bns", "tetris.bns")) if listed else True
+            check("menu p: programs into flash", "Loaded 2 files into flash: 2 added" in first and "o-chord x" in first
+                  and in_flash, "said: %s; saved memory lists both in flash startup: %s" % (
+                      "loaded" if "Loaded 2 files into flash" in first else "NOT loaded",
+                      ("yes" if in_flash else "NO") if listed else "(no blazie_files to look)"))
+            check("menu p: a name the unit has, asked, no loads nothing",
+                  "files of these names already" in again and "pinball.bns" in again
+                  and "Nothing was loaded: not replaced" in again,
+                  "asked: %s; nothing loaded: %s" % ("files of these names already" in again,
+                                                     "Nothing was loaded: not replaced" in again))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if failures:

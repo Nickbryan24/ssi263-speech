@@ -53,6 +53,9 @@
 #include "tns_rescue.h"
 #include "tns_setup.h"
 #include "tns_term.h"
+#include "../../csrc/blazie/bl_files.h"
+#include "../../csrc/blazie/bl_files_state.h"
+#include "../../csrc/blazie/bl_files_xfer.h"
 
 #define BLOCK_MS_DEFAULT 10
 #define RATE_MAX 48000
@@ -66,29 +69,30 @@ typedef struct {
     int kind;
     const char *firmware[2], *state[2];
     const char *saved, *ini;
+    int codepage;                   /* its names' code page (bl_files_xfer.h): 852 for the Slovak unit */
 } unit_kind;
 static const unit_kind KINDS[] = {
     {"Braille Lite 2000 (English)", "bl-en", EMU_BRAILLE_LITE, {"BL2ENG.BNS", NULL}, {"bl2_2003_warm.state", NULL},
-     "english.state", "english"},
+     "english.state", "english", BLX_CP850},
     {"Braille Lite 2000 (Spanish)", "bl-es", EMU_BRAILLE_LITE, {"spanish/BL2SPA.BNS", "BL2SPA.BNS"},
-     {"spanish/bl2spa_fresh.state", "bl2spa_fresh.state"}, "spanish.state", "spanish"},
+     {"spanish/bl2spa_fresh.state", "bl2spa_fresh.state"}, "spanish.state", "spanish", BLX_CP850},
     {"Type 'n Speak (English)", "tns-en", EMU_TYPE_N_SPEAK, {"tns/TNSENG.TNS", "TNSENG.TNS"}, {NULL, NULL},
-     "tns_english.state", "tns_english"},
+     "tns_english.state", "tns_english", BLX_CP850},
     {"Type 'n Speak (Spanish)", "tns-es", EMU_TYPE_N_SPEAK, {"tns/TNSSPA.TNS", "TNSSPA.TNS"}, {NULL, NULL},
-     "tns_spanish.state", "tns_spanish"},
+     "tns_spanish.state", "tns_spanish", BLX_CP850},
     /* the Braille 'n Speak 2000 on the Braille Lite's board (emu_unit.h emu_model), in the menu when its firmware is
        there (menu numbers 15 and 16: 5-14 are the settings, 17 the sound buffer); its factory states made by
        make_state (make_state.c) */
     {"Braille 'n Speak 2000 (English)", "bns-en", EMU_BRAILLE_LITE, {"bns2000/BS03ENG.BNS", "BS03ENG.BNS"},
-     {"bns2000/bs03eng_fresh.state", "bs03eng_fresh.state"}, "bns_english.state", "bns_english"},
+     {"bns2000/bs03eng_fresh.state", "bs03eng_fresh.state"}, "bns_english.state", "bns_english", BLX_CP850},
     {"Braille 'n Speak 2000 (Slovak)", "bns-sk", EMU_BRAILLE_LITE, {"bns2000/BS2SLL.BNS", "BS2SLL.BNS"},
-     {"bns2000/bs2sll_fresh.state", "bs2sll_fresh.state"}, "bns_slovak.state", "bns_slovak"},
+     {"bns2000/bs2sll_fresh.state", "bs2sll_fresh.state"}, "bns_slovak.state", "bns_slovak", BLX_CP852},
     /* Blazie's September 2000 German and Italian updates (an anonymous donation), menu numbers 18 and 19; their
        factory states made by make_state (bl_state.c's recipes) */
     {"Braille Lite 2000 (German)", "bl-de", EMU_BRAILLE_LITE, {"german/Lite2000.BNS", "Lite2000_de.BNS"},
-     {"german/lite2000_de_fresh.state", "lite2000_de_fresh.state"}, "german.state", "german"},
+     {"german/lite2000_de_fresh.state", "lite2000_de_fresh.state"}, "german.state", "german", BLX_CP850},
     {"Braille Lite 2000 (Italian)", "bl-it", EMU_BRAILLE_LITE, {"italian/Lite2000.BNS", "Lite2000_it.BNS"},
-     {"italian/lite2000_it_fresh.state", "lite2000_it_fresh.state"}, "italian.state", "italian"},
+     {"italian/lite2000_it_fresh.state", "lite2000_it_fresh.state"}, "italian.state", "italian", BLX_CP850},
 };
 #define N_KINDS ((int)(sizeof KINDS / sizeof KINDS[0]))
 #define N_FIRST_KINDS 4             /* the menu's 1-4; the kinds after them are 15 on, past the sound buffer's 17 */
@@ -1036,6 +1040,156 @@ static int choose(const char *title, const char *const *items, int n, int curren
     return k >= 0 && k < n ? k : current;
 }
 
+/* Menu p, Load programs into flash: the files' paths typed one to a line, then added to the flash startup folder as
+   one batch, all or nothing (bl_files_xfer.h blx_add_cp), the unit switched off and on once (main_win.c's
+   add_programs; blazie_files add does the same on a saved unit) */
+#define ADD_MAX 64
+
+static void dos_time_of(const char *path, unsigned *t, unsigned *d)
+{
+    struct stat s;
+    struct tm *m;
+    *t = *d = 0;
+    if (stat(path, &s) == 0 && (m = localtime(&s.st_mtime)) != NULL) {
+        int y = m->tm_year + 1900 < 1980 ? 1980 : m->tm_year + 1900;
+        *t = (unsigned)((m->tm_hour << 11) | (m->tm_min << 5) | (m->tm_sec / 2));
+        *d = (unsigned)(((y - 1980) << 9) | ((m->tm_mon + 1) << 5) | m->tm_mday);
+    }
+}
+
+static unsigned char *read_whole(const char *path, unsigned long *n)
+{
+    FILE *f = fopen(path, "rb");
+    long size;
+    unsigned char *d = NULL;
+    if (!f) return NULL;
+    if (fseek(f, 0, SEEK_END) == 0 && (size = ftell(f)) >= 0 && fseek(f, 0, SEEK_SET) == 0
+            && (d = (unsigned char *)malloc(size ? (size_t)size : 1)) != NULL
+            && fread(d, 1, (size_t)size, f) != (size_t)size) {
+        free(d);
+        d = NULL;
+    }
+    fclose(f);
+    *n = d ? (unsigned long)size : 0;
+    return d;
+}
+
+static void load_programs(void)
+{
+    static char path[ADD_MAX][PATH_MAX];
+    const char *names[ADD_MAX];
+    const unsigned char *data[ADD_MAX];
+    unsigned long sizes[ADD_MAX];
+    unsigned times[ADD_MAX], dates[ADD_MAX];
+    char line[PATH_MAX], st[PATH_MAX], err[400] = "the unit's memory could not be read";
+    emu_unit *old;
+    bls_unit u;
+    blf_fs *fs;
+    blx_report r;
+    int n = 0, i, busy, ok = 0, got = 0;
+    say("Load programs into flash: type a file's path and Enter, one to a line (~ is your home folder); Enter alone "
+        "when the list is done.");
+    for (;;) {
+        read_line(line, sizeof line);
+        if (!line[0])
+            break;
+        if (n == ADD_MAX) {
+            say("That is %d files, as many as one batch takes; Enter alone to load them.", ADD_MAX);
+            continue;
+        }
+        if (line[0] == '~' && (line[1] == '/' || !line[1]) && getenv("HOME"))
+            snprintf(path[n], sizeof path[n], "%s%s", getenv("HOME"), line + 1);
+        else
+            snprintf(path[n], sizeof path[n], "%s", line);
+        data[n] = read_whole(path[n], &sizes[n]);
+        if (!data[n]) {
+            say("Cannot read %s: not in the list. Type it again, another, or Enter alone.", path[n]);
+            continue;
+        }
+        names[n] = strrchr(path[n], '/') ? strrchr(path[n], '/') + 1 : path[n];
+        dos_time_of(path[n], &times[n], &dates[n]);
+        n++;
+        say("%d in the list. The next, or Enter alone to load.", n);
+    }
+    if (!n) {
+        say("Nothing loaded.");
+        return;
+    }
+    make_dirs(g_cfg_dir);
+    saved_path(g_kind, st, sizeof st);
+    pthread_mutex_lock(&g_lock);
+    busy = g_unit && emu_flash(g_unit, NULL);
+    ok = g_unit && !busy && emu_save(g_unit, st);
+    old = ok ? g_unit : NULL;
+    if (ok)
+        g_unit = NULL;                          /* switched off: nothing runs while its memory changes */
+    pthread_mutex_unlock(&g_lock);
+    if (!ok) {
+        say("%s", busy ? "The unit is writing its flash memory. Load the programs when it has finished (when it is "
+                         "quiet)." : "Could not save the unit's memory; nothing was loaded.");
+        goto done;
+    }
+    emu_destroy(old);
+    ok = 0;
+    blx_report_init(&r);
+    if (bls_load(st, &u, err, sizeof err)) {
+        fs = blf_open(u.model, u.ram, u.flash, u.flash_size, err, sizeof err);
+        if (fs) {
+            got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 0, &r, err, sizeof err);
+            if (got == BLX_ADD_EXISTS) {        /* names the unit has: asked once for the whole batch */
+                const char *p = r.log ? r.log : "";
+                say("The unit has files of these names already:");
+                while (*p) {
+                    const char *e = strchr(p, '\n');
+                    size_t len = e ? (size_t)(e - p) : strlen(p);
+                    if (len > 7 && !strncmp(p, "exists ", 7))
+                        say("  %.*s", (int)(len - 7), p + 7);
+                    p = e ? e + 1 : p + len;
+                }
+                say("Replace them (each rewritten where it is)? Type yes; anything else loads nothing:");
+                read_line(line, sizeof line);
+                if (!strcmp(line, "yes")) {
+                    blx_report_free(&r);
+                    blx_report_init(&r);
+                    got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
+                                     sizeof err);
+                } else
+                    snprintf(err, sizeof err, "not replaced");
+            }
+            ok = got == 1 && blf_check(fs, err, sizeof err);
+            if (ok) {                           /* the unit as it was, kept beside it: undone by one file copy */
+                char before[PATH_MAX + 20];
+                unsigned long bn;
+                unsigned char *b = read_whole(st, &bn);
+                FILE *f;
+                snprintf(before, sizeof before, "%s.before-import", st);
+                if (b && (f = fopen(before, "wb")) != NULL) {
+                    fwrite(b, 1, bn, f);
+                    fclose(f);
+                }
+                free(b);
+                ok = bls_save(st, &u, err, sizeof err);
+            }
+            blf_close(fs);
+        }
+        bls_free(&u);
+    }
+    start_unit(g_kind, NULL);                   /* switched on again */
+    if (r.log)
+        fputs(r.log, stdout);
+    if (!ok)
+        say("Nothing was loaded: %s. The unit's files are as they were.", err);
+    else
+        say("Loaded %d file%s into flash: %d added, %d replaced. Run a program with %s, its name, then %s. (The unit "
+            "as it was before is kept in %s.before-import.)", n, n == 1 ? "" : "s", r.added, r.replaced,
+            KINDS[g_kind].kind == EMU_TYPE_N_SPEAK ? "F9 x" : "o-chord x",
+            KINDS[g_kind].kind == EMU_TYPE_N_SPEAK ? "Enter" : "e-chord", st);
+    blx_report_free(&r);
+done:
+    for (i = 0; i < n; i++)
+        free((void *)data[i]);
+}
+
 static void menu(void)
 {
     char line[64];
@@ -1087,6 +1241,7 @@ static void menu(void)
         say("  13 Braille Lite keyboard: %s", g_blk.mode == BLK_LETTERS
             ? "letters (each character its braille cell)" : "keys (F D S J K L)");
         say("  14 Keys (help)");
+        say("  p Load programs into flash (.bns): Blazie's programs and games, several at once");
         for (k = N_FIRST_KINDS; k < N_KINDS; k++)   /* in number order: 15, 16, the sound buffer's 17, 18 on */
             if (kind_offered(k) && kind_menu_number(k) < MENU_BUFFER)
                 say("  %d %s%s", kind_menu_number(k), KINDS[k].name, k == g_kind ? " (on now)" : "");
@@ -1103,6 +1258,10 @@ static void menu(void)
         if (!line[0])
             break;
 chosen:
+        if ((line[0] == 'p' || line[0] == 'P') && !line[1]) {   /* a letter: the units' numbers grow past 19 */
+            load_programs();
+            continue;
+        }
         k = atoi(line);
         if (kind_of_menu_number(k) >= 0) {
             start_unit(kind_of_menu_number(k), NULL);
