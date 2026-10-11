@@ -473,6 +473,15 @@ if os.path.isfile(os.path.join(EMU, "test_emu_unit.exe")):
                         os.path.join(ENG, "BL2ENG.BNS"), os.path.join(ENG, "bl2_2003_warm.state")]))
     CHECKS.append(check("Blazie emulator: the Spanish unit, headless", [os.path.join(EMU, "test_emu_unit.exe"), "bl",
                         os.path.join(ENG, "BL2SPA.BNS"), os.path.join(ENG, "bl2spa_fresh.state")]))
+    # the German and Italian Braille Lite 2000 in the emulator (its Firmware menu, 0.8), from the firmware folder; the
+    # German unit's key-to-sound is its own (~399 ms against English's 320 bound, its rules slower, as the Slovak's)
+    for lang, folder, state, bound in (("German", "german", "lite2000_de_fresh.state", ["450"]),
+                                       ("Italian", "italian", "lite2000_it_fresh.state", [])):
+        fw_dir = os.path.join(os.path.dirname(os.path.dirname(HERE)), "firmware", "blazie", folder)
+        if os.path.isfile(os.path.join(fw_dir, "Lite2000.BNS")):
+            CHECKS.append(check("Blazie emulator: the %s unit, headless" % lang,
+                                [os.path.join(EMU, "test_emu_unit.exe"), "bl", os.path.join(fw_dir, "Lite2000.BNS"),
+                                 os.path.join(fw_dir, state)] + bound))
     # MIT since 0.7 (Tomi: the emulator MIT): the program, its tests and their objects on MAME's Z180, no z180emu;
     # the audit's must-fail control is the no-GPL audit CONTROL below (and a z180emu build of this folder fails it)
     CHECKS.append(check("Blazie emulator: no z180emu, no GPL (tools/check_no_gpl.py)",

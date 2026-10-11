@@ -45,7 +45,7 @@
 #define BLOCK_MS_DEFAULT 10
 #define WM_SAVE_FAILED (WM_APP + 1)        /* the sound thread's save failed: the message box, from the window */
 
-enum { ID_EN = 100, ID_ES, ID_TNS_EN, ID_TNS_ES, ID_BNS_EN, ID_BNS_SK, ID_FACTORY, ID_EXIT, ID_EXPORT, ID_IMPORT,
+enum { ID_EN = 100, ID_ES, ID_TNS_EN, ID_TNS_ES, ID_BNS_EN, ID_BNS_SK, ID_DE, ID_IT, ID_FACTORY, ID_EXIT, ID_EXPORT, ID_IMPORT,
        ID_HISS = 200, ID_WHINE, ID_QUIET, ID_UNITSOUND,
        ID_OPEN_OFF = 210, ID_OPEN_UNTIL, ID_OPEN_ALWAYS, ID_POPCLICK = 215, ID_TICK, ID_QUICK = 218, ID_BRAILLE,
        ID_RATE = 220,
@@ -71,6 +71,13 @@ static const unit_kind KINDS[] = {
      "bns_english.state", "bns_english", BLX_CP850},
     {"Braille 'n Speak 2000 (Slovak)", EMU_BRAILLE_LITE, "bns2000\\BS2SLL.BNS", "bns2000\\bs2sll_fresh.state",
      "bns_slovak.state", "bns_slovak", BLX_CP852},
+    /* Blazie's September 2000 German and Italian updates (an anonymous donation), in the menu when their firmware is
+       there; their factory states made by make_state.exe (bl_state.c's recipes: the English one with the unit's own
+       "yes") */
+    {"Braille Lite 2000 (German)", EMU_BRAILLE_LITE, "german\\Lite2000.BNS", "german\\lite2000_de_fresh.state",
+     "german.state", "german", BLX_CP850},
+    {"Braille Lite 2000 (Italian)", EMU_BRAILLE_LITE, "italian\\Lite2000.BNS", "italian\\lite2000_it_fresh.state",
+     "italian.state", "italian", BLX_CP850},
 };
 #define N_KINDS ((int)(sizeof KINDS / sizeof KINDS[0]))
 
@@ -807,6 +814,10 @@ static HMENU make_menu(void)
     int k;
     AppendMenuA(unit, MF_STRING, ID_EN, "Braille Lite 2000, &English");
     AppendMenuA(unit, MF_STRING, ID_ES, "Braille Lite 2000, &Spanish");
+    if (fw_present(ID_DE - ID_EN))
+        AppendMenuA(unit, MF_STRING, ID_DE, "Braille Lite 2000, &German");
+    if (fw_present(ID_IT - ID_EN))
+        AppendMenuA(unit, MF_STRING, ID_IT, "Braille Lite 2000, It&alian");
     AppendMenuA(unit, MF_STRING, ID_TNS_EN, "&Type 'n Speak, English");
     AppendMenuA(unit, MF_STRING, ID_TNS_ES, "Type 'n Speak, S&panish");
     if (fw_present(ID_BNS_EN - ID_EN))
@@ -1022,7 +1033,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_COMMAND:
         switch (LOWORD(wp)) {
-        case ID_EN: case ID_ES: case ID_TNS_EN: case ID_TNS_ES: case ID_BNS_EN: case ID_BNS_SK:
+        case ID_EN: case ID_ES: case ID_TNS_EN: case ID_TNS_ES: case ID_BNS_EN: case ID_BNS_SK: case ID_DE: case ID_IT:
             tns_release_all();
             start_unit(LOWORD(wp) - ID_EN);
             return 0;

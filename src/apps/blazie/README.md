@@ -199,6 +199,12 @@ Never in the repository. A release puts `firmware\` beside the program (`BL2ENG.
 speech off). Run from the source tree, the program finds
 `firmware/blazie/` itself; `firmware_dir=` in `[unit]` overrides both.
 
+The German and Italian Braille Lite 2000 (Blazie's September 20, 2000 updates, an anonymous donation) are in the
+Firmware menu when `german\Lite2000.BNS` + `german\lite2000_de_fresh.state` or `italian\Lite2000.BNS` +
+`italian\lite2000_it_fresh.state` are there; they keep their memory as `german.state` and `italian.state`. The German
+unit answers a key a little later than the English one (~399 ms of chip time against ~247: its own rules). An English
+unit can also be updated to German or Italian with Blazie's own update file (below), into its second bank.
+
 The Braille 'n Speak 2000 is in the Firmware menu when `bns2000\BS03ENG.BNS` (English, June 24, 2003) or
 `bns2000\BS2SLL.BNS` (Slovak) is there (Linux: menu numbers 15 and 16, `--unit bns-en`, `bns-sk`), each with its
 factory state beside it, made from the firmware by `make_state.exe` (the three power-ons that made the English Braille
