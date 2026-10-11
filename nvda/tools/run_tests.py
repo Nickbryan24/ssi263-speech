@@ -1588,12 +1588,14 @@ CHECKS.append(check("BASIC tones: clean note starts and ends in mode 1 at rate 1
 for brk, marks in (
         ("slew", [r"^FAIL  C  R1=D1 R4=F8 phase  0/32 +start: the tract slewed into M .*start: \+\d+\.\d dB of 3-10 kHz",
                   r"^FAIL  py R1=D1 R4=F8 phase  5/32 +start: the tract slewed into M .*start: \+\d+\.\d dB of 3-10 kHz",
-                  r"^FAIL  skip C 12 ms \(after it\) .*the next note slewed after the skip", r"^BASIC tones: 18 FAILED$"]),
+                  r"^FAIL  skip C 12 ms \(after it\) .*the next note slewed after the skip", r"^BASIC tones: 24 FAILED$"]),
         ("immediate", [r"^FAIL  C  R1=D1 R4=F8 phase  0/32 +PA: the tract retuned [\d.]+ ms after PA's load with the VA "
                        r"latch at 10; tail: \+\d+\.\d dB of 3-10 kHz",
                        r"^FAIL  py R1=D1 R4=F8 phase  5/32 +PA: the tract retuned .*tail: \+\d+\.\d dB of 3-10 kHz",
                        r"^FAIL  skip C 1 ms \(before the latch crossing\) F1 7\.00 after the skip, the rule says 0",
-                       r"^BASIC tones: 16 FAILED$"])):
+                       r"^FAIL  noise -> PA C \(S: VA 0, FA 15\) +the tract moved [\d.]+ ms after PA's load with the "
+                       r"latches at VA 0 FA 15$",
+                       r"^BASIC tones: 22 FAILED$"])):
     CHECKS.append(check("BASIC tones CONTROL (%s, must fail)" % brk, [PY, TONES], env={"TONE_TRACT_BREAK": brk},
                         expect_fail=True, fail_marks=marks))
 # The Mockingboard (src/csrc/mockingboard, 0.8): Sweet Micro's text-to-speech on Fake6502 and the board -- the 6502

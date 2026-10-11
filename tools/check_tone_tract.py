@@ -15,6 +15,9 @@ holds the tract until the VA and FA latches are both zero, then retunes.  Mode 1
   CHUNKS: the C core rendered one sample per call equals one call for the whole sequence.
   SKIP: ssi263_skip / chip.skip across PA's latch crossing (before it, after it) leaves the formant fields and latches
   where running would, and the next note's start is clean.
+  NOISE -> PA (Astra, Reply 179): S (VA 0, FA up) starts at its tract at once, and PA waits for the FA latch alone.
+  RATE CHANGES INSIDE PA: 15 -> 14 lets the tract go (it slews as everywhere else); 14 -> 15 with the latches still up
+  holds it from the change until they are zero.  (The mode latches only at a CTL fall, so it cannot change inside PA.)
   INACTIVE: mode 1 at rate 14, mode 3 at rate 15 and 8, and noise -> PA render identically under all three settings.
 
     python tools/check_tone_tract.py            exit 1 on any failure
@@ -219,6 +222,83 @@ def check_skip(core):
         report("skip %s %.0f ms (%s)" % (core, t * 1e3, when), bad, "formants and latches as running; next start clean")
 
 
+def held_then_retuned(rows, i_pa, before, label, extra=None):
+    """From PA's load until both latches are zero the formants stay at `before`; a sample later they are at PA's."""
+    pa_t = ROM.entry(PA)
+    bad = list(extra or [])
+    k_zero = next((k for k in range(i_pa, len(rows)) if rows[k][2]["VA"] == 0 and rows[k][2]["FA"] == 0), None)
+    if k_zero is None:
+        bad.append("the VA/FA latches never reached zero")
+    else:
+        moved = next((k for k in range(i_pa, k_zero) if any(rows[k][1][f] != before[f] for f in FORMANTS)), None)
+        if moved is not None:
+            bad.append("the tract moved %.2f ms after PA's load with the latches at VA %d FA %d" % (
+                (moved - i_pa + 1) * 1e3 / RATE, rows[moved][2]["VA"], rows[moved][2]["FA"]))
+        if k_zero + 1 < len(rows) and any(rows[k_zero + 1][1][f] != pa_t[f] for f in FORMANTS):
+            bad.append("the tract did not retune once the latches were zero")
+    report(label, bad, "held %.2f ms, then PA's tract" % (((k_zero or i_pa) - i_pa + 1) * 1e3 / RATE))
+
+
+def check_noise_pa(core):
+    """Astra (Reply 179): noise -> PA, and zero VA with nonzero FA.  S (VA 0, FA up) starts at its tract at once; PA
+    then waits for the FA latch alone."""
+    s_t = ROM.entry(0x30)
+    chip = make(core)
+    basic_setup(chip, 0xD1, 0xF8)
+    rows = run_rows(chip, 0.02)
+    i_s = len(rows)
+    chip.write(0, 0x30)
+    rows += run_rows(chip, 0.1)
+    i_pa = len(rows)
+    chip.write(0, PA)
+    rows += run_rows(chip, 0.04)
+    pre = []
+    if any(rows[i_s][1][f] != s_t[f] for f in FORMANTS):
+        pre.append("S slewed in")
+    if rows[i_pa - 1][2]["VA"] != 0 or rows[i_pa - 1][2]["FA"] == 0:
+        pre.append("S is not zero-VA / nonzero-FA here (VA %d FA %d)" % (rows[i_pa - 1][2]["VA"], rows[i_pa - 1][2]["FA"]))
+    held_then_retuned(rows, i_pa, s_t, "noise -> PA %s (S: VA 0, FA %d)" % (core, s_t["FA"]), pre)
+
+
+def check_rate_change(core):
+    """Astra (Reply 179): the rate changing partway through PA.  15 -> 14 a millisecond into PA: the rule lets go and
+    the tract slews from M's toward PA's as everywhere else.  14 -> 15 with the latches still up: it holds from there."""
+    m_t, pa_t = ROM.entry(M), ROM.entry(PA)
+    for first, second in ((15, 14), (14, 15)):
+        chip = make(core)
+        basic_setup(chip, 0xD1, 0xF8, rate=first)
+        chip.write(0, M)
+        chip.run(0.15)
+        chip.write(0, PA)
+        rows = run_rows(chip, 0.001)
+        at_switch = dict(rows[-1][1])
+        chip.write(2, (second << 4) | 15)
+        rows += run_rows(chip, 0.03)
+        lat = rows[len(rows) - int(0.03 * RATE)][2]
+        bad = []
+        if first == 15:
+            if any(at_switch[f] != m_t[f] for f in FORMANTS):
+                bad.append("the tract moved before the rate change")
+            k = len(rows) - int(0.03 * RATE)
+            nxt = rows[k + 5][1]
+            if any(nxt[f] == pa_t[f] for f in FORMANTS if pa_t[f] != m_t[f]) and lat["VA"] > 0:
+                bad.append("after the change to rate 14 the tract jumped to PA's at once")
+            if not any(nxt[f] != m_t[f] for f in FORMANTS):
+                bad.append("after the change to rate 14 the tract stayed held")
+        else:
+            if all(at_switch[f] == m_t[f] for f in FORMANTS):
+                bad.append("rate 14: the tract did not slew in the first millisecond")
+            k = len(rows) - int(0.03 * RATE)
+            if lat["VA"] > 0:
+                k_zero = next((j for j in range(k, len(rows)) if rows[j][2]["VA"] == 0 and rows[j][2]["FA"] == 0), None)
+                if k_zero is None or any(rows[j][1][f] != at_switch[f] for j in range(k, k_zero) for f in FORMANTS):
+                    bad.append("after the change to rate 15 the tract did not hold while the latches were up")
+                elif any(rows[k_zero + 1][1][f] != pa_t[f] for f in FORMANTS):
+                    bad.append("after the change to rate 15 the tract did not retune at the latches' zero")
+        report("rate %d -> %d inside PA %s" % (first, second, core), bad,
+               "let go and slewed" if first == 15 else "held from the change, then PA's tract")
+
+
 def check_inactive():
     for mode, rate in [(1, 14), (3, 15), (3, 8)]:
         outs = []
@@ -246,6 +326,9 @@ def main():
     check_chunks()
     check_skip("C")
     check_skip("py")
+    for core in ("C", "py"):
+        check_noise_pa(core)
+        check_rate_change(core)
     if not BREAK:
         check_inactive()
     print("BASIC tones: %s" % ("%d FAILED" % len(fails) if fails else "all ok"))
