@@ -167,6 +167,35 @@ def archive(name):
     return path, os.path.join(export, artifacts[0])
 
 
+# The privacy manifest's keys, and the required-reason codes this app may declare (Apple's "Describing use of
+# required reason API"): build 1's manifests, valid plists with an XML comment, were refused as invalid (ITMS-91056).
+MANIFEST_KEYS = {"NSPrivacyTracking", "NSPrivacyTrackingDomains", "NSPrivacyCollectedDataTypes",
+                 "NSPrivacyAccessedAPITypes"}
+REASONS = {"NSPrivacyAccessedAPICategoryUserDefaults": {"CA92.1", "1C8F.1", "C56D.1", "AC6B.1"},
+           "NSPrivacyAccessedAPICategoryFileTimestamp": {"DDA9.1", "C617.1", "3B52.1", "0A2A.1"}}
+
+
+def manifest_problems(path):
+    """What App Store Connect could refuse in a privacy manifest: comments, other keys, unknown reasons."""
+    raw = open(path, "rb").read()
+    if b"<!--" in raw:
+        return ["an XML comment"]
+    try:
+        m = plistlib.loads(raw)
+    except Exception as e:
+        return ["not a plist (%s)" % e]
+    bad = ["the key %s" % k for k in m if k not in MANIFEST_KEYS]
+    if m.get("NSPrivacyTracking") is not False:
+        bad.append("NSPrivacyTracking is not false")
+    for t in m.get("NSPrivacyAccessedAPITypes", []):
+        cat, reasons = t.get("NSPrivacyAccessedAPIType"), t.get("NSPrivacyAccessedAPITypeReasons", [])
+        if cat not in REASONS:
+            bad.append("the category %s" % cat)
+        elif not reasons or set(reasons) - REASONS[cat]:
+            bad.append("%s's reasons %s" % (cat, reasons))
+    return bad
+
+
 def verify(name, archive_path, n):
     """What goes up is what it should be: the numbers, the icon, the manifests, no firmware."""
     apps = os.path.join(archive_path, "Products", "Applications")
@@ -192,8 +221,11 @@ def verify(name, archive_path, n):
     if not os.path.isfile(os.path.join(res, "Assets.car")):
         bad.append("no icon (Assets.car)")
     for who, d in (("the app", res), ("the extension", os.path.join(appex_contents, "Resources") if mac else appex)):
-        if not os.path.isfile(os.path.join(d, "PrivacyInfo.xcprivacy")):
+        mf = os.path.join(d, "PrivacyInfo.xcprivacy")
+        if not os.path.isfile(mf):
             bad.append("%s has no privacy manifest" % who)
+        else:
+            bad += ["%s's privacy manifest has %s" % (who, p) for p in manifest_problems(mf)]
     audit = subprocess.run([sys.executable, os.path.join(HERE, "test", "check_archive_no_firmware.py"), archive_path],
                            capture_output=True, text=True)
     if audit.returncode:
