@@ -104,6 +104,25 @@ is saved) and ends the program, as Z-chord with dot 7 does. The menu's other cho
 
 The Type 'n Speak needs a QWERTY keyboard: a USB one plugged into the device.
 
+## Programs and games (.bns)
+
+Blazie's programs and games (Simon, Chess, Minesweeper, ...) go into the unit's flash startup folder from the
+command line, with `blazie_files add` (installed beside `blazie_emu`). Close the emulator first -- Z-chord with dot 7
+saves the unit and leaves -- since it saves the unit over the file when it closes. Then, in the device's terminal:
+
+    blazie_files add MEMORY/english.state simon.bns chess.bns
+
+MEMORY is where the unit's memory is kept: with #4's front end (the default), its own folder on the device,
+`blazie-emulator` (the device's user folder for the program: `find ~ -name english.state` shows it); with
+`[input] bt = native` or `off`, `~/.config/ssi263-speech/blazie-emu`. The other units' files are `spanish.state`,
+`tns_english.state`, `bns_english.state` and so on. All the files go in as one batch, or none if one cannot (the flash
+full, a name the unit cannot take); a name the unit has already loads nothing unless `--replace` is added, which
+rewrites it where it is. The unit as it was is kept as `english.state.before-import`. Start the emulator again and run
+a program with the unit's own command: o-chord x, its name, e-chord (the Type 'n Speak: F9 x, its name, Enter).
+
+The desktop and terminal emulators have the same as a menu item (Firmware > Load programs into flash; the terminal
+menu's `p`). #4's front end's menu does not have it yet.
+
 ## The braille display
 
 On a BT Braille the Braille Lite's 18 cells are shown at the left of the display, the rest blank, as the unit shows
