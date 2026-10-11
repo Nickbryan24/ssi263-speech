@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "audio_pace.h"
+#include "brl_win.h"
 #include "chords.h"
 #include "emu_unit.h"
 #include "serial_win.h"
@@ -46,7 +47,7 @@
 
 enum { ID_EN = 100, ID_ES, ID_TNS_EN, ID_TNS_ES, ID_BNS_EN, ID_BNS_SK, ID_FACTORY, ID_EXIT, ID_EXPORT, ID_IMPORT,
        ID_HISS = 200, ID_WHINE, ID_QUIET, ID_UNITSOUND,
-       ID_OPEN_OFF = 210, ID_OPEN_UNTIL, ID_OPEN_ALWAYS, ID_POPCLICK = 215, ID_TICK, ID_QUICK = 218,
+       ID_OPEN_OFF = 210, ID_OPEN_UNTIL, ID_OPEN_ALWAYS, ID_POPCLICK = 215, ID_TICK, ID_QUICK = 218, ID_BRAILLE,
        ID_RATE = 220,
        ID_BUFFER = 230,                     /* ID_BUFFER + AP_AUTO .. AP_LONG: Sound buffer */
        ID_KEYS = 300, ID_ABOUT,
@@ -101,6 +102,11 @@ static char g_com[16];                     /* its name ("COM10"), or "" */
 static HMENU g_serial_menu;
 static com_port_info g_ports[COM_MAX];     /* as the Serial port menu last listed them */
 static int g_n_ports;
+static HWND g_brl;                         /* the braille display field (brl_win.h) */
+static int g_braille;                      /* Settings > Braille display: shown; off by default */
+static int g_bars;                         /* the bars held from the keyboard's Alt+Shift+Right, Left (emu_braille_bars) */
+#define BRAILLE_TIMER 2
+#define BRAILLE_MS 50
 
 /* the window's title, which a screen reader reads on focus: the unit, and the COM port it is plugged into */
 static void status(const char *text)
@@ -826,6 +832,7 @@ static HMENU make_menu(void)
     AppendMenuA(sound, MF_STRING, ID_TICK, "The 10 Hz &tick of the open channel");
     AppendMenuA(sound, MF_SEPARATOR, 0, NULL);
     AppendMenuA(sound, MF_STRING, ID_QUICK, "&Quick key response (faster than the real unit)");
+    AppendMenuA(sound, MF_STRING, ID_BRAILLE, "Braille &display in the window\tAlt+Shift+B");
     AppendMenuA(help, MF_STRING, ID_KEYS, "&Keys");
     AppendMenuA(help, MF_STRING, ID_ABOUT, "&About");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)unit, "&Firmware");
@@ -876,6 +883,36 @@ static void tns_release_all(void)
     LeaveCriticalSection(&g_lock);
 }
 
+/* the unit's cells into the field, as the firmware last latched them */
+static void show_braille(void)
+{
+    unsigned char cells[EMU_CELLS];
+    int n = 0;
+    EnterCriticalSection(&g_lock);
+    if (g_unit)
+        n = emu_braille(g_unit, cells, EMU_CELLS);
+    LeaveCriticalSection(&g_lock);
+    brlw_show(g_brl, cells, n);
+}
+
+static void set_braille(int on)
+{
+    g_braille = on;
+    brlw_visible(g_brl, on);
+    SetFocus(on ? g_brl : g_wnd);
+    CheckMenuItem(GetMenu(g_wnd), ID_BRAILLE, MF_BYCOMMAND | (on ? MF_CHECKED : MF_UNCHECKED));
+    WritePrivateProfileStringA("braille", "display", on ? "1" : "0", g_ini);
+}
+
+static void bars(int bits)
+{
+    EnterCriticalSection(&g_lock);
+    g_bars = bits;
+    if (g_unit)
+        emu_braille_bars(g_unit, bits);
+    LeaveCriticalSection(&g_lock);
+}
+
 static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     /* Alt+Shift+F always opens this program's menu, whatever unit has the keyboard (the Type 'n Speak takes Alt for
@@ -885,6 +922,37 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         tns_release_all();
         PostMessageA(w, WM_SYSCOMMAND, SC_KEYMENU, 0);
         return 0;
+    }
+    /* Alt+Shift+Right and Left: the advance and back bars, held as long as the arrow is -- for a braille display's
+       user, whose display's keys stay the screen reader's (the Braille Lite's ; and A too).  Not the Type 'n Speak's:
+       it has no bars, and its keyboard is its own */
+    /* Alt+Shift+B: the braille display field on or off (Settings > Braille display); the Type 'n Speak's
+       keyboard keeps it.  Its character is swallowed: no beep from the menu bar, which has no B */
+    if (!tns_active() && wp == 'B' && (GetKeyState(VK_MENU) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000)) {
+        if (msg == WM_SYSKEYDOWN || msg == WM_KEYDOWN) {
+            if (!(lp & 0x40000000))         /* not auto-repeat */
+                PostMessageA(w, WM_COMMAND, ID_BRAILLE, 0);
+            return 0;
+        }
+        if (msg == WM_SYSCHAR || msg == WM_CHAR)
+            return 0;
+    }
+    if (!tns_active() && (msg == WM_SYSCHAR || msg == WM_CHAR) && (wp == 'b' || wp == 'B')
+            && (GetKeyState(VK_MENU) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000))
+        return 0;
+    if (!tns_active() && (wp == VK_RIGHT || wp == VK_LEFT)
+            && (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYUP)) {
+        int bit = wp == VK_RIGHT ? 1 : 2;
+        if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && (GetKeyState(VK_MENU) & 0x8000)
+                && (GetKeyState(VK_SHIFT) & 0x8000)) {
+            if (!(g_bars & bit))            /* the first down only */
+                bars(g_bars | bit);
+            return 0;
+        }
+        if ((msg == WM_KEYUP || msg == WM_SYSKEYUP) && (g_bars & bit)) {
+            bars(g_bars & ~bit);
+            return 0;
+        }
     }
     if (tns_active() && (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYUP)) {
         int down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN, code;
@@ -942,7 +1010,16 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             emu_keys_down(g_unit, 0);
         LeaveCriticalSection(&g_lock);
         tns_release_all();                  /* and the Type 'n Speak's held keys come up */
+        if (g_bars)
+            bars(0);                        /* and the bars */
         break;
+    case WM_SETFOCUS:                       /* the field keeps the keyboard while it is shown */
+        if (g_braille)
+            SetFocus(g_brl);
+        return 0;
+    case WM_SIZE:
+        brlw_layout(g_brl, LOWORD(lp), HIWORD(lp));
+        return 0;
     case WM_COMMAND:
         switch (LOWORD(wp)) {
         case ID_EN: case ID_ES: case ID_TNS_EN: case ID_TNS_ES: case ID_BNS_EN: case ID_BNS_SK:
@@ -993,6 +1070,18 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             CheckMenuItem(GetMenu(w), ID_QUICK, MF_BYCOMMAND | (g_quick ? MF_CHECKED : MF_UNCHECKED));
             WritePrivateProfileStringA("unit", "quick_keys", g_quick ? "1" : "0", g_ini);
             return 0;
+        case ID_BRAILLE:
+            if (!g_braille)
+                MessageBoxA(w, "The unit's braille display is shown in a field in this window, which your screen "
+                            "reader shows on your braille display. The field keeps the keyboard: the unit's keys "
+                            "work as before.\n\n"
+                            "Your braille display's own keys stay your screen reader's, so they cannot press the "
+                            "unit's advance bars, and the display does not advance by itself at the end of the "
+                            "field. Advance from your PC keyboard instead:\n\n"
+                            "Alt+Shift+Right Arrow = the advance bar\nAlt+Shift+Left Arrow = the back bar\n"
+                            "(on the Braille Lite, ; and A as well)", "Braille display", MB_OK | MB_ICONINFORMATION);
+            set_braille(!g_braille);
+            return 0;
         default:
             if (LOWORD(wp) >= ID_BUFFER && LOWORD(wp) < ID_BUFFER + AP_N_MODES) {
                 InterlockedExchange(&g_buffer_mode, LOWORD(wp) - ID_BUFFER);   /* the sound thread takes it */
@@ -1014,6 +1103,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         case ID_KEYS:
             MessageBoxA(w, "Braille Lite, while this window is in front:\n\n"
                         "F D S = dots 1 2 3\nJ K L = dots 4 5 6\nSpace bar = space\nA or ; = advance bar\n"
+                        "Alt+Shift+Right, Left Arrow = the advance bar, the back bar\n"
+                        "Alt+Shift+B = the braille display in the window, on or off\n"
                         "The Braille 'n Speak 2000 takes the same keys; it has no advance bar.\n\n"
                         "Press the keys of a chord together; it goes to the unit when you let go of them.\n"
                         "Keys held while the unit starts are read as it starts: p-chord, l restarts it; "
@@ -1039,7 +1130,13 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         if ((HMENU)wp == g_serial_menu)
             fill_serial_menu();
         break;
-    case WM_TIMER:                          /* the unit's memory saved every minute: nothing is lost if the */
+    case WM_TIMER:
+        if (wp == BRAILLE_TIMER) {
+            if (g_braille)
+                show_braille();
+            return 0;
+        }
+        /* the unit's memory saved every minute: nothing is lost if the */
         if (g_audio_ok) {                   /* program is ended without closing its window -- by the sound thread, */
             InterlockedExchange(&g_save_due, 1);   /* which renders ahead first (audio_pace.h) */
             SetEvent(g_wave_event);
@@ -1122,8 +1219,16 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
     RegisterClassA(&wc);
     g_wnd = CreateWindowA("BlazieEmulator", "Blazie emulator", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                           480, 240, NULL, make_menu(), inst, NULL);
+    g_brl = brlw_create(g_wnd, inst, wndproc);
+    {
+        RECT r;
+        GetClientRect(g_wnd, &r);
+        brlw_layout(g_brl, r.right, r.bottom);
+    }
     ShowWindow(g_wnd, show);
     SetTimer(g_wnd, 1, 60000, NULL);
+    SetTimer(g_wnd, BRAILLE_TIMER, BRAILLE_MS, NULL);
+    set_braille(GetPrivateProfileIntA("braille", "display", 0, g_ini) != 0);
     load_idle();
     apply_idle();
     g_block_ms = GetPrivateProfileIntA("sound", "block_ms", BLOCK_MS_DEFAULT, g_ini);

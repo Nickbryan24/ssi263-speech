@@ -443,6 +443,14 @@ if os.path.isfile(os.path.join(ENG, "BL2ENG.BNS")):
 EMU = os.path.join(os.path.dirname(HERE), "dist", "blazie-emu")
 if os.path.isfile(os.path.join(EMU, "test_emu_unit.exe")):
     CHECKS.append(check("Blazie emulator: chords", [os.path.join(EMU, "test_chords.exe")]))
+    # the braille display field (src/apps/blazie/brl_win.c): its keys go to the window, the cells as Unicode braille;
+    # the control keeps the keys in the field and must fail on exactly those
+    if os.path.isfile(os.path.join(EMU, "test_brl_win.exe")):
+        CHECKS.append(check("Blazie emulator: the braille display field", [os.path.join(EMU, "test_brl_win.exe")]))
+        CHECKS.append(check("Blazie emulator: the braille display field CONTROL (keys kept, must fail)",
+                            [os.path.join(EMU, "test_brl_win_break.exe")], expect_fail=True,
+                            fail_marks=[r"^FAIL  a character goes to the window",
+                                        r"^FAIL  Alt keys go to the window"]))
     # its sound queue (src/apps/blazie/audio_pace.c; Tomi: the emulator's speech stutters, the add-on's doesn't)
     # against a simulated sound card calibrated on this desktop's waveOut: a busy machine and a remote card heard
     # without gaps once the automatic queue has grown, a slow save without gaps; the control puts the 0.7.0 draft's

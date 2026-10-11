@@ -118,7 +118,13 @@ def main():
     # a saved Type 'n Speak that was never set up (the previews' first start), told apart and set up anew
     rescue = compile_c(os.path.join(HERE, "tns_rescue.c"), APP)
     shell = [compile_c(os.path.join(HERE, f), APP) for f in ("main_win.c", "tns_keymap_win.c", "serial_win.c",
-                                                             "audio_pace.c")]
+                                                             "audio_pace.c", "brl_win.c")]
+    # the braille display field: its keys to the window, the cells as Unicode braille; _break: the keys kept in the
+    # field (its must-fail control)
+    test_brl = compile_c(os.path.join(HERE, "test_brl_win.c"), APP)
+    link("test_brl_win.exe", [test_brl, os.path.join(obj, "brl_win.o")], libs=("-lgdi32",))
+    link("test_brl_win_break.exe", [test_brl, compile_c(os.path.join(HERE, "brl_win.c"), APP, name="brl_win_break",
+                                                        defines=("BRLW_NO_FORWARD",))], libs=("-lgdi32",))
     # the sound queue against a simulated sound card (Tomi: the emulator's speech stutters); --old: its control
     link("test_audio.exe", [compile_c(os.path.join(HERE, "test_audio.c"), APP), os.path.join(obj, "audio_pace.o")],
          libs=())
