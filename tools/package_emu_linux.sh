@@ -80,6 +80,16 @@ for u in bns-en bns-sk; do
     grep -q "^starting $u from .*/$NAME/bin/\\.\\./share/ssi263-speech/bns2000/" bns.txt || bad=1
     awk '$1 == "rms" && $2 == "0.00-6.00" { ok = $NF > 0.01 } END { exit !ok }' bns.txt || bad=1
 done
+# the German and Italian Braille Lite 2000 (0.8), from the package's flat names, when the package carries them
+for u in bl-de:Lite2000_de.BNS bl-it:Lite2000_it.BNS; do
+    [ -f "$NAME/share/ssi263-speech/${u#*:}" ] || { echo "== no ${u#*:}: $u not in this archive"; continue; }
+    u="${u%%:*}"
+    echo "== boot, Braille Lite 2000 $u (no --firmware)"
+    "./$NAME/bin/blazie_emu" --config "$C" --null --rate 22050 --unit $u --seconds 10 --rms 0:6 > lang.txt 2>&1
+    echo "exit=$?"; cat lang.txt
+    grep -q "^starting $u from .*/$NAME/bin/\\.\\./share/ssi263-speech/lite2000_" lang.txt || bad=1
+    awk '$1 == "rms" && $2 == "0.00-6.00" { ok = $NF > 0.01 } END { exit !ok }' lang.txt || bad=1
+done
 echo "== blazie_files (no arguments: its usage)"; "./$NAME/bin/blazie_files" > files.txt 2>&1; echo "exit=$?"; head -n 2 files.txt
 grep -q "^usage: blazie_files" files.txt || bad=1
 cd /; rm -rf "$T" "$C"

@@ -543,7 +543,7 @@ def run_kind(exe, fw, tmp):
     bns = bns_present(fw)
     r = subprocess.run([exe, "--unit", "nonesuch"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        universal_newlines=True, timeout=30)
-    check("--unit: the units named", r.returncode == 2 and "bns-en or bns-sk" in r.stdout,
+    check("--unit: the units named", r.returncode == 2 and "bl-de, bl-it, tns-en, tns-es, bns-en or bns-sk" in r.stdout,
           "exit %d: %r" % (r.returncode, r.stdout.strip()[-80:]))
     runs = [("kind-ini", [], "Braille 'n Speak 2000 (Slovak)" if bns else "Braille Lite 2000 (English)")]
     if bns:

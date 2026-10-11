@@ -83,13 +83,18 @@ static const unit_kind KINDS[] = {
      {"bns2000/bs03eng_fresh.state", "bs03eng_fresh.state"}, "bns_english.state", "bns_english"},
     {"Braille 'n Speak 2000 (Slovak)", "bns-sk", EMU_BRAILLE_LITE, {"bns2000/BS2SLL.BNS", "BS2SLL.BNS"},
      {"bns2000/bs2sll_fresh.state", "bs2sll_fresh.state"}, "bns_slovak.state", "bns_slovak"},
+    /* Blazie's September 2000 German and Italian updates (an anonymous donation), menu numbers 18 and 19; their
+       factory states made by make_state (bl_state.c's recipes) */
+    {"Braille Lite 2000 (German)", "bl-de", EMU_BRAILLE_LITE, {"german/Lite2000.BNS", "Lite2000_de.BNS"},
+     {"german/lite2000_de_fresh.state", "lite2000_de_fresh.state"}, "german.state", "german"},
+    {"Braille Lite 2000 (Italian)", "bl-it", EMU_BRAILLE_LITE, {"italian/Lite2000.BNS", "Lite2000_it.BNS"},
+     {"italian/lite2000_it_fresh.state", "lite2000_it_fresh.state"}, "italian.state", "italian"},
 };
 #define N_KINDS ((int)(sizeof KINDS / sizeof KINDS[0]))
-#define N_FIRST_KINDS 4             /* the menu's 1-4; the kinds after them are 15 on */
+#define N_FIRST_KINDS 4             /* the menu's 1-4; the kinds after them are 15 on, past the sound buffer's 17 */
 #define MENU_LATER_KINDS 15
-#define MENU_BUFFER 17              /* the sound buffer: after the settings 5-14 and the kinds 15 on */
-/* a later kind must not take the sound buffer's number */
-typedef char later_kinds_before_menu_buffer[MENU_LATER_KINDS + N_KINDS - N_FIRST_KINDS <= MENU_BUFFER ? 1 : -1];
+#define MENU_BUFFER 17              /* the sound buffer: after the settings 5-14 and the Braille 'n Speak's 15, 16 (it
+                                       kept its number when German and Italian came: 18, 19) */
 static const int RATES[] = {11025, 16000, 22050, 32000, 44100, 48000};
 #define N_RATES ((int)(sizeof RATES / sizeof RATES[0]))
 static const char *const IDLE_NAMES[] = {"off", "hiss", "whine", "unit"};
@@ -248,7 +253,8 @@ static void fw_file(const char *const names[2], char *out, int cap)
    is offered only when its firmware is there */
 static int kind_menu_number(int kind)
 {
-    return kind < N_FIRST_KINDS ? kind + 1 : MENU_LATER_KINDS + kind - N_FIRST_KINDS;
+    int n = MENU_LATER_KINDS + kind - N_FIRST_KINDS;
+    return kind < N_FIRST_KINDS ? kind + 1 : n >= MENU_BUFFER ? n + 1 : n;
 }
 
 static int kind_offered(int kind)
@@ -1081,14 +1087,17 @@ static void menu(void)
         say("  13 Braille Lite keyboard: %s", g_blk.mode == BLK_LETTERS
             ? "letters (each character its braille cell)" : "keys (F D S J K L)");
         say("  14 Keys (help)");
-        for (k = N_FIRST_KINDS; k < N_KINDS; k++)
-            if (kind_offered(k))
+        for (k = N_FIRST_KINDS; k < N_KINDS; k++)   /* in number order: 15, 16, the sound buffer's 17, 18 on */
+            if (kind_offered(k) && kind_menu_number(k) < MENU_BUFFER)
                 say("  %d %s%s", kind_menu_number(k), KINDS[k].name, k == g_kind ? " (on now)" : "");
         {
             char b[80];
             buffer_line(b, sizeof b);
             say("  %d Sound buffer: %s", MENU_BUFFER, b);
         }
+        for (k = N_FIRST_KINDS; k < N_KINDS; k++)
+            if (kind_offered(k) && kind_menu_number(k) > MENU_BUFFER)
+                say("  %d %s%s", kind_menu_number(k), KINDS[k].name, k == g_kind ? " (on now)" : "");
         say("  0 Exit (the unit's memory is saved)");
         read_line(line, sizeof line);
         if (!line[0])
@@ -1454,7 +1463,7 @@ static void usage(void)
 {
     printf("blazie_emu -- a Blazie Braille Lite 2000, Braille 'n Speak 2000 or Type 'n Speak, running its own "
            "firmware.\n\n"
-           "  blazie_emu [--unit bl-en|bl-es|tns-en|tns-es|bns-en|bns-sk] [--firmware DIR] [--config DIR]\n"
+           "  blazie_emu [--unit bl-en|bl-es|bl-de|bl-it|tns-en|tns-es|bns-en|bns-sk] [--firmware DIR] [--config DIR]\n"
            "  blazie_emu --show-keys          what this keyboard sends (for the key settings)\n"
            "  blazie_emu --no-sound           no sound card: the unit runs on silent, paced by the system clock\n"
            "  blazie_emu --no-bt              on a BT Speak or BT Braille, run here in the terminal all the same\n"
@@ -1581,7 +1590,7 @@ int main(int argc, char **argv)
             kind = i;
     if (kind < 0) {
         if (unit_id) {
-            fprintf(stderr, "blazie_emu: --unit bl-en, bl-es, tns-en, tns-es, bns-en or bns-sk\n");
+            fprintf(stderr, "blazie_emu: --unit bl-en, bl-es, bl-de, bl-it, tns-en, tns-es, bns-en or bns-sk\n");
             return 2;
         }
         kind = 0;

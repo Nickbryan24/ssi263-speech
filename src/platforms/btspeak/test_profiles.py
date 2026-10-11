@@ -12,8 +12,8 @@ from tns_keyboard import CELLS, key_name
 
 class ProfileTests(unittest.TestCase):
     def test_all_existing_models_and_isolated_states(self):
-        self.assertEqual(set(BY_KEY), {"bl-en", "bl-es", "tns-en", "tns-es", "bns-en", "bns-sk"})
-        self.assertEqual(len({p.saved for p in PROFILES}), 6)
+        self.assertEqual(set(BY_KEY), {"bl-en", "bl-es", "tns-en", "tns-es", "bns-en", "bns-sk", "bl-de", "bl-it"})
+        self.assertEqual(len({p.saved for p in PROFILES}), 8)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for profile in PROFILES:

@@ -38,5 +38,10 @@ PROFILES = (
             ("bns2000/bs03eng_fresh.state", "bs03eng_fresh.state"), "bns_english.state"),
     Profile("bns-sk", _("Braille 'n Speak 2000 (Slovak, speech only)"), ("bns2000/BS2SLL.BNS", "BS2SLL.BNS"),
             ("bns2000/bs2sll_fresh.state", "bs2sll_fresh.state"), "bns_slovak.state"),
+    # Blazie's September 2000 German and Italian updates (an anonymous donation); flat: the Linux package's names
+    Profile("bl-de", _("Braille Lite 2000 (German)"), ("german/Lite2000.BNS", "Lite2000_de.BNS"),
+            ("german/lite2000_de_fresh.state", "lite2000_de_fresh.state"), "german.state"),
+    Profile("bl-it", _("Braille Lite 2000 (Italian)"), ("italian/Lite2000.BNS", "Lite2000_it.BNS"),
+            ("italian/lite2000_it_fresh.state", "lite2000_it_fresh.state"), "italian.state"),
 )
 BY_KEY = {profile.key: profile for profile in PROFILES}

@@ -94,6 +94,12 @@ static const unit_kind KINDS[] = {
      {"bns2000/bs03eng_fresh.state", "bs03eng_fresh.state"}, "bns_english.state", "bns_english", BLX_CP850},
     {"Braille 'n Speak 2000 (Slovak)", "bns-sk", EMU_BRAILLE_LITE, {"bns2000/BS2SLL.BNS", "BS2SLL.BNS"},
      {"bns2000/bs2sll_fresh.state", "bs2sll_fresh.state"}, "bns_slovak.state", "bns_slovak", BLX_CP852},
+    /* Blazie's September 2000 German and Italian updates (an anonymous donation), in the menu when their firmware and
+       factory states are there */
+    {"Braille Lite 2000 (German)", "bl-de", EMU_BRAILLE_LITE, {"german/Lite2000.BNS", "Lite2000_de.BNS"},
+     {"german/lite2000_de_fresh.state", "lite2000_de_fresh.state"}, "german.state", "german", BLX_CP850},
+    {"Braille Lite 2000 (Italian)", "bl-it", EMU_BRAILLE_LITE, {"italian/Lite2000.BNS", "Lite2000_it.BNS"},
+     {"italian/lite2000_it_fresh.state", "lite2000_it_fresh.state"}, "italian.state", "italian", BLX_CP850},
 };
 #define N_KINDS ((int)(sizeof KINDS / sizeof KINDS[0]))
 #define N_FIRST_KINDS 4                 /* always in the menu; the kinds after them only when they can run */
@@ -101,7 +107,8 @@ static const unit_kind KINDS[] = {
    would share Export's o */
 static const char *const KIND_MENU[N_KINDS] = {"Braille Lite 2000, _English", "Braille Lite 2000, _Spanish",
                                                "_Type 'n Speak, English", "Type 'n Speak, S_panish",
-                                               "Braille 'n Speak 2000, E_nglish", "Braille 'n Speak 2000, S_lovak"};
+                                               "Braille 'n Speak 2000, E_nglish", "Braille 'n Speak 2000, S_lovak",
+                                               "Braille Lite 2000, _German", "Braille Lite 2000, It_alian"};
 static const int RATES[] = {11025, 16000, 22050, 32000, 44100, 48000};
 #define N_RATES ((int)(sizeof RATES / sizeof RATES[0]))
 static const char *const IDLE_NAMES[] = {"off", "hiss", "whine", "unit"};
@@ -1739,7 +1746,7 @@ static void usage(void)
 {
     printf("blazie_emu_gtk -- a Blazie Braille Lite 2000, Braille 'n Speak 2000 or Type 'n Speak, running its own\n"
            "firmware, in a window.\n\n"
-           "  blazie_emu_gtk [--unit bl-en|bl-es|tns-en|tns-es|bns-en|bns-sk] [--firmware DIR] [--config DIR]\n"
+           "  blazie_emu_gtk [--unit bl-en|bl-es|bl-de|bl-it|tns-en|tns-es|bns-en|bns-sk] [--firmware DIR] [--config DIR]\n"
            "                 [--no-sound]\n"
            "  blazie_emu_gtk --help\n\n"
            "For the tests: --rate HZ, --trace FILE (the unit's level, its keys and the status lines), --ram-has TEXT\n"
@@ -1817,7 +1824,7 @@ int main(int argc, char **argv)
         kind = -1;                              /* the unit used last is not here now (its firmware moved): bl-en */
     if (kind < 0) {
         if (unit_id) {
-            fprintf(stderr, "blazie_emu_gtk: --unit bl-en, bl-es, tns-en, tns-es, bns-en or bns-sk\n");
+            fprintf(stderr, "blazie_emu_gtk: --unit bl-en, bl-es, bl-de, bl-it, tns-en, tns-es, bns-en or bns-sk\n");
             return 2;
         }
         kind = 0;
