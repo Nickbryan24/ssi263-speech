@@ -69,7 +69,8 @@ turn it on) shows the unit's 18 cells in a read-only field, which your screen re
 as the unit's real dots (Unicode braille; tried with NVDA). The field keeps the keyboard, so the unit's keys work as
 before. Your display's own keys stay your screen reader's: they cannot press the unit's bars, and the display does not
 advance by itself at the end of the field. From the PC keyboard: **Alt+Shift+Right Arrow** = the advance bar,
-**Alt+Shift+Left Arrow** = the back bar (on every unit but the Type 'n Speak, whose keyboard is its own).
+**Alt+Shift+Left Arrow** = the back bar (on every unit but the Type 'n Speak, whose keyboard is its own). Turn off
+any braille translation your screen reader does: it can interfere with the unit's cells.
 
 **Braille 'n Speak 2000**: the Braille Lite's keys, the same six dots and space bar. It has no braille display and no
 advance bar (its firmware never reads that bit).
