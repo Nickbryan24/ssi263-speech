@@ -24,6 +24,9 @@
  *   overflow_in_rules  253 characters of WXYZ, whose R0 frames overflow during the rules: refused by the guard
  *                   itself, no frame past its first byte (1.1: 8B00h; the early one: 6600h, its own variables)
  *   cancel          a cancel stops the frames within one more A/R, and the next text speaks normally
+ *   kept_texts      one host, eleven texts in a row, each run only until the firmware says done (as the voice does):
+ *                   all taken and spoken (the early handler clears its busy flag before it returns: left parked
+ *                   there, every later text was refused)
  *   wrong_image     the file with one byte changed is refused
  *
  * Each line: "ok"/"FAIL", the test's name, the detail; the last line "all passed" or "FAILED"; exit status 0/1 (77
@@ -369,6 +372,28 @@ static void t_start_pitch(const char *dir)
     mbh_destroy(h);
 }
 
+/* one host kept, texts one after another, each run only until the firmware says it is done -- as the voice does,
+   with no extra time after: every text is taken and speaks */
+static void t_kept_texts(const char *dir)
+{
+    static const char *texts[] = {"HELLO THERE.", "HELLO THERE.", "HELLO THERE.", "HELLO THERE.", "HELLO THERE.",
+                                  "SETTINGS", "BUTTON", "DOUBLE TAP TO OPEN.", "SETTINGS", "BUTTON", "HELLO THERE."};
+    int k, taken = 0, spoke = 0, first_lost = -1, n = (int)(sizeof texts / sizeof texts[0]);
+    mb_host *h = make(dir);
+    for (k = 0; k < n; k++) {
+        unsigned char r0[512];
+        mbh_clear_writes(h);
+        if (speak(h, texts[k], 10.0) >= 0.0) {
+            taken++;
+            spoke += r0s(h, r0, (int)sizeof r0) > 0;
+        } else if (first_lost < 0)
+            first_lost = k;
+    }
+    check("kept_texts", taken == n && spoke == n, "%d texts on one unit: %d taken, %d spoke (the first lost: %d)", n,
+          taken, spoke, first_lost);
+    mbh_destroy(h);
+}
+
 static void t_wrong_image(const char *dir)
 {
     char path[4096], err[256] = "";
@@ -445,6 +470,7 @@ int main(int argc, char **argv)
             t_overflow_guard(dir);
             t_cancel(dir);
             t_start_pitch(dir);
+            t_kept_texts(dir);
             t_wrong_image(dir);
         }
     }

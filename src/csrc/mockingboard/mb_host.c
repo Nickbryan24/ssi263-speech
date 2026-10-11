@@ -344,12 +344,28 @@ static int run_to(mb_host *h, uint16_t pc, uint64_t start)
     return mb_board_pc(h->b) == pc;
 }
 
+/* The driver's last interrupt may still be ending when the text is done: the early program's handler clears its busy
+   flag and the VIA's interrupt (6D7Ah-6D7Eh) before it pulls its registers and returns (6D8Bh-6D91h), and with the
+   chip powered down nothing else runs the 6502.  Where the last slice of mbh_run happened to stop decided whether it
+   was back in the idle loop; parked in the handler, every later text was refused and a kept voice went silent (from
+   the fourth "Hello there.", Mac Claude, 2026-10-10).  So the rest of the handler runs here: a few instructions, no
+   chip writes, the chip's time still. */
+#define SETTLE_CYCLES 2000
+static void settle(mb_host *h)
+{
+    uint64_t start = mb_board_cycles(h->b);
+    while (!mb_board_idle(h->b) && !mbh_busy(h) && mb_board_cycles(h->b) - start < SETTLE_CYCLES)
+        mb_board_run(h->b, 1);
+}
+
 MB_API int mbh_say(mb_host *h, const unsigned char *text, int n)
 {
     const layout *L = h->L;
     uint64_t start;
     int k, marks = 0, raw;
     h->fault = 0;
+    if (!mbh_busy(h))
+        settle(h);
     if (n <= 0 || n > MBH_MAX_TEXT || mbh_busy(h) || !mb_board_idle(h->b))
         return 0;
     for (k = 0; k < n; k++)
