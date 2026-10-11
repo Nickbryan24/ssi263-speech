@@ -20,13 +20,14 @@ headless from the unpacked firmware folder (test_emu_unit; the German unit's key
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+from tools import repo_paths  # noqa: E402  (objdump from W64DEVKIT in paths.local, else the PATH)
 EMU = os.path.join(ROOT, "nvda", "dist", "blazie-emu")
 
 # (path under firmware/, the first 16 hex digits of the approved sha256)
@@ -111,7 +112,7 @@ def main():
             if sha256(os.path.join(tmp, arc)) != want:
                 print("FAIL unpacked %s differs" % arc)
                 ok = False
-        objdump = shutil.which("objdump") or r"C:\w64devkit\bin\objdump.exe"
+        objdump = repo_paths.program("W64DEVKIT", "objdump")
         for exe in ("blazie_emu.exe", "blazie_files.exe"):
             dump = subprocess.run([objdump, "-p", os.path.join(tmp, exe)], capture_output=True, text=True).stdout
             dlls = {l.split(":", 1)[1].strip().lower() for l in dump.splitlines() if "DLL Name:" in l}
