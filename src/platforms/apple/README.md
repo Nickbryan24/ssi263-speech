@@ -38,6 +38,19 @@ It makes static libraries for each Apple platform:
 
 The output goes under `build/apple/` (gitignored). The apps link it with `-lc++`.
 
+## TestFlight
+
+    python src/platforms/apple/testflight.py build [--bump]      archives for macOS and iOS, made fresh and checked
+    python src/platforms/apple/testflight.py upload              exactly those, then processed, for the internal group
+    python src/platforms/apple/testflight.py status | crashes
+
+This is TGSpeechBox's `testflight.py`, with its rules kept. The build number is the same on both platforms
+(`CURRENT_PROJECT_VERSION` in `project.yml`, and the Audio Unit's version with it), raised by one for each upload. A
+failed-looking upload is never retried before `status` shows what arrived. What goes up is the archive `build` checked:
+its build numbers, its icon and privacy manifests, and `test/check_archive_no_firmware.py`, which makes sure it
+carries no firmware at all (Android's checks, plus Aicom's files). The icon is drawn by `tools/make_icon.swift`
+(`tools/make_icon.sh` adds the Mac sizes).
+
 ## Test
 
     sh build_linux.sh                                       the desktop references, on the Mac too
@@ -87,6 +100,10 @@ Windows DLLs: `SSI263_ANDROID_TEST_ONLY=bl,ra,num,so,mini,import`.
 | `core/ssp_import.h`, `ssp_import.c` | Every firmware the apps import: Aicom's files by sha256 (Android carries them built in), then Android's judgement of the Braille Lite's and the Speak-Out's |
 | `app/FirmwareImport.swift` | Android's `FirmwareImport.kt` in Swift, with the Accents' files: what a source holds (zip layouts, the add-ons, update programs, single files), judged by the native side by content, and the refusals in words |
 | `app/ZipReader.swift` | A zip's entries in order from their local headers, as `ZipInputStream` reads them: stored and deflated (Apple's Compression), sizes in the header or a data descriptor |
+| `testflight.py` | TestFlight: fresh archives for both platforms, checked (build numbers, icon, privacy manifests, no firmware), then uploaded as checked |
+| `test/check_archive_no_firmware.py` | An archive, app or .ipa carries no firmware: Android's checks (Blazie images, Intel HEX, states, disk images, the Speak-Out's and the Mockingboards' files, names) and Aicom's files by sha256; its controls |
+| `app/PrivacyInfo.xcprivacy`, `extension/PrivacyInfo.xcprivacy` | No tracking, no data collected; the shared settings (UserDefaults: 1C8F.1, CA92.1) and file attributes in the app's containers (C617.1) |
+| `app/Assets.xcassets`, `tools/make_icon.swift`, `tools/make_icon.sh` | The icon: "263" over a sound wave on deep blue, drawn in code, opaque |
 | `test/test_apple_core.py` | Each runnable slice against the desktop program, byte for byte, with its control |
 | `test/InstallerTests.swift`, `test_installer.sh` | The app's FirmwareInstaller (inspect, then the Job's commit: the Braille Lite's state made and checked, each unit heard) on the repository's firmware against the macos-arm64 slice, in a temporary folder in place of the App Group's |
 | `test/FirmwareImportTests.swift`, `run_swift_tests.sh` | The import's layouts and words with a fake native side, the zip forms and the real tools' zips; the controls |
