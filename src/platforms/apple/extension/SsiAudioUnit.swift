@@ -160,12 +160,17 @@ public final class SsiAudioUnit: AVSpeechSynthesisProviderAudioUnit {
         get {
             SsiShared.repairProtection()
             let container = SsiShared.unitFolder != nil
-            return SsiShared.voices.filter { !container || SsiShared.installed($0) }.map { v in
-                let voice = AVSpeechSynthesisProviderVoice(name: v.name, identifier: SsiShared.identifierPrefix + v.key,
-                                                           primaryLanguages: [v.language],
-                                                           supportedLanguages: [v.language])
-                voice.version = "1.0"
-                return voice
+            // TGSpeechBox's model: each voice once per locale it is offered as ("Speak-Out (en-GB)"), its one
+            // language in both lists, the locale at the end of its identifier; VoiceOver switches languages by
+            // choosing another voice for the next request.  A voice is offered only once its firmware is imported.
+            return SsiShared.voices.filter { !container || SsiShared.installed($0) }.flatMap { v in
+                v.locales.map { locale in
+                    let voice = AVSpeechSynthesisProviderVoice(name: "\(v.short) (\(locale))",
+                                                               identifier: SsiShared.identifier(v, locale),
+                                                               primaryLanguages: [locale], supportedLanguages: [locale])
+                    voice.version = "1.0"
+                    return voice
+                }
             }
         }
         set {}
@@ -228,14 +233,22 @@ public final class SsiAudioUnit: AVSpeechSynthesisProviderAudioUnit {
             zeros.withUnsafeBufferPointer { _ = state.append(generation, $0.baseAddress!, $0.count, volume: 1) }
             return
         }
-        guard let voice = SsiShared.voice(identifier: identifier) ?? SsiShared.voices.first(where: { e.has($0) })
+        // The voice: the one the request names (VoiceOver's choice for the text's language), or with "Lock
+        // language" on, the app's chosen voice whatever the request named (TGSpeechBox's adv_lockLanguage: for
+        // readers that ask for the system language); any imported voice when neither can speak.
+        let named = SsiShared.voice(identifier: identifier)?.voice
+        let chosen = SsiShared.defaults()?.string(forKey: SsiShared.Key.voice).flatMap { k in
+            SsiShared.voices.first { $0.key == k } }
+        let wanted = settings.lockLanguage ? (chosen ?? named) : named
+        e.loadAicom()
+        guard let voice = [wanted, named].compactMap({ $0 }).first(where: { e.has($0) })
+            ?? SsiShared.voices.first(where: { e.has($0) })
         else { return }
         if settings.inflection != inflection || settings.sampleRate != sampleRate {
             e.configure(sampleRate: settings.sampleRate, inflection: settings.inflection)
             inflection = settings.inflection
             sampleRate = settings.sampleRate
         }
-        e.loadAicom()
         var native = SsiShared.native(settings)
         guard ssp_speech_start(p, voice.index, &request, &native) == 0 else { return }
         // the units' rate brought up to the Audio Unit's, one converter for the whole utterance

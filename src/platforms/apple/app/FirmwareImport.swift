@@ -1,20 +1,27 @@
 // FirmwareImport.swift -- the firmware a person brings, and what is in it: Android's FirmwareImport.kt in Swift, with
-// the Accents' files added, because the Apple apps ship hollow (no firmware at all, Aicom's neither).  Nothing here
+// the Accents' files added, because the Apple apps ship hollow (no firmware at all, Aicom's and Sweet Micro's
+// neither).  Nothing here
 // touches the system beyond files, so the host-side test (test/FirmwareImportTests.swift) runs it as it is; the bytes
 // themselves are judged by the native side (ssp_import.c: Aicom's files by sha256, then bl_firmware.c's list of
 // Braille Lite releases and ssa_import.c's SPEAKOUT.HEX) behind `Identify`, by content and never by name.
 //
-// Only Braille Lite releases on the native side's list are taken, only GW Micro's known SPEAKOUT.HEX and only Aicom's
-// own files, and never a unit's state: the app always makes its own from the firmware (Tomi, 2026-09-30).  MIT.
+// Only the Blazie releases on the native side's list are taken (the Braille Lite in English, Spanish, German and
+// Italian, the Slovak Braille 'n Speak 2000), only GW Micro's known SPEAKOUT.HEX, the Mockingboards' two known files
+// and only Aicom's own files, and never a unit's state: the app always makes its own from the firmware (Tomi, 2026-09-30).  MIT.
 
 import Foundation
 
 enum FirmwareImport {
-    // What the native side found (ssp_import.h): ssa_import_firmware's, then Aicom's
+    // What the native side found (ssp_import.h): ssa_import_firmware's -- the app's voice for a Blazie release
+    // (ssa_blazie_voice), the Speak-Out's, a Mockingboard's -- then Aicom's
     static let english = 0                  // the Braille Lite, English
     static let spanish = 1                  // the Braille Lite, Spanish
     static let speakout = 3                 // the GW Micro Speak-Out
-    static let mockingboard = 5             // the Mockingboard: Sweet Micro Systems' file, or the toolkit disk's
+    static let mockingboard = 5             // the Mockingboard 1.1: Sweet Micro Systems' file, or the toolkit disk's
+    static let mockingboardEarly = 6        // the early Mockingboard: its file, or Mockingboard disk 1's
+    static let german = 7                   // the Braille Lite, German (0.8)
+    static let italian = 8                  // the Braille Lite, Italian
+    static let slovak = 9                   // the Braille 'n Speak 2000, Slovak
     static let accentU2 = 10                // the Accent SA's program ROM
     static let accentU3 = 11                // its dictionary, part 1
     static let accentU4 = 12                // its dictionary, part 2
@@ -23,58 +30,74 @@ enum FirmwareImport {
     static let refused = -2                 // Blazie firmware, but another unit's: not one the voice can run
     static let unknown = -4                 // Braille Lite 2000 firmware, but not a release on the list
     static let otherHex = -5                // an Intel HEX file, but not the Speak-Out's SPEAKOUT.HEX
-    static let notBuilt = -6                // the Mockingboard's file, but this copy of the app has no Mockingboard
-    static let otherDisk = -7               // a 140 KB Apple II disk image, but not the Mockingboard toolkit's
+    static let notBuilt = -6                // a Mockingboard's file, but this copy of the app has no Mockingboard
+    static let otherDisk = -7               // a 140 KB Apple II disk image, but not one of the two Mockingboard ones
 
-    /// The file each found firmware is kept as, in the order an import takes them; the Braille Lite's state beside its
+    /// The file each found firmware is kept as (ssa_engine.c's names: 0.8's Blazie units under the NVDA add-on's
+    /// flat ones, the German and Italian disks both calling theirs Lite2000.BNS); a Blazie unit's state beside its
     /// .BNS is made on the device (`stateFiles`).
-    static let files: [Int: String] = [english: "BL2ENG.BNS", spanish: "BL2SPA.BNS", speakout: "SPEAKOUT.HEX",
-                                       mockingboard: "mockingboard-tts-1.1.bin", accentU2: "u2.BIN", accentU3: "u3.BIN", accentU4: "u4.BIN",
+    static let files: [Int: String] = [english: "BL2ENG.BNS", spanish: "BL2SPA.BNS", german: "Lite2000_de.BNS",
+                                       italian: "Lite2000_it.BNS", slovak: "BS2SLL.BNS", speakout: "SPEAKOUT.HEX",
+                                       mockingboard: "mockingboard-tts-1.1.bin",
+                                       mockingboardEarly: "mockingboard-tts-early.bin",
+                                       accentU2: "u2.BIN", accentU3: "u3.BIN", accentU4: "u4.BIN",
                                        accentMini: "SPKEMS.DVC"]
-    static let stateFiles: [Int: String] = [english: "bl2_2003_warm.state", spanish: "bl2spa_fresh.state"]
-    static let order = [english, spanish, speakout, mockingboard, accentU2, accentU3, accentU4, accentMini]
+    static let stateFiles: [Int: String] = [english: "bl2_2003_warm.state", spanish: "bl2spa_fresh.state",
+                                            german: "lite2000_de_fresh.state", italian: "lite2000_it_fresh.state",
+                                            slovak: "bs2sll_fresh.state"]
+    /// The order an import takes them in (Android's IMPORTED, then Aicom's).
+    static let order = [english, spanish, german, italian, slovak, speakout, mockingboard, mockingboardEarly,
+                        accentU2, accentU3, accentU4, accentMini]
+    /// The Blazie units: a state made from each one's firmware.
+    static let blazie: Set<Int> = [english, spanish, german, italian, slovak]
     static let accentRoms = [accentU2, accentU3, accentU4]
 
     static let stateSize = 786432           // battery-backed RAM + file flash: every state bl_save_state writes
     static let maxSource = 64 << 20         // an add-on is a few megabytes; firmware a few hundred kilobytes
     static let maxEntry = 4 << 20           // an update program is half a megabyte
 
-    static let noFirmwareZip = "This zip does not contain Braille Lite, Speak-Out, Mockingboard or Accent firmware."
-    static let noFirmwareFile = "This file does not contain Braille Lite, Speak-Out, Mockingboard or Accent firmware."
+    static let noFirmwareZip = "This zip does not contain Braille Lite, Braille 'n Speak, Speak-Out, Mockingboard " +
+        "or Accent firmware."
+    static let noFirmwareFile = "This file does not contain Braille Lite, Braille 'n Speak, Speak-Out, Mockingboard " +
+        "or Accent firmware."
     /// Tomi's words, for a state picked on its own.
     static let stateFile = "This is a state file, not firmware. Please import only firmware files, or zips " +
         "containing them, with this tool."
     /// Neutral words for a store app (Tomi): the files a user owns and the packages they may come in, never where
     /// to get them, and never which package carries what.
     static let whatToChoose = "Choose firmware files you own. For the Braille Lite 2000: its update program (such " +
-        "as blt2000.exe), or the BL2ENG.BNS or BL2SPA.BNS inside it. For the Speak-Out: GW Micro's SPEAKOUT.HEX, " +
+        "as blt2000.exe), or the BL2ENG.BNS (English), BL2SPA.BNS (Spanish) or Lite2000.BNS (German, Italian) " +
+        "inside it. For the Slovak Braille 'n Speak 2000: BS2SLL.BNS. For the Speak-Out: GW Micro's SPEAKOUT.HEX, " +
         "or the speakout.zip holding it. For the Mockingboard: your own copy of the Mockingboard Developers " +
-        "Toolkit disk, as its image (.dsk, .do or .po), or the mockingboard-tts-1.1.bin made from it. For the " +
-        "Accents: Aicom's u2.BIN, u3.BIN and u4.BIN for the Accent SA and SPKEMS.DVC for the Accent-mini. A .zip " +
-        "or .nvda-addon package containing them works too."
+        "Toolkit disk, as its image (.dsk, .do or .po), or the mockingboard-tts-1.1.bin made from it; for the early " +
+        "Mockingboard, your own copy of Mockingboard disk 1, or the mockingboard-tts-early.bin made from it. For " +
+        "the Accents: Aicom's u2.BIN, u3.BIN and u4.BIN for the Accent SA and SPKEMS.DVC for the Accent-mini. A " +
+        ".zip or .nvda-addon package containing them works too."
     static let onlyTheHex = "Only GW Micro's SPEAKOUT.HEX, as it came, can be imported for the Speak-Out."
 
     /// The host-side tests' controls (SSI263_IMPORT_BREAK; never set in the app): `1` looks at a zip's top only -- no
     /// folder down, no add-on layout -- so the layout tests must fail; `state` stops knowing a state file;
-    /// `speakout` drops what the native side says is the Speak-Out's; `mockingboard` the Mockingboard's; `accent`
+    /// `speakout` drops what the native side says is the Speak-Out's; `mockingboard` both Mockingboards'; `accent`
     /// drops Aicom's files.
     static var control = ProcessInfo.processInfo.environment["SSI263_IMPORT_BREAK"] ?? ""
 
     /// What the native side says about some bytes: the app's NativeIdentify, a fake in the tests.
     protocol Identify {
-        /// The firmware in `data`, written to `out` when found (the Braille Lite's image as a .BNS, the Speak-Out's
-        /// HEX, an Aicom file as it is), with its label; or a negative refusal with the reason.
+        /// The firmware in `data`, written to `out` when found (a Blazie unit's image as a .BNS, the Speak-Out's HEX,
+        /// a Mockingboard's file, an Aicom file as it is), with its label; or a negative refusal with the reason.
         func firmware(_ data: Data, out: URL) -> (Int, String)
-        /// The Braille Lite releases on the list, by label, newest first.
+        /// The Blazie releases on the list, by label, newest first.
         func known() -> [String]
     }
 
+    /// The unit, in words: "German Braille Lite", "Slovak Braille 'n Speak 2000", the others by their own names.
     static func name(of found: Int) -> String {
         switch found {
-        case english: return "English Braille Lite"
-        case spanish: return "Spanish Braille Lite"
+        case slovak: return "Slovak Braille 'n Speak 2000"
+        case _ where blazie.contains(found): return "\(languageName(found)) Braille Lite"
         case speakout: return "Speak-Out"
         case mockingboard: return "Mockingboard"
+        case mockingboardEarly: return "early Mockingboard"
         case accentU2, accentU3, accentU4: return "Accent SA"
         case accentMini: return "Accent-mini"
         default: return "unit"
@@ -82,7 +105,16 @@ enum FirmwareImport {
     }
 
     static func languageName(_ found: Int) -> String {
-        found == spanish ? "Spanish" : found == speakout ? "Speak-Out" : found == mockingboard ? "Mockingboard" : "English"
+        switch found {
+        case spanish: return "Spanish"
+        case german: return "German"
+        case italian: return "Italian"
+        case slovak: return "Slovak"
+        case speakout: return "Speak-Out"
+        case mockingboard: return "Mockingboard"
+        case mockingboardEarly: return "early Mockingboard"
+        default: return "English"
+        }
     }
 
     /// A unit's state, by its content: the size every state has.  Never imported, whatever its name.
@@ -155,7 +187,8 @@ enum FirmwareImport {
             let out = staging.appendingPathComponent("candidate\(n).bin")
             n += 1
             var (kind, text) = id.firmware(bytes, out: out)
-            if (control == "speakout" && kind == speakout) || (control == "mockingboard" && kind == mockingboard)
+            if (control == "speakout" && kind == speakout)
+                || (control == "mockingboard" && (kind == mockingboard || kind == mockingboardEarly))
                 || (control == "accent" && kind >= accentU2) {
                 kind = FirmwareImport.none
                 text = ""
@@ -187,7 +220,9 @@ enum FirmwareImport {
                         .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                     let parts = path.split(separator: "/").map(String.init)
                     if parts.isEmpty || parts.contains("__MACOSX") { continue }
-                    let addon = (3...4).contains(parts.count) && parts[0].lowercased() == "synthdrivers"
+                    // the NVDA add-ons' synthDrivers/_ssi263_<unit>/..., and the unified 0.8 add-on's
+                    // synthDrivers/_ssi263_unified/_ssi263_<unit>/... (the Accent SA's ROMs one folder further)
+                    let addon = (3...5).contains(parts.count) && parts[0].lowercased() == "synthdrivers"
                         && parts[1].lowercased().hasPrefix("_ssi263_")
                     let tooDeep = control == "1" ? parts.count > 1 : parts.count > 2 && !addon
                     if tooDeep {

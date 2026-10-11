@@ -41,31 +41,62 @@ enum SsiShared {
     // ---- the voices -------------------------------------------------------------------------------------------------
 
     struct Voice {
-        let index: Int32                // ssa_engine.h's SSA_ENGLISH ... SSA_MOCKINGBOARD
-        let key: String                 // the system voice's identifier: com.ssi263speech.voice.<key>
-        let name: String
-        let language: String            // BCP 47
-        let files: [String]             // in the unit folder
+        let index: Int32                // ssa_engine.h's SSA_ENGLISH ... SSA_SLOVAK
+        let key: String                 // the system voice's identifier: com.ssi263speech.<key>.<bcp47>
+        let name: String                // the app's name for it (voices.h's)
+        let short: String               // the system's, before the locale: "Braille Lite 2000 (de-DE)"
+        let locales: [String]           // BCP 47: the first the voice's own, the rest regional variants it is offered as
+        let files: [String]             // in the unit folder (ssa_engine.c's names)
+        var language: String { locales[0] }
     }
 
+    /// TGSpeechBox's English and Spanish variants (its TGSBAudioUnit.languageMap): each voice is offered once per
+    /// locale, so it appears under the reader's own dialect and VoiceOver switches to it as it does to any voice.
+    private static let english = ["en-US", "en-GB", "en-AU", "en-CA"]
+    private static let spanish = ["es-ES", "es-MX"]
+
+    /// Every voice the app knows, in the order the app lists them (ssa_engine.h's indexes).
     static let voices: [Voice] = [
-        Voice(index: 0, key: "braillelite", name: "Braille Lite 2000", language: "en-US",
+        Voice(index: 0, key: "braillelite", name: "Braille Lite 2000", short: "Braille Lite 2000", locales: english,
               files: ["BL2ENG.BNS", "bl2_2003_warm.state"]),
-        Voice(index: 1, key: "braillelite-es", name: "Braille Lite 2000 (español)", language: "es-ES",
-              files: ["BL2SPA.BNS", "bl2spa_fresh.state"]),
-        Voice(index: 3, key: "speakout", name: "Speak-Out", language: "en-US", files: ["SPEAKOUT.HEX"]),
-        Voice(index: 5, key: "mockingboard", name: "Mockingboard (Sweet Micro Systems)", language: "en-US",
-              files: ["mockingboard-tts-1.1.bin"]),
-        Voice(index: 2, key: "accentsa", name: "Accent SA", language: "en-US", files: ["u2.BIN", "u3.BIN", "u4.BIN"]),
-        Voice(index: 4, key: "accentmini", name: "Accent-mini", language: "en-US", files: ["SPKEMS.DVC"]),
+        Voice(index: 1, key: "braillelite-es", name: "Braille Lite 2000 (español)", short: "Braille Lite 2000",
+              locales: spanish, files: ["BL2SPA.BNS", "bl2spa_fresh.state"]),
+        Voice(index: 7, key: "braillelite-de", name: "Braille Lite 2000 (Deutsch)", short: "Braille Lite 2000",
+              locales: ["de-DE"], files: ["Lite2000_de.BNS", "lite2000_de_fresh.state"]),
+        Voice(index: 8, key: "braillelite-it", name: "Braille Lite 2000 (italiano)", short: "Braille Lite 2000",
+              locales: ["it-IT"], files: ["Lite2000_it.BNS", "lite2000_it_fresh.state"]),
+        Voice(index: 9, key: "braillenspeak-sk", name: "Braille 'n Speak 2000 (slovenčina)",
+              short: "Braille 'n Speak 2000", locales: ["sk-SK"], files: ["BS2SLL.BNS", "bs2sll_fresh.state"]),
+        Voice(index: 3, key: "speakout", name: "Speak-Out", short: "Speak-Out", locales: english,
+              files: ["SPEAKOUT.HEX"]),
+        Voice(index: 5, key: "mockingboard", name: "Mockingboard (Sweet Micro Systems)", short: "Mockingboard",
+              locales: english, files: ["mockingboard-tts-1.1.bin"]),
+        Voice(index: 6, key: "mockingboard-early", name: "Mockingboard, early (Sweet Micro Systems)",
+              short: "Mockingboard, early", locales: english, files: ["mockingboard-tts-early.bin"]),
+        Voice(index: 2, key: "accentsa", name: "Accent SA", short: "Accent SA", locales: english,
+              files: ["u2.BIN", "u3.BIN", "u4.BIN"]),
+        Voice(index: 4, key: "accentmini", name: "Accent-mini", short: "Accent-mini", locales: english,
+              files: ["SPKEMS.DVC"]),
     ]
 
-    static let identifierPrefix = "com.ssi263speech.voice."
+    /// The system voice's identifier, TGSpeechBox's form: the voice, then the locale it is offered as.
+    static let identifierRoot = "com.ssi263speech."
+    static func identifier(_ v: Voice, _ locale: String) -> String { identifierRoot + v.key + "." + locale.lowercased() }
 
-    /// The voice a request names.  The system may hand our identifier back with the extension's bundle ID in front
-    /// (macOS lists "com.ssi263speech.app.synth-extension.com.ssi263speech.voice.speakout"), so its end decides.
-    static func voice(identifier: String) -> Voice? {
-        voices.first { identifier == identifierPrefix + $0.key || identifier.hasSuffix("." + identifierPrefix + $0.key) }
+    /// The voice and locale a request names, read from its identifier as TGSpeechBox reads its own: the last
+    /// "com.ssi263speech." in it (macOS may put the extension's bundle ID in front), then <key>.<bcp47>.  The 0.8
+    /// betas' com.ssi263speech.voice.<key> still names its voice, in its own locale.
+    static func voice(identifier: String) -> (voice: Voice, locale: String)? {
+        guard let r = identifier.range(of: identifierRoot, options: .backwards) else { return nil }
+        let rest = String(identifier[r.upperBound...])
+        if rest.hasPrefix("voice.") {
+            let key = String(rest.dropFirst(6))
+            return voices.first { $0.key == key }.map { ($0, $0.language) }
+        }
+        guard let dot = rest.lastIndex(of: ".") else { return nil }
+        let key = String(rest[..<dot]), locale = String(rest[rest.index(after: dot)...])
+        guard let v = voices.first(where: { $0.key == key }) else { return nil }
+        return (v, v.locales.first { $0.lowercased() == locale.lowercased() } ?? v.language)
     }
 
     /// The voice's files are in the unit folder.  Asks only whether they exist -- which needs no access to their
@@ -108,6 +139,7 @@ enum SsiShared {
         static let shortPauses = "short_pauses"         // the Braille Lite's
         static let numbers = "numbers"                  // "Read numbers as words": the Braille Lite's, the Mockingboard's
         static let runAhead = "run_ahead"               // the Braille Lite's, EXPERIMENTAL
+        static let lineLift = "line_lift"               // the Braille Lite's "Lift line starts (as note-taking mode)"
         static let inflection = "inflection"            // the Braille Lite's and the Accents' voice inflection
         static let soTone = "speakout_tone"             // the Speak-Out's, 0-25 = A-Z
         static let soJoin = "speakout_join"
@@ -115,6 +147,7 @@ enum SsiShared {
         static let pauseMode = "pause_mode"             // VoiceOver's pauses: 0 off, 1 short, 2 long
         static let sampleRate = "sample_rate"           // the units': 11025 or 22050 (Android's key)
         static let logRequests = "log_requests"         // the extension logs each request's SSML (for finding bugs)
+        static let lockLanguage = "lock_language"       // TGSpeechBox's: every request by the app's chosen voice
         static let firmwareStamp = "firmware_stamp"     // bumped by the app when the firmware changes
     }
 
@@ -122,11 +155,12 @@ enum SsiShared {
 
     struct Settings {
         var rate = 50, pitch = 50, volume = SsiShared.defaultVolume, tone = 7
-        var shortPauses = true, numbers = true, runAhead = false, inflection = true
+        var shortPauses = true, numbers = true, runAhead = false, lineLift = false, inflection = true
         var soTone = 8, soJoin = true, soShortPauses = true
         var pauseMode = 1
         var sampleRate = SsiShared.outputRate
         var logRequests = false
+        var lockLanguage = false
     }
 
     /// A fresh UserDefaults each time: a long-lived one is not guaranteed to see the other process's writes
@@ -147,6 +181,7 @@ enum SsiShared {
         s.shortPauses = bool(Key.shortPauses, true)
         s.numbers = bool(Key.numbers, true)
         s.runAhead = bool(Key.runAhead, false)
+        s.lineLift = bool(Key.lineLift, false)
         s.inflection = bool(Key.inflection, true)
         s.soTone = int(Key.soTone, 0, 25, 8)
         s.soJoin = bool(Key.soJoin, true)
@@ -155,6 +190,7 @@ enum SsiShared {
         s.sampleRate = sampleRates.contains(d.integer(forKey: Key.sampleRate)) ? d.integer(forKey: Key.sampleRate)
             : outputRate
         s.logRequests = bool(Key.logRequests, false)
+        s.lockLanguage = bool(Key.lockLanguage, false)
         return s
     }
 
@@ -169,6 +205,7 @@ enum SsiShared {
         n.pack = s.shortPauses ? 1 : 0
         n.numbers = s.numbers ? 1 : 0
         n.run_ahead = s.runAhead ? 1 : 0
+        n.line_lift = s.lineLift ? 1 : 0
         n.so_tone = Int32(s.soTone)
         n.so_join = s.soJoin ? 1 : 0
         n.so_short = s.soShortPauses ? 1 : 0

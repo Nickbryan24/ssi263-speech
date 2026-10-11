@@ -221,12 +221,17 @@ struct VoiceSettingsView: View {
     @AppStorage(SsiShared.Key.shortPauses, store: store) private var shortPauses = true
     @AppStorage(SsiShared.Key.numbers, store: store) private var numbers = true
     @AppStorage(SsiShared.Key.runAhead, store: store) private var runAhead = false
+    @AppStorage(SsiShared.Key.lineLift, store: store) private var lineLift = false
+    @AppStorage(SsiShared.Key.lockLanguage, store: store) private var lockLanguage = false
+    @AppStorage(SsiShared.Key.voice, store: store) private var chosenVoice = "accentsa"
     @AppStorage(SsiShared.Key.soTone, store: store) private var soTone = 8
     @AppStorage(SsiShared.Key.soJoin, store: store) private var soJoin = true
     @AppStorage(SsiShared.Key.soShortPauses, store: store) private var soShortPauses = true
     @AppStorage(SsiShared.Key.logRequests, store: store) private var logRequests = false
 
     private static let letters = (0..<26).map { String(UnicodeScalar(UInt8(65 + $0))) }
+
+    private var chosenName: String { SsiShared.voices.first { $0.key == chosenVoice }?.name ?? chosenVoice }
 
     var body: some View {
         Form {
@@ -267,8 +272,14 @@ struct VoiceSettingsView: View {
                 Stepper("Tone: \(tone)", value: $tone, in: 0...26)
                 Toggle("Short pauses", isOn: $shortPauses)
                 Toggle("Run the unit ahead (experimental)", isOn: $runAhead)
+                Toggle("Lift line starts (as note-taking mode)", isOn: $lineLift)
             } header: {
                 Text("Braille Lite").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("Run ahead is for the English and Spanish units, which are the ones it is tested on. Lifting line " +
+                     "starts raises the pitch at the start of a line, as the unit does when you move to a line in " +
+                     "note-taking mode; it is heard on the English unit. The German, Italian and Slovak units read " +
+                     "their own numbers.")
             }
 
             Section {
@@ -279,6 +290,20 @@ struct VoiceSettingsView: View {
                 Toggle("Shorten pauses between sentences", isOn: $soShortPauses)
             } header: {
                 Text("Speak-Out").accessibilityAddTraits(.isHeader)
+            }
+
+            Section {
+                Toggle("Lock language", isOn: $lockLanguage)
+                    .accessibilityLabel(lockLanguage ? "Lock language, \(chosenName), change in Setup" : "Lock language")
+                if lockLanguage {
+                    Text(chosenName).accessibilityHidden(true)
+                }
+            } header: {
+                Text("Languages").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("Each voice speaks its own language, and VoiceOver switches to the voice you chose for a text's " +
+                     "language. Lock language speaks everything with the voice chosen in Setup instead, whatever " +
+                     "the screen reader asks for: for readers that always ask for the system's language.")
             }
 
             Section {

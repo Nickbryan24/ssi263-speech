@@ -8,6 +8,17 @@ is the model for the Xcode project, the speech extension and its VoiceOver pause
 The apps ship hollow: no firmware at all, only this project's own MIT code and MAME's BSD-3-Clause cores. Each user
 imports the firmware they own, recognised by content (SHA-256), never by name.
 
+## Voices and languages
+
+Ten voices, each speaking one language, offered to the system only once their firmware is imported: the Braille
+Lite 2000 in English, Spanish, German and Italian, the Slovak Braille 'n Speak 2000, the Speak-Out, the Mockingboard
+(1.1 and early) and the two Accents. Languages work as in TGSpeechBox's speech extension. Each voice is offered once
+per locale it speaks: the English voices as en-US, en-GB, en-AU and en-CA, and the Spanish Braille Lite as es-ES and
+es-MX. The locale ends the voice's identifier (`com.ssi263speech.braillelite.de-de`), and VoiceOver switches language
+by choosing another voice for the next request. `<lang>` elements inside a request are not switched on. "Lock
+language" (Voice settings) speaks every request with the voice chosen in the app, whatever the request names, for
+readers that always ask for the system's language.
+
 ## The native core: SSI263Core
 
 `build_apple.sh` builds the chip, every voice's board, host and voice on MAME's Z180, 8085, V40 and 8086 cores (C++17

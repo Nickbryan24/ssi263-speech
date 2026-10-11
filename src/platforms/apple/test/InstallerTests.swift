@@ -38,9 +38,15 @@ run("the Accents", ["aicom-accent-sa/u2.BIN", "aicom-accent-sa/u3.BIN", "aicom-a
                     "aicom-accent-mini/SPKEMS.DVC"], expect: ["accentsa", "accentmini"])
 run("the English Braille Lite", ["blazie/BL2ENG.BNS"], expect: ["braillelite"])
 run("the Mockingboard's file", ["sweet-micro-mockingboard/mockingboard-tts-1.1.bin"], expect: ["mockingboard"])
+run("the Slovak Braille 'n Speak 2000 (its state made with the English recipe)", ["blazie/bns2000/BS2SLL.BNS"],
+    expect: ["braillenspeak-sk"])
+run("the German Braille Lite", ["blazie/german/Lite2000.BNS"], expect: ["braillelite-de"])
+run("the Italian Braille Lite", ["blazie/italian/Lite2000.BNS"], expect: ["braillelite-it"])
 if let d = disks {
     run("the Mockingboard from the toolkit's disk image", ["Sweet Micro Systems Mockingboard Developers toolkit 1984.dsk"],
         expect: ["mockingboard"], from: d)
+    run("the early Mockingboard from Mockingboard disk 1's image", ["mockingboard1.dsk"],
+        expect: ["mockingboard-early"], from: d)
 } else {
     print("skip  the toolkit's disk image: MOCKINGBOARD_DISKS (paths.local) is not set")
 }

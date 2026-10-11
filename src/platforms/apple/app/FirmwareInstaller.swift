@@ -71,13 +71,28 @@ enum FirmwareInstaller {
         return FirmwareImport.Plan(found: found, refusal: nil, notes: notes + empty)
     }
 
-    /// The probe each unit speaks before it is taken.
-    private static func probeText(_ kind: Int) -> String { kind == FirmwareImport.spanish ? "Hola." : "Hello." }
-
-    /// English's state is 150 million Z180 instructions, Spanish's 1150 million; the rest only a check.
-    private static func weight(_ kind: Int) -> Double {
-        kind == FirmwareImport.spanish ? 1150 : kind == FirmwareImport.english ? 150 : 15
+    /// The probe each unit speaks before it is taken, in its own language (Android's SsiImport.probeText).
+    private static func probeText(_ kind: Int) -> String {
+        switch kind {
+        case FirmwareImport.spanish: return "Hola."
+        case FirmwareImport.german: return "Hallo."
+        case FirmwareImport.italian: return "Ciao."
+        case FirmwareImport.slovak: return "Ahoj."
+        default: return "Hello."
+        }
     }
+
+    /// Spanish's state is 1150 million Z180 instructions, every other Blazie unit's English's 150 million (German,
+    /// Italian and Slovak run English's recipe or one as long); the rest only a check.
+    private static func weight(_ kind: Int) -> Double {
+        kind == FirmwareImport.spanish ? 1150 : FirmwareImport.blazie.contains(kind) ? 150 : 15
+    }
+
+    /// The units heard once before they are taken: the Blazie units, the Speak-Out and the Mockingboards (the
+    /// Accents' files are known by their sha256 alone, and the Accent SA needs all three).
+    private static let probed: Set<Int> = FirmwareImport.blazie.union([FirmwareImport.speakout,
+                                                                      FirmwareImport.mockingboard,
+                                                                      FirmwareImport.mockingboardEarly])
 
     /// An import in flight: its progress (0...1) and step in words, and its cancel.
     final class Job: @unchecked Sendable {
@@ -139,7 +154,11 @@ enum FirmwareInstaller {
                     var err = [CChar](repeating: 0, count: 256)
                     let me = Unmanaged.passUnretained(self).toOpaque()
                     making = w
-                    let ok = blv_make_state(target.path, Int32(f.kind), state.path, { ctx, done in
+                    // the state's recipe, from the voice (ssa_blazie_recipe: a language is neither a voice index nor a
+                    // recipe -- the Slovak unit runs the English one)
+                    let recipe = ssa_blazie_recipe(Int32(f.kind))
+                    if recipe < 0 { throw Failure(message: "The \(name) unit has no way to be prepared.") }
+                    let ok = blv_make_state(target.path, recipe, state.path, { ctx, done in
                         let job = Unmanaged<Job>.fromOpaque(ctx!).takeUnretainedValue()
                         job.advance(done)
                         return job.cancelled ? 1 : 0
@@ -153,11 +172,10 @@ enum FirmwareInstaller {
                                       "was tested with, so it was not imported.")
                     }
                 }
-                if [FirmwareImport.english, FirmwareImport.spanish, FirmwareImport.speakout,
-                    FirmwareImport.mockingboard].contains(f.kind) {
+                if probed.contains(f.kind) {
                     say("Checking that the \(name) unit speaks")
                     var err = [CChar](repeating: 0, count: 256)
-                    let voice = Int32(f.kind)    // the Braille Lite's, the Speak-Out's and the Mockingboard's: ssa's
+                    let voice = Int32(f.kind)    // the found kind is ssa_engine's voice for every probed unit
                     let samples = ssa_probe(ready.path, voice, probeText(f.kind), nil, &err, Int32(err.count))
                     if samples < 0 {
                         throw Failure(message: "The \(name) unit would not start: \(String(cString: err)).")

@@ -102,6 +102,11 @@ func aicom(_ which: String) -> Data { bytes("AICOM \(which)\n") + filled(4000) {
 /// A made-up Mockingboard file: the native side knows the real one by its sha256.
 let mockingboardFile = bytes("SWEETMICRO") + filled(2000) { UInt8(($0 * 5) & 0xFF) }
 
+/// A made-up early Mockingboard file, and a made-up Mockingboard disk 1 (the fake gives the early file from it).
+let earlyFile = bytes("SWEETEARLY") + filled(1900) { UInt8(($0 * 3) & 0xFF) }
+let earlyLabel = "Mockingboard, early: Sweet Micro Systems' text-to-speech of Mockingboard disk 1"
+func disk1() -> Data { bytes("DOS33DISK") + bytes("DISK1") + Data(count: 3000) }
+
 /// A made-up disk image: the toolkit's when it says TOOLKIT (the fake then gives the file), another when not.
 func disk(_ toolkit: Bool) -> Data { bytes("DOS33DISK") + bytes(toolkit ? "TOOLKIT" : "OTHER") + Data(count: 3000) }
 
@@ -109,17 +114,26 @@ func disk(_ toolkit: Bool) -> Data { bytes("DOS33DISK") + bytes(toolkit ? "TOOLK
 func state() -> Data { filled(FirmwareImport.stateSize) { UInt8(($0 * 13) & 0xFF) } }
 
 struct Fake: FirmwareImport.Identify {
-    static let labels = ["English June 2003", "English September 2000", "Spanish September 2000"]
+    static let labels = ["English June 2003", "English September 2000", "Spanish September 2000",
+                         "German September 2000", "Italian September 2000", "Slovak Braille 'n Speak 2000"]
 
     func firmware(_ data: Data, out: URL) -> (Int, String) {
         let text = String(data: data.prefix(16), encoding: .isoLatin1) ?? ""
         if text.hasPrefix("DOS33DISK") {
+            if (String(data: data, encoding: .isoLatin1) ?? "").contains("DISK1") {
+                try? earlyFile.write(to: out)
+                return (FirmwareImport.mockingboardEarly, earlyLabel)
+            }
             if !(String(data: data, encoding: .isoLatin1) ?? "").contains("TOOLKIT") {
                 return (FirmwareImport.otherDisk, "a Mockingboard disk, but not the text-to-speech version 1.1 this " +
                         "voice runs")
             }
             try? mockingboardFile.write(to: out)
             return (FirmwareImport.mockingboard, "Mockingboard: Sweet Micro Systems' text-to-speech 1.1")
+        }
+        if text.hasPrefix("SWEETEARLY") {
+            try? data.write(to: out)
+            return (FirmwareImport.mockingboardEarly, earlyLabel)
         }
         if text.hasPrefix("SWEETMICRO") {
             try? data.write(to: out)
@@ -153,6 +167,9 @@ struct Fake: FirmwareImport.Identify {
         case "E": (kind, label) = (FirmwareImport.english, Fake.labels[0])
         case "e": (kind, label) = (FirmwareImport.english, Fake.labels[1])
         case "S": (kind, label) = (FirmwareImport.spanish, Fake.labels[2])
+        case "G": (kind, label) = (FirmwareImport.german, Fake.labels[3])
+        case "I": (kind, label) = (FirmwareImport.italian, Fake.labels[4])
+        case "K": (kind, label) = (FirmwareImport.slovak, Fake.labels[5])
         case "U": return (FirmwareImport.unknown, "not a release this app knows")
         default: return (FirmwareImport.refused, "not a release this voice can run")
         }
@@ -308,7 +325,8 @@ test("anUnknownReleaseIsRefusedAndTheKnownOnesNamed") {
     check(plan.refusal?.hasPrefix("BL2GER.BNS is Braille Lite 2000 firmware, but not a release this app knows, so " +
         "it cannot be imported") == true, plan.refusal ?? "nil")
     check(plan.refusal?.contains("The releases this app knows: English June 2003; English September 2000; Spanish " +
-        "September 2000.") == true, plan.refusal ?? "nil")
+        "September 2000; German September 2000; Italian September 2000; Slovak Braille 'n Speak 2000.") == true,
+          plan.refusal ?? "nil")
 }
 
 test("anUnknownReleaseInAZipIsRefused") {
@@ -504,6 +522,87 @@ test("theMockingboardHasNoStateToMake") {
     check(FirmwareImport.order.contains(MB), "the order has no Mockingboard")
 }
 
+// ---- the early Mockingboard: disk 1's text-to-speech, its file or the disk (Tomi, 2026-10-10) ---------------------
+
+let MBE = FirmwareImport.mockingboardEarly
+
+test("theEarlyFileAlone") {
+    let plan = inspect("mockingboard-tts-early.bin", earlyFile)
+    eq(plan.refusal, nil)
+    eq(kinds(plan), [MBE])
+    eq(plan.found.first?.label, earlyLabel)
+}
+
+test("diskOneInAFolderOfAZipGivesTheEarlyFile") {
+    let plan = inspect("apple.zip", zip([("disks/mockingboard1.dsk", disk1())]))
+    eq(kinds(plan), [MBE])
+    eq(plan.found.first?.from, "disks/mockingboard1.dsk")
+    eq(plan.found.first.flatMap { try? Data(contentsOf: $0.firmware) }, earlyFile)
+}
+
+test("bothMockingboardsFromOneZip") {
+    let plan = inspect("mockingboard.zip", zip([("toolkit.dsk", disk(true)), ("disk1/mockingboard1.dsk", disk1())]))
+    eq(kinds(plan), [MB, MBE])
+    eq(FirmwareImport.files[MBE], "mockingboard-tts-early.bin")
+    eq(FirmwareImport.stateFiles[MBE], nil)
+}
+
+// ---- 0.8's Blazie units: German, Italian (both Lite2000.BNS on their disks), the Slovak Braille 'n Speak ---------
+
+let DE = FirmwareImport.german, IT = FirmwareImport.italian, SK = FirmwareImport.slovak
+
+test("theGermanAndItalianDisksOneFolderDownBesideTheSlovakUnit") {
+    let plan = inspect("blazie.zip", zip([("german/Lite2000.BNS", bns("G")), ("italian/Lite2000.BNS", bns("I")),
+                                          ("bns2000/BS2SLL.BNS", bns("K"))]))
+    eq(plan.refusal, nil)
+    eq(kinds(plan), [DE, IT, SK])
+    eq(plan.found.map { $0.from }, ["german/Lite2000.BNS", "italian/Lite2000.BNS", "bns2000/BS2SLL.BNS"])
+    eq(plan.found.count > 2 ? plan.found[2].label : "", "Slovak Braille 'n Speak 2000")
+}
+
+test("theUnifiedAddOnGivesEveryUnitButNoState") {
+    let u = "synthDrivers/_ssi263_unified/"
+    let d = u + "_ssi263_blazie/"
+    let plan = inspect("ssi263-speech-0.8.0.nvda-addon", zip([("manifest.ini", bytes("name = ssi263")),
+        (u + "__init__.py", bytes("#")), (d + "BL2ENG.BNS", bns("E")), (d + "bl2_2003_warm.state", state()),
+        (d + "BL2SPA.BNS", bns("S")), (d + "Lite2000_de.BNS", bns("G")), (d + "Lite2000_it.BNS", bns("I")),
+        (d + "BS2SLL.BNS", bns("K")), (d + "bs2sll_fresh.state", state()),
+        (u + "_ssi263_speakout/SPEAKOUT.HEX", hex(true)),
+        (u + "_ssi263_mockingboard/mockingboard-tts-1.1.bin", mockingboardFile),
+        (u + "_ssi263_mockingboard/mockingboard-tts-early.bin", earlyFile),
+        (u + "_ssi263_accent/accent-sa/u2.BIN", aicom("u2")), (u + "_ssi263_accent/accent-sa/u3.BIN", aicom("u3")),
+        (u + "_ssi263_accent/accent-sa/u4.BIN", aicom("u4")), (u + "_ssi263_accent/SPKEMS.DVC", aicom("dvc"))]))
+    eq(plan.refusal, nil)
+    eq(kinds(plan), [E, S, DE, IT, SK, SO, MB, MBE] + SA + [FirmwareImport.accentMini])
+    eq(plan.notes.count, 1)
+    check(plan.notes.first?.hasPrefix("\(d)bl2_2003_warm.state, \(d)bs2sll_fresh.state are state files, not " +
+        "firmware, and are not used") == true, "\(plan.notes)")
+}
+
+test("theNvdaAddOnsFlatNamesGiveEveryBlazieUnit") {
+    let d = "synthDrivers/_ssi263_blazie/"
+    let plan = inspect("blazie.nvda-addon", zip([(d + "BL2ENG.BNS", bns("E")), (d + "BL2SPA.BNS", bns("S")),
+        (d + "Lite2000_de.BNS", bns("G")), (d + "lite2000_de_fresh.state", state()),
+        (d + "Lite2000_it.BNS", bns("I")), (d + "BS2SLL.BNS", bns("K"))]))
+    eq(kinds(plan), [E, S, DE, IT, SK])
+}
+
+test("eachBlazieUnitHasFilesOfItsOwnAndAState") {
+    let names = Array(FirmwareImport.files.values) + Array(FirmwareImport.stateFiles.values)
+    eq(names.count, Set(names).count)
+    eq(FirmwareImport.files[DE], "Lite2000_de.BNS")
+    eq(FirmwareImport.stateFiles[DE], "lite2000_de_fresh.state")
+    eq(FirmwareImport.files[IT], "Lite2000_it.BNS")
+    eq(FirmwareImport.files[SK], "BS2SLL.BNS")
+    eq(FirmwareImport.stateFiles[SK], "bs2sll_fresh.state")
+    for v in FirmwareImport.blazie { check(FirmwareImport.stateFiles[v] != nil, "no state for \(v)") }
+    eq(Set(FirmwareImport.order), Set(FirmwareImport.files.keys))
+    eq(FirmwareImport.name(of: DE), "German Braille Lite")
+    eq(FirmwareImport.name(of: IT), "Italian Braille Lite")
+    eq(FirmwareImport.name(of: SK), "Slovak Braille 'n Speak 2000")
+    eq(FirmwareImport.name(of: SO), "Speak-Out")
+}
+
 // ---- the Accents: Aicom's files, which the Apple apps never carry ------------------------------------------------
 
 let SA = [FirmwareImport.accentU2, FirmwareImport.accentU3, FirmwareImport.accentU4]
@@ -591,8 +690,11 @@ for (label, tool) in [("ditto (Finder's Compress)", ["/usr/bin/ditto", "-c", "-k
 // ---- the words ------------------------------------------------------------------------------------------------------
 
 test("theWordsNameEveryUnit") {
-    eq(FirmwareImport.noFirmwareFile, "This file does not contain Braille Lite, Speak-Out, Mockingboard or Accent " +
-        "firmware.")
+    eq(FirmwareImport.noFirmwareFile, "This file does not contain Braille Lite, Braille 'n Speak, Speak-Out, " +
+        "Mockingboard or Accent firmware.")
+    check(FirmwareImport.whatToChoose.contains("Lite2000.BNS (German, Italian)"), "")
+    check(FirmwareImport.whatToChoose.contains("For the Slovak Braille 'n Speak 2000: BS2SLL.BNS"), "")
+    check(FirmwareImport.whatToChoose.contains("your own copy of Mockingboard disk 1"), "")
     check(FirmwareImport.whatToChoose.contains("your own copy of the Mockingboard Developers Toolkit disk"), "")
     check(FirmwareImport.whatToChoose.contains("GW Micro's SPEAKOUT.HEX, or the speakout.zip holding it"), "")
     check(FirmwareImport.whatToChoose.contains("u2.BIN, u3.BIN and u4.BIN for the Accent SA and SPKEMS.DVC"), "")
