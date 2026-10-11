@@ -1079,7 +1079,9 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                             "unit's advance bars, and the display does not advance by itself at the end of the "
                             "field. Advance from your PC keyboard instead:\n\n"
                             "Alt+Shift+Right Arrow = the advance bar\nAlt+Shift+Left Arrow = the back bar\n"
-                            "(on the Braille Lite, ; and A as well)", "Braille display", MB_OK | MB_ICONINFORMATION);
+                            "(on the Braille Lite, ; and A as well)\n\n"
+                            "Please turn off any braille translation done by your screen reader: it can interfere "
+                            "with the unit's braille cells.", "Braille display", MB_OK | MB_ICONINFORMATION);
             set_braille(!g_braille);
             return 0;
         default:
