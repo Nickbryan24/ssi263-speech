@@ -6,6 +6,12 @@
 #
 #   ./build_linux.sh && src/platforms/btspeak/deb/build_deb.sh [version]
 #   Output: build/blazie-emu-btspeak_<version>_arm64.deb
+#
+# A preview hosted elsewhere (Tomi's eurpod.com/synths for 0.8's): BTE_PIN_URL and BTE_PIN_SHA, both or neither, are
+# the pinned download and its SHA-256 written into this package's fetch-firmware in place of the release's; the
+# latest-release fallback stays the project's.
+#   BTE_PIN_URL=https://eurpod.com/synths/blazie-emu-0.8.0-preview1-linux-aarch64.tar.gz BTE_PIN_SHA=<sha256> \
+#       src/platforms/btspeak/deb/build_deb.sh 0.8.0~preview1
 set -e
 ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
 HERE="$ROOT/src/platforms/btspeak/deb"
@@ -23,6 +29,14 @@ install -m 755 "$ROOT/build/linux/blazie_emu" "$ROOT/build/linux/blazie_files" "
     || { echo "no build/linux/blazie_emu_bt and blazie_bt: build them first (./build_linux.sh)"; exit 1; }
 install -m 755 "$ROOT/build/linux/blazie_emu_bt" "$ROOT/build/linux/blazie_bt" "$LIB/bin/"
 install -m 755 "$HERE/fetch-firmware" "$LIB/"
+if [ -n "${BTE_PIN_URL:-}${BTE_PIN_SHA:-}" ]; then
+    case "${BTE_PIN_URL:-}" in https://*) ;; *) echo "BTE_PIN_URL must be an https:// URL"; exit 1 ;; esac
+    echo "${BTE_PIN_SHA:-}" | grep -q -x -E '[0-9a-f]{64}' || { echo "BTE_PIN_SHA must be a SHA-256 (64 hex digits)"; exit 1; }
+    sed -i -e "s|^URL=https://.*\$|URL=$BTE_PIN_URL|" -e "s|^SHA=[0-9a-f]*\$|SHA=$BTE_PIN_SHA|" "$LIB/fetch-firmware"
+    grep -q -x "URL=$BTE_PIN_URL" "$LIB/fetch-firmware" && grep -q -x "SHA=$BTE_PIN_SHA" "$LIB/fetch-firmware" \
+        || { echo "the pin was not written into fetch-firmware"; exit 1; }
+    echo "pinned download: $BTE_PIN_URL ($BTE_PIN_SHA)"
+fi
 install -m 755 "$HERE/blazie-emu-btspeak" "$STAGE/usr/bin/"
 ln -s ../lib/blazie-emu-btspeak/bin/blazie_files "$STAGE/usr/bin/blazie_files"
 install -m 644 "$ROOT/src/platforms/btspeak/README-btspeak.md" "$DOC/README-btspeak.md"

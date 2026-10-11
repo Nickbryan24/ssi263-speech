@@ -102,5 +102,23 @@ NO_PINNED=1 "$T/ctl/postinst" configure >/dev/null
 check "the latest release lists no blazie-emu linux-aarch64 download: nothing installed" $?
 "$T/ctl/prerm" remove; "$T/ctl/postrm" remove
 
+cp "$T/sums.good" "$T/web/latest/SHA256SUMS.txt"
 rm -f "$DEB"
+
+# a preview built with its own pinned download (BTE_PIN_URL, BTE_PIN_SHA: Tomi's eurpod.com for 0.8's): the package's
+# fetch-firmware carries it, and an install with no test overrides of the pin fetches from it
+BTE_PIN_URL="https://test.invalid/pinned/blazie-emu-0.7.0-linux-aarch64.tar.gz" BTE_PIN_SHA="$SHA" \
+    "$ROOT/src/platforms/btspeak/deb/build_deb.sh" "0.0.0+pin" >/dev/null
+PDEB="$(ls "$ROOT"/build/blazie-emu-btspeak_0.0.0+pin_*.deb)"
+rm -rf "$T/proot" "$T/pctl"; dpkg-deb -x "$PDEB" "$T/proot"; dpkg-deb -e "$PDEB" "$T/pctl"
+grep -q -x "URL=https://test.invalid/pinned/blazie-emu-0.7.0-linux-aarch64.tar.gz" \
+    "$T/proot/usr/lib/blazie-emu-btspeak/fetch-firmware" && grep -q -x "SHA=$SHA" "$T/proot/usr/lib/blazie-emu-btspeak/fetch-firmware"
+check "a pinned preview: its fetch-firmware carries the given download and SHA-256" $?
+(unset BTE_FIRMWARE_URL BTE_FIRMWARE_SHA; BTE_ROOT="$T/proot" "$T/pctl/postinst" configure >/dev/null)
+[ "$(cat "$T/proot/usr/lib/blazie-emu-btspeak/share/ssi263-speech/BL2ENG.BNS" 2>/dev/null)" = pinned ]
+check "a pinned preview: installed, the firmware from its own pinned download" $?
+BTE_PIN_URL="http://plain.invalid/x.tar.gz" BTE_PIN_SHA="$SHA" "$ROOT/src/platforms/btspeak/deb/build_deb.sh" \
+    "0.0.0+bad" >/dev/null 2>&1 && bad_made=0 || bad_made=1
+check "a pin that is not https:// is refused" $((1 - bad_made))
+rm -f "$PDEB" "$ROOT"/build/blazie-emu-btspeak_0.0.0+bad_*.deb
 [ $fail = 0 ] && echo "btspeak deb: all passed" || { echo "btspeak deb: FAILED"; exit 1; }
