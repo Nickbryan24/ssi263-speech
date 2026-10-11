@@ -3,6 +3,11 @@
  *   test_games simon bl FIRMWARE STATE GAME     the Braille Lite 2000, or the Braille 'n Speak 2000 on its board
  *   test_games simon tns FIRMWARE - GAME        the Type 'n Speak, from its factory setup (tns_setup.h)
  *   test_games hangman bl|tns FIRMWARE STATE|- GAME
+ *   ... GAME --flash                                 the game (with a text file, one batch) put into the flash
+ *                                                    startup folder as the emulator's "Load programs into flash" does
+ *
+ * --flash's control: TEST_GAMES_FILES_BREAK=7 (bl_files.h blf_break 7) writes a new flash file's entry in folder 0,
+ * the deleted mark -- the unit cannot see the game, and its run must fail with the image checks.
  *
  * GAME is the game's .BNS file from Blazie's disks (simon.bns, hangman.bns: never in the repo; run_tests and
  * linux_tests.sh look in firmware/blazie/games/).  Absent, the test says "skip" and passes.  The game goes into the
@@ -34,6 +39,7 @@
 #include "../../csrc/blazie/bl_board.h"   /* bl_bus_break */
 #include "../../csrc/blazie/bl_files.h"
 #include "../../csrc/blazie/bl_files_state.h"
+#include "../../csrc/blazie/bl_files_xfer.h"
 
 #define RATE 22050
 #define WIN (RATE / 20)                     /* 50 ms windows */
@@ -64,8 +70,52 @@ static unsigned char *read_all(const char *path, long *n)
 }
 
 /* ---- the game into the unit's files -------------------------------------------------------------------------------- */
-/* the state with the game added to the RAM startup folder (as name), saved to out; 1, or 0 with the reason printed */
-static int add_game(const char *state, const char *game, const char *name, const char *out)
+/* --flash: the game and a PC text file added as one batch the way the emulator's "Load programs into flash" adds them
+   (blx_add_cp), checked where the unit keeps them -- in flash, in the flash startup folder, the text's CR LF made
+   the unit's CR.  The game is run whatever those checks say, so the control (TEST_GAMES_FILES_BREAK=7, bl_files.h:
+   the entry written in folder 0) also fails where the unit cannot find its program. */
+static const char NOTES[] = "line one\r\nline two\r\n";
+
+static int add_batch(blf_fs *fs, const unsigned char *data, unsigned long n, const char *name, char *err, int errlen)
+{
+    const char *names[2] = {name, "notes.txt"};
+    const unsigned char *d[2] = {data, (const unsigned char *)NOTES};
+    unsigned long sizes[2] = {n, sizeof NOTES - 1};
+    unsigned times[2] = {0, 0}, dates[2] = {(46 << 9) | (6 << 5) | 1, (46 << 9) | (6 << 5) | 1};
+    blx_report r;
+    int got, i, k;
+    char d2[200];
+    blx_report_init(&r);
+    got = blx_add_cp(fs, BLX_CP850, 2, names, d, sizes, times, dates, 0, &r, err, errlen);
+    snprintf(d2, sizeof d2, "returned %d, %d added%s%s", got, r.added, got ? "" : ": ", got ? "" : err);
+    check("the batch added (game + text)", got == 1 && r.added == 2, d2);
+    blx_report_free(&r);
+    for (i = 0; i < 2; i++) {
+        k = blf_find(fs, names[i]);
+        if (k < 0)
+            snprintf(d2, sizeof d2, "%s: the unit's directory has no such file", names[i]);
+        else
+            snprintf(d2, sizeof d2, "%s: %s, folder %d, type %c", names[i], blf_get(fs, k)->in_flash ? "flash" : "RAM",
+                     blf_get(fs, k)->folder, blf_get(fs, k)->type);
+        check(i ? "the text file in flash startup" : "the game in flash startup, a program",
+              k >= 0 && blf_get(fs, k)->in_flash && blf_get(fs, k)->folder == 1 && blf_get(fs, k)->type == (i ? 'A' : 'X'),
+              d2);
+    }
+    k = blf_find(fs, "notes.txt");
+    if (k >= 0) {
+        unsigned long tn;
+        const unsigned char *t = blf_data(fs, k, &tn);
+        snprintf(d2, sizeof d2, "%lu bytes", tn);
+        check("the text's line ends the unit's (lone CR)", tn == 18 && !memcmp(t, "line one\rline two\r", 18), d2);
+    }
+    k = blf_check(fs, d2, sizeof d2);
+    check("the file system's rules hold after the batch", k, k ? "blf_check" : d2);
+    return got == 1;
+}
+
+/* the state with the game added (as name: to the RAM startup folder, or with the batch above to flash startup),
+   saved to out; 1, or 0 with the reason printed */
+static int add_game(const char *state, const char *game, const char *name, const char *out, int to_flash)
 {
     char err[256];
     bls_unit b;
@@ -76,8 +126,11 @@ static int add_game(const char *state, const char *game, const char *name, const
     if (!data) { printf("FAIL read %s\n", game); return 0; }
     if (!bls_load(state, &b, err, sizeof err)) { printf("FAIL load %s: %s\n", state, err); free(data); return 0; }
     fs = blf_open(b.model, b.ram, b.flash, b.flash_size, err, sizeof err);
-    ok = fs && blf_add(fs, 0, name, data, (unsigned long)n, 0, (46 << 9) | (6 << 5) | 1, 0, err, sizeof err);
-    if (ok && blf_get(fs, blf_find(fs, name))->type != 'X') {
+    if (fs && to_flash)
+        ok = add_batch(fs, data, (unsigned long)n, name, err, sizeof err) || blf_break == 7;
+    else
+        ok = fs && blf_add(fs, 0, name, data, (unsigned long)n, 0, (46 << 9) | (6 << 5) | 1, 0, err, sizeof err);
+    if (ok && !to_flash && blf_get(fs, blf_find(fs, name))->type != 'X') {
         snprintf(err, sizeof err, "not a program (type %c)", blf_get(fs, blf_find(fs, name))->type);
         ok = 0;
     }
@@ -312,13 +365,15 @@ int main(int argc, char **argv)
 {
     char err[256], with_game[96], factory[96];
     const char *fw, *state, *game;
-    int is_simon;
+    int is_simon, to_flash;
     FILE *f;
-    if (argc != 6 || (strcmp(argv[1], "simon") && strcmp(argv[1], "hangman"))
-            || (strcmp(argv[2], "bl") && strcmp(argv[2], "tns"))) {
-        printf("usage: test_games simon|hangman bl|tns FIRMWARE STATE|- GAME\n");
+    if (argc < 6 || argc > 7 || (strcmp(argv[1], "simon") && strcmp(argv[1], "hangman"))
+            || (strcmp(argv[2], "bl") && strcmp(argv[2], "tns")) || (argc == 7 && strcmp(argv[6], "--flash"))) {
+        printf("usage: test_games simon|hangman bl|tns FIRMWARE STATE|- GAME [--flash]\n");
         return 2;
     }
+    to_flash = argc == 7;
+    blf_break = getenv("TEST_GAMES_FILES_BREAK") ? atoi(getenv("TEST_GAMES_FILES_BREAK")) : 0;
     is_simon = !strcmp(argv[1], "simon");
     g_tns = !strcmp(argv[2], "tns");
     fw = argv[3];
@@ -339,7 +394,7 @@ int main(int argc, char **argv)
         if (!tns_factory_setup(fw, factory, err, sizeof err)) { printf("FAIL factory setup: %s\n", err); return 1; }
         state = factory;
     }
-    if (add_game(state, game, is_simon ? "simon.bns" : "hangman.bns", with_game)) {
+    if (add_game(state, game, is_simon ? "simon.bns" : "hangman.bns", with_game, to_flash)) {
         if (is_simon)
             simon(fw, with_game);
         else

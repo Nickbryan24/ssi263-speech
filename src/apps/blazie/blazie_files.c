@@ -6,6 +6,9 @@
  *   blazie_files list STATE                    the files, their folders and sizes, the free space
  *   blazie_files export STATE IMAGE.img         every file into a FAT disk image (7-Zip opens it; Linux mounts it)
  *   blazie_files import STATE IMAGE.img [--dry-run]   the unit's files made what the image holds (bl_files_xfer.h)
+ *   blazie_files add STATE FILE... [--replace] [--dry-run]   the files added to the flash startup folder, one batch,
+ *                                               all or nothing (the menu's "Load programs into flash"); a name the
+ *                                               unit has already: nothing done unless --replace
  *   blazie_files extract STATE DIR [--crlf]     every file into DIR/<folder>/<name>; --crlf: text files with CR LF
  *                                               line ends, for a PC editor (the image keeps the unit's CR)
  *   blazie_files check STATE                    the file system's rules, checked
@@ -107,6 +110,20 @@ static int list_dir(const char *dir, host_entry **out)
     FindClose(h);
     return n;
 }
+
+/* a file's last write as the unit keeps times (DOS, local); 0 0 when it cannot be read */
+static void file_dos_time(const char *path, unsigned *dos_time, unsigned *dos_date)
+{
+    wchar_t *w = wide(path);
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    FILETIME local;
+    WORD dd = 0, dt = 0;
+    if (w && GetFileAttributesExW(w, GetFileExInfoStandard, &a) && FileTimeToLocalFileTime(&a.ftLastWriteTime, &local))
+        FileTimeToDosDateTime(&local, &dd, &dt);
+    free(w);
+    *dos_time = dt;
+    *dos_date = dd;
+}
 #else
 static void dos_of(const struct tm *t, unsigned *dos_time, unsigned *dos_date)
 {
@@ -149,6 +166,14 @@ static int list_dir(const char *dir, host_entry **out)
     closedir(d);
     return n;
 }
+
+static void file_dos_time(const char *path, unsigned *dos_time, unsigned *dos_date)
+{
+    struct stat st;
+    *dos_time = *dos_date = 0;
+    if (stat(path, &st) == 0)
+        dos_of(localtime(&st.st_mtime), dos_time, dos_date);
+}
 #endif
 
 static int by_name(const void *a, const void *b)
@@ -165,6 +190,7 @@ static int usage(void)
     printf("usage: blazie_files list|check STATE\n"
            "       blazie_files export STATE IMAGE.img\n"
            "       blazie_files import STATE IMAGE.img [--dry-run]\n"
+           "       blazie_files add STATE FILE... [--replace] [--dry-run]\n"
            "       blazie_files extract STATE DIR [--crlf]\n"
            "       blazie_files unpack IMAGE.img DIR\n"
            "       blazie_files pack DIR IMAGE.img\n"
@@ -201,6 +227,88 @@ static void print_log(const blx_report *r)
 {
     if (r->log)
         fputs(r->log, stdout);
+}
+
+/* the changed unit saved over STATE when its rules hold, the old one kept as STATE.before-import (import and add);
+   a dry run saves nothing.  0 saved (or dry), 1 not */
+static int save_checked(const blf_fs *fs, const char *state, const bls_unit *u, int dry)
+{
+    char err[300], before[1200];
+    unsigned long bn;
+    unsigned char *old;
+    int rc = 0;
+    if (!blf_check(fs, err, sizeof err)) {
+        printf("NOT saved: the result breaks the file system's rules (%s)\n", err);
+        return 1;
+    }
+    if (dry) {
+        printf("dry run, nothing saved: ");
+        return 0;
+    }
+    old = read_file(state, &bn);
+    snprintf(before, sizeof before, "%s.before-import", state);
+    if (!old || !write_file(before, old, bn)) {
+        printf("NOT saved: could not keep the old state as %s\n", before);
+        rc = 1;
+    } else if (!bls_save(state, u, err, sizeof err)) {
+        printf("NOT saved: %s\n", err);
+        rc = 1;
+    } else
+        printf("(the unit as it was before is kept in %s)\n", before);
+    free(old);
+    return rc;
+}
+
+/* blazie_files add STATE FILE... [--replace] [--dry-run]: the files into the flash startup folder (blx_add_cp) */
+static int add(blf_fs *fs, const char *state, const bls_unit *u, int argc, char **argv)
+{
+    char err[400];
+    const char **names = (const char **)calloc((size_t)argc, sizeof *names);
+    const unsigned char **data = (const unsigned char **)calloc((size_t)argc, sizeof *data);
+    unsigned long *sizes = (unsigned long *)calloc((size_t)argc, sizeof *sizes);
+    unsigned *times = (unsigned *)calloc((size_t)argc, sizeof *times), *dates = (unsigned *)calloc((size_t)argc,
+                                                                                                    sizeof *dates);
+    int i, n = 0, replace = 0, dry = 0, rc = 1, got;
+    blx_report r;
+    blx_report_init(&r);
+    if (!names || !data || !sizes || !times || !dates) {
+        printf("out of memory\n");
+        goto done;
+    }
+    for (i = 0; i < argc; i++) {
+        const char *p = argv[i], *base;
+        if (!strcmp(p, "--replace")) { replace = 1; continue; }
+        if (!strcmp(p, "--dry-run")) { dry = 1; continue; }
+        data[n] = read_file(p, &sizes[n]);
+        if (!data[n]) {
+            printf("cannot read %s\n", p);
+            goto done;
+        }
+        for (base = p + strlen(p); base > p && base[-1] != '/' && base[-1] != '\\'; base--) ;
+        names[n] = base;
+        file_dos_time(p, &times[n], &dates[n]);
+        n++;
+    }
+    got = n ? blx_add_cp(fs, g_cp, n, names, data, sizes, times, dates, replace, &r, err, sizeof err) : 0;
+    print_log(&r);
+    if (!n)
+        printf("no files given\n");
+    else if (got == BLX_ADD_EXISTS)
+        printf("nothing added: the unit has files of those names already (--replace rewrites them where they are)\n");
+    else if (!got)
+        printf("nothing added: %s\n", err);
+    else if (!(rc = save_checked(fs, state, u, dry)))
+        printf("%d added, %d rewritten\n", r.added, r.replaced);
+done:
+    for (i = 0; i < n; i++)
+        free((void *)data[i]);
+    free(names);
+    free(data);
+    free(sizes);
+    free(times);
+    free(dates);
+    blx_report_free(&r);
+    return rc;
 }
 
 static int list(const blf_fs *fs, int model)
@@ -444,33 +552,16 @@ int main(int argc, char **argv)
             rc = 1;
         } else {
             print_log(&r);
-            if (!blf_check(fs, err, sizeof err)) {
-                printf("NOT saved: the result breaks the file system's rules (%s)\n", err);
-                rc = 1;
-            } else if (dry)
-                printf("dry run, nothing saved: ");
-            else {
-                char before[1200];                /* the unit as it was, kept beside it */
-                unsigned long bn;
-                unsigned char *old = read_file(argv[2], &bn);
-                snprintf(before, sizeof before, "%s.before-import", argv[2]);
-                if (!old || !write_file(before, old, bn)) {
-                    printf("NOT saved: could not keep the old state as %s\n", before);
-                    rc = 1;
-                } else if (!bls_save(argv[2], &u, err, sizeof err)) {
-                    printf("NOT saved: %s\n", err);
-                    rc = 1;
-                } else
-                    printf("(the unit as it was before is kept in %s)\n", before);
-                free(old);
-            }
+            rc = save_checked(fs, argv[2], &u, dry);
             if (!rc)
                 printf("%d added, %d rewritten, %d moved, %d deleted, %d unchanged, %d kept, %d skipped, %d new folders\n",
                        r.added, r.replaced, r.moved, r.deleted, r.unchanged, r.kept, r.skipped, r.folders_added);
         }
         free(img);
         blx_report_free(&r);
-    } else if (!strcmp(argv[1], "extract") && argc >= 4)
+    } else if (!strcmp(argv[1], "add") && argc >= 4)
+        rc = add(fs, argv[2], &u, argc - 3, argv + 3);
+    else if (!strcmp(argv[1], "extract") && argc >= 4)
         rc = extract(fs, argv[3], argc >= 5 && !strcmp(argv[4], "--crlf"));
     else
         rc = usage();

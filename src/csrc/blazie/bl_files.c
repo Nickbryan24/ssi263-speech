@@ -578,7 +578,8 @@ static int flash_add(blf_fs *fs, const unsigned char *proto, const char *name, i
         memcpy(e, proto, SLOT);
     else
         memset(e, 0, SLOT);
-    fill_entry(e, name, folder, proto ? proto[E_TYPE] : blf_type_for_name(fs, name), 1, start, n, need * BLOCK, 0,
+    fill_entry(e, name, blf_break == 7 && !proto ? 0 : folder, proto ? proto[E_TYPE] : blf_type_for_name(fs, name), 1,
+               start, n, need * BLOCK, 0,
                proto ? proto + E_FORMAT : format_bytes(fs), t, d);
     if (proto)
         memcpy(e + E_PASSWORD, proto + E_PASSWORD, 7);

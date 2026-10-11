@@ -46,6 +46,7 @@
 #define WM_SAVE_FAILED (WM_APP + 1)        /* the sound thread's save failed: the message box, from the window */
 
 enum { ID_EN = 100, ID_ES, ID_TNS_EN, ID_TNS_ES, ID_BNS_EN, ID_BNS_SK, ID_DE, ID_IT, ID_FACTORY, ID_EXIT, ID_EXPORT, ID_IMPORT,
+       ID_ADDPROG,
        ID_HISS = 200, ID_WHINE, ID_QUIET, ID_UNITSOUND,
        ID_OPEN_OFF = 210, ID_OPEN_UNTIL, ID_OPEN_ALWAYS, ID_POPCLICK = 215, ID_TICK, ID_QUICK = 218, ID_BRAILLE,
        ID_RATE = 220,
@@ -408,6 +409,35 @@ static void export_files(void)
     bls_free(&u);
 }
 
+/* the unit switched off for its files to change: only while it is not writing its flash; its memory saved to st
+   first.  1 off, or 0 with a message box (`doing`: "Import the files", ...) and the unit running on */
+static int unit_off(const char *title, const char *doing, char *st, size_t cap)
+{
+    emu_unit *old;
+    int busy, ok;
+    char msg[300];
+    CreateDirectoryA(g_save_dir, NULL);
+    saved_path(g_kind, st, cap);
+    EnterCriticalSection(&g_lock);
+    busy = emu_flash(g_unit, NULL);
+    ok = !busy && emu_save(g_unit, st);
+    old = ok ? g_unit : NULL;
+    if (ok)
+        g_unit = NULL;                      /* switched off: nothing runs while its memory changes */
+    LeaveCriticalSection(&g_lock);
+    if (!ok) {
+        if (busy)
+            snprintf(msg, sizeof msg, "The unit is writing its flash memory. %s when it has finished (when it is "
+                     "quiet).", doing);
+        else
+            snprintf(msg, sizeof msg, "Could not save the unit's memory; nothing was changed.");
+        MessageBoxA(g_wnd, msg, title, MB_OK | MB_ICONWARNING);
+        return 0;
+    }
+    emu_destroy(old);
+    return 1;
+}
+
 /* the image's files into the unit: only while it is not writing its flash; it is switched off, its files changed,
    and switched on again -- the firmware then finds them as if it had written them */
 static void import_files(void)
@@ -416,11 +446,10 @@ static void import_files(void)
     unsigned char *img;
     unsigned long size;
     fat_volume *v;
-    emu_unit *old;
     bls_unit u;
     blf_fs *fs;
     blx_report r;
-    int busy, ok, cancelled = 0;
+    int ok, cancelled = 0;
     if (!g_unit) return;
     tns_release_all();
     if (!image_dialog(0, path, sizeof path)) return;
@@ -433,23 +462,10 @@ static void import_files(void)
         return;
     }
     fat_close(v);
-    CreateDirectoryA(g_save_dir, NULL);
-    saved_path(g_kind, st, sizeof st);
-    EnterCriticalSection(&g_lock);
-    busy = emu_flash(g_unit, NULL);
-    ok = !busy && emu_save(g_unit, st);
-    old = ok ? g_unit : NULL;
-    if (ok)
-        g_unit = NULL;                      /* switched off: nothing runs while its memory changes */
-    LeaveCriticalSection(&g_lock);
-    if (!ok) {
-        MessageBoxA(g_wnd, busy ? "The unit is writing its flash memory. Import the files when it has finished "
-                    "(when it is quiet)." : "Could not save the unit's memory; nothing was imported.",
-                    "Import files", MB_OK | MB_ICONWARNING);
+    if (!unit_off("Import files", "Import the files", st, sizeof st)) {
         free(img);
         return;
     }
-    emu_destroy(old);
     blx_report_init(&r);
     ok = open_saved(st, &u, &fs);
     if (ok) {
@@ -499,6 +515,153 @@ static void import_files(void)
         MessageBoxA(g_wnd, msg, "Import files", MB_OK | (r.skipped || r.kept ? MB_ICONWARNING : MB_ICONINFORMATION));
     }
     blx_report_free(&r);
+}
+
+/* Firmware > Load programs into flash: one or more files chosen together go into the flash startup folder as one
+   batch, all or nothing (bl_files_xfer.h blx_add_cp), the unit switched off and on once, as import does */
+#define ADD_MAX 256
+
+static int add_dialog(wchar_t *buf, DWORD cap)
+{
+    OPENFILENAMEW o;
+    memset(&o, 0, sizeof o);
+    o.lStructSize = sizeof o;
+    o.hwndOwner = g_wnd;
+    o.lpstrFilter = L"Blazie programs (*.bns)\0*.bns\0All files (*.*)\0*.*\0";
+    o.lpstrFile = buf;
+    o.nMaxFile = cap;
+    o.lpstrTitle = L"Load programs into the unit's flash";
+    o.Flags = OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    buf[0] = 0;
+    return GetOpenFileNameW(&o);
+}
+
+/* a chosen file read whole, its name (no folder) in UTF-8 and its last write as DOS time; NULL when unreadable */
+static unsigned char *read_chosen(const wchar_t *dir, const wchar_t *name, char *name8, int cap8, unsigned long *n,
+                                  unsigned *t, unsigned *d)
+{
+    wchar_t path[MAX_PATH * 2];
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    FILETIME local;
+    WORD dd = 0, dt = 0;
+    FILE *f;
+    long size;
+    unsigned char *data = NULL;
+    const wchar_t *base;
+    if (name) _snwprintf(path, MAX_PATH * 2, L"%ls\\%ls", dir, name);
+    else _snwprintf(path, MAX_PATH * 2, L"%ls", dir);
+    path[MAX_PATH * 2 - 1] = 0;
+    base = wcsrchr(path, L'\\') ? wcsrchr(path, L'\\') + 1 : path;
+    WideCharToMultiByte(CP_UTF8, 0, base, -1, name8, cap8, NULL, NULL);
+    if (GetFileAttributesExW(path, GetFileExInfoStandard, &a) && FileTimeToLocalFileTime(&a.ftLastWriteTime, &local))
+        FileTimeToDosDateTime(&local, &dd, &dt);
+    *t = dt;
+    *d = dd;
+    f = _wfopen(path, L"rb");
+    if (!f) return NULL;
+    if (fseek(f, 0, SEEK_END) == 0 && (size = ftell(f)) >= 0 && fseek(f, 0, SEEK_SET) == 0
+            && (data = (unsigned char *)malloc(size ? (size_t)size : 1)) != NULL
+            && fread(data, 1, (size_t)size, f) != (size_t)size) {
+        free(data);
+        data = NULL;
+    }
+    fclose(f);
+    *n = (unsigned long)(data ? size : 0);
+    return data;
+}
+
+static void add_programs(void)
+{
+    static char name8[ADD_MAX][800];
+    const char *names[ADD_MAX];
+    const unsigned char *data[ADD_MAX];
+    unsigned long sizes[ADD_MAX];
+    unsigned times[ADD_MAX], dates[ADD_MAX];
+    char st[MAX_PATH], err[400] = "the unit's memory could not be read", summary[1600], msg[4000];
+    const DWORD cap = 64 * 1024;
+    wchar_t *buf, *p;
+    bls_unit u;
+    blf_fs *fs;
+    blx_report r;
+    int n = 0, i, ok = 0, got = 0, cancelled = 0;
+    if (!g_unit) return;
+    tns_release_all();
+    buf = (wchar_t *)calloc(cap, sizeof(wchar_t));
+    if (!buf || !add_dialog(buf, cap)) { free(buf); return; }
+    /* one file: its full path; several: the folder, then each name, each ended by a NUL, the list by two */
+    p = buf + wcslen(buf) + 1;
+    if (!*p) {
+        data[0] = read_chosen(buf, NULL, name8[0], sizeof name8[0], &sizes[0], &times[0], &dates[0]);
+        n = 1;
+    } else
+        for (; *p && n < ADD_MAX; p += wcslen(p) + 1, n++)
+            data[n] = read_chosen(buf, p, name8[n], sizeof name8[n], &sizes[n], &times[n], &dates[n]);
+    free(buf);
+    for (i = 0; i < n; i++) {
+        names[i] = name8[i];
+        if (!data[i]) {
+            snprintf(msg, sizeof msg, "Could not read %s. Nothing was loaded.", name8[i]);
+            MessageBoxA(g_wnd, msg, "Load programs", MB_OK | MB_ICONERROR);
+            goto done;
+        }
+    }
+    if (!unit_off("Load programs", "Load the programs", st, sizeof st))
+        goto done;
+    blx_report_init(&r);
+    if (open_saved(st, &u, &fs)) {
+        got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 0, &r, err, sizeof err);
+        if (got == BLX_ADD_EXISTS) {        /* names the unit has: asked once for the whole batch */
+            char ask[3000];
+            const char *line = r.log ? r.log : "";
+            size_t k = (size_t)snprintf(ask, sizeof ask, "The unit has files of these names already:\n");
+            while (*line && k + 80 < sizeof ask) {
+                const char *e = strchr(line, '\n');
+                size_t len = e ? (size_t)(e - line) : strlen(line);
+                if (len > 7 && !strncmp(line, "exists ", 7))
+                    k += (size_t)snprintf(ask + k, sizeof ask - k, "\n%.*s", (int)(len - 7), line + 7);
+                line = e ? e + 1 : line + len;
+            }
+            snprintf(ask + k, sizeof ask - k, "\n\nReplace them (each rewritten where it is)? No loads nothing.");
+            if (MessageBoxA(g_wnd, ask, "Load programs", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES) {
+                blx_report_free(&r);
+                blx_report_init(&r);
+                got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
+                                 sizeof err);
+            } else
+                cancelled = 1;
+        }
+        ok = got == 1 && blf_check(fs, err, sizeof err);
+        if (ok) {                           /* the unit as it was, kept beside it: undone by one file copy */
+            char before[MAX_PATH + 20];
+            snprintf(before, sizeof before, "%s.before-import", st);
+            CopyFileA(st, before, FALSE);
+            ok = bls_save(st, &u, err, sizeof err);
+        }
+        blf_close(fs);
+        bls_free(&u);
+    }
+    start_unit(g_kind);                     /* switched on again */
+    if (cancelled)
+        MessageBoxA(g_wnd, "Nothing was loaded. The unit's files are as they were.", "Load programs",
+                    MB_OK | MB_ICONINFORMATION);
+    else if (!ok) {
+        snprintf(summary, sizeof summary, "Nothing was loaded: %s\n\nThe unit was restarted with its files as they "
+                 "were.", err);
+        report_text(msg, sizeof msg, summary, &r);
+        MessageBoxA(g_wnd, msg, "Load programs", MB_OK | MB_ICONERROR);
+    } else {
+        snprintf(summary, sizeof summary, "Loaded %d file%s into flash: %d added, %d replaced. The unit was "
+                 "restarted. Run a program with %s, its name, then %s. (The unit as it was before is kept in "
+                 "%s.before-import.)", n, n == 1 ? "" : "s", r.added, r.replaced,
+                 KINDS[g_kind].kind == EMU_TYPE_N_SPEAK ? "F9 x" : "o-chord x",
+                 KINDS[g_kind].kind == EMU_TYPE_N_SPEAK ? "Enter" : "e-chord", st);
+        report_text(msg, sizeof msg, summary, &r);
+        MessageBoxA(g_wnd, msg, "Load programs", MB_OK | MB_ICONINFORMATION);
+    }
+    blx_report_free(&r);
+done:
+    for (i = 0; i < n; i++)
+        free((void *)data[i]);
 }
 
 /* ---- the sound card: the unit renders each block as the card hands it back ---------------------------------- */
@@ -827,6 +990,7 @@ static HMENU make_menu(void)
     AppendMenuA(unit, MF_SEPARATOR, 0, NULL);
     AppendMenuA(unit, MF_STRING, ID_EXPORT, "Exp&ort files to disk image (.img)...");
     AppendMenuA(unit, MF_STRING, ID_IMPORT, "&Import files from disk image (.img)...");
+    AppendMenuA(unit, MF_STRING, ID_ADDPROG, "&Load programs into flash (.bns)...");
     AppendMenuA(unit, MF_SEPARATOR, 0, NULL);
     AppendMenuA(unit, MF_STRING, ID_FACTORY, "Back to the &factory state (erases this unit's files)...");
     AppendMenuA(unit, MF_STRING, ID_EXIT, "E&xit");
@@ -1040,6 +1204,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         case ID_EXIT: DestroyWindow(w); return 0;
         case ID_EXPORT: export_files(); return 0;
         case ID_IMPORT: import_files(); return 0;
+        case ID_ADDPROG: add_programs(); return 0;
         case ID_FACTORY: {
             char path[MAX_PATH];
             emu_unit *old;

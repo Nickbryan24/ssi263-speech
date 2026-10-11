@@ -706,6 +706,18 @@ if os.path.isfile(FILES):
                             env={"TEST_FILES_FAT_BREAK": "1"}, expect_fail=True,
                             fail_marks=[r"^FAIL 7-Zip extracts a packed image exactly .*extra .*~1",
                                         r"^FAIL 7-Zip reads a unit's export as the unit holds it", r"^FAILED$"]))
+# Firmware > "Load programs into flash" (people's ask: games without an image or a cable), as blazie_files add: one
+# batch into flash startup, all or nothing -- names the unit has refused unless --replace, a dry run, a batch too
+# big for the flash, two PC files of one unit name.  Control: a new flash file's entry in folder 0 (bl_files.h
+# blf_break 7, the previews' lost files) -- the files missing and the batch breaking the file system's rules
+if os.path.isfile(os.path.join(EMU, "blazie_files.exe")):
+    ADD = [PY, "files_add.py", os.path.join(EMU, "blazie_files.exe"), os.path.join(FW_BLAZIE, "bl2_2003_warm.state")]
+    CHECKS.append(check("Blazie emulator: programs into flash (blazie_files add)", ADD))
+    CHECKS.append(check("Blazie emulator: programs into flash CONTROL (entries in folder 0, must fail)", ADD,
+                        env={"TEST_FILES_BREAK": "7"}, expect_fail=True,
+                        fail_marks=[r"^FAIL 1\. the batch added .*marked used but no file's",
+                                    r"^FAIL 1\. the program in flash startup, byte for byte +no file",
+                                    r"^ok +4\. too big for the flash", r"^FAILED$"]))
 # the Braille 'n Speak 2000 (Tomi: the Slovak firmware, a Braille 'n Speak 2000), when firmware/blazie/bns2000/ has
 # its English and Slovak firmware and their factory states (src/apps/blazie/make_state.c): the Braille Lite's board
 # with no braille display (bl_board.h bl_model).  The units told apart, the voice's import still refusing it; its
@@ -792,6 +804,19 @@ if os.path.isfile(TEST_GAMES):
                                                 r"^ok +to the start key, the same with the bus FFh",
                                                 r"^FAIL the first tone after the start key +none in 2 s",
                                                 r"^FAIL the game goes on: its time-out answered", r"^FAILED$"]))
+            # ... and Simon put into the flash startup folder as "Load programs into flash" puts it (with a text
+            # file, one batch), run from there; control: its entry in folder 0 -- the unit cannot find the game
+            if game == "simon":
+                CHECKS.append(check("Blazie games: Simon from flash, %s" % label,
+                                    [TEST_GAMES, game] + unit + [GAME, "--flash"]))
+            if game == "simon" and label == "Braille Lite ENG":
+                CHECKS.append(check("Blazie games: Simon from flash CONTROL (%s, entry in folder 0, must fail)" % label,
+                                    [TEST_GAMES, game] + unit + [GAME, "--flash"],
+                                    env={"TEST_GAMES_FILES_BREAK": "7"}, expect_fail=True,
+                                    fail_marks=[r"^FAIL the game in flash startup, a program +simon\.bns: the unit's "
+                                                r"directory has no such file",
+                                                r"^FAIL the first tone after the start key +none in 2 s",
+                                                r"^FAILED$"]))
 # the emulator's serial port plugged in (src/apps/blazie/test_serial.c; Tomi: WinDisk to the emulated unit): the
 # storage handshake WinDisk and PCDISK answer -- XON ENQ out at 19200 8N1, ACK answered with 'C' and NAK not, input
 # paced at the baud rate, the directory command out -- on every unit; the Windows COM side (serial_win.c) end to end

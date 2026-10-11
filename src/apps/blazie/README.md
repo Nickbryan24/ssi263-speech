@@ -30,11 +30,11 @@ including the channel left open (hiss or whine) until the firmware clicks it off
 | `tns_setup.h`, `.c` | The Type 'n Speak's first start: its cold reset's seven questions (measured), what the shells tell the person, and a headless factory setup (the questions answered in the unit's own time) for the tests and the rescue. Portable. |
 | `tns_rescue.h`, `.c` | A saved Type 'n Speak that was never set up (the previews' first start missed the cold reset), told apart and set up anew with its RAM files; the old state kept beside it. Portable. |
 | `test_rescue.c` | A unit made as the previews made it, told apart, rescued (its first file without the character it never stored, the flash file it lost named), and then moving a file to flash with its own command; `TEST_RESCUE_BREAK=1` must fail. |
-| `blazie_files.c` | The command line for a saved unit's files (Windows, Linux, the BTSpeak): list, export to a disk image, import from one, extract to a folder, pack and unpack an image. The portable half is `../../csrc/blazie/bl_files*.c` and `fat_img.c`. |
+| `blazie_files.c` | The command line for a saved unit's files (Windows, Linux, the BTSpeak): list, export to a disk image, import from one, add files to flash startup (`add`: the menu's Load programs into flash), extract to a folder, pack and unpack an image. The portable half is `../../csrc/blazie/bl_files*.c` and `fat_img.c`. |
 | `make_state.c` | A unit's factory state from its firmware alone (`../../csrc/blazie/bl_state.c`'s recipe): the Braille 'n Speak 2000's, kept in `firmware/blazie/bns2000/`. |
 | `test_bns.c` | The Braille 'n Speak 2000 on the Braille Lite's board: the units told apart (the voice's import still refuses it), and its words read from the chip's register writes -- Slovak at power-on and for the time -- against what the unit said; asking the English unit for the Slovak words is run_tests' must-fail control. |
 | `test_files.c` | Files in and out against the units' own commands, on all four units (and the Braille 'n Speak 2000's two): the firmware's files exported exactly (the open one too), an image imported and then listed, typed into and moved by the unit, export-import-export the same image; the Type 'n Speak from its factory start (its cold reset's questions answered), its first file moved to flash whole; `--break=1..5` put one bug back each, `--break=cold` the old cold start, for run_tests' must-fail controls. `nvda/tools/files_7zip.py` checks the images in 7-Zip. |
-| `test_games.c` | Blazie's games from their disks (simon.bns, hangman.bns in firmware/blazie/games/, never in the repo; absent: skipped) run from the unit's files with its own command: Simon's first tone and its time-out on the Braille Lite, the Braille 'n Speak 2000 and the Type 'n Speak (RetroBunn, PR #9: it locked the unit up), Hangman a guess answered, both the same samples with the bus answered FFh wherever the game does not read it; `TEST_GAMES_BREAK=1` answers FFh again (bl_board.h `bl_bus_break`) for run_tests' must-fail control. |
+| `test_games.c` | Blazie's games from their disks (simon.bns, hangman.bns in firmware/blazie/games/, never in the repo; absent: skipped) run from the unit's files with its own command: Simon's first tone and its time-out on the Braille Lite, the Braille 'n Speak 2000 and the Type 'n Speak (RetroBunn, PR #9: it locked the unit up), Hangman a guess answered, both the same samples with the bus answered FFh wherever the game does not read it; `TEST_GAMES_BREAK=1` answers FFh again (bl_board.h `bl_bus_break`) for run_tests' must-fail control. `--flash`: Simon put into the flash startup folder with a text file in one batch, as Load programs into flash puts them (bl_files_xfer.h `blx_add_cp`), and run from there; `TEST_GAMES_FILES_BREAK=7` writes its entry in folder 0 (the unit cannot find it) for that control. `../../../nvda/tools/files_add.py` checks `blazie_files add` itself. |
 
 The Linux shells (`README-linux.md`: build, keys, sound, the BTSpeak, the desktop app with Orca):
 
@@ -329,6 +329,29 @@ with Casso's MIT notice (`licenses/Casso-MIT.txt`: the chip model draws on it). 
 `build_app.py` puts all three beside the program. Since 0.7 no z180emu (GPL) is in the program or its tests:
 `python tools/check_no_gpl.py nvda/dist/blazie-emu` (run_tests runs it). The firmware keeps its own terms and is not
 part of the program.
+
+## Programs into flash
+
+Firmware > **Load programs into flash (.bns)** puts Blazie's programs and games (or any files) into the unit's flash
+startup folder, with no image and no cable: choose one or several files together in the dialog (Shift or Ctrl with
+the arrows and Space, or Ctrl+A), and they go in as one batch -- the unit is switched off once, the files added, and
+switched on again, as Import does (and, like Import, only while the unit is not writing its flash). Then run a
+program with the unit's own command: o-chord x, its name, e-chord (the Type 'n Speak: F9 x, its name, Enter). No
+folder mode is needed for files in flash startup (tried on the English Braille Lite 2000, the Braille 'n Speak 2000
+and the Type 'n Speak: Simon runs from there as from RAM).
+
+- All or nothing: if one file cannot go in -- the flash is full (the message says how much is free), a name the unit
+  cannot take, an empty file, two files that would have one name on the unit -- nothing is loaded.
+- A name the unit has already: the emulator lists them and asks once for the whole batch; Yes rewrites each where it
+  is (its folder, type and protection kept), No loads nothing. The unit's clipboard and datebook, and the file it
+  has open, are never replaced.
+- Names become names the unit takes (lower case, one dot, an extension of up to 3, 20 characters), as Import makes
+  them; a text file's PC line ends become the unit's CR, and a program (it holds NUL bytes) is kept byte for byte.
+- The unit as it was is kept beside its state as `english.state.before-import` (...), as Import keeps it.
+
+The same from the command line, on a saved unit (close the emulator first):
+
+    blazie_files add english.state pinball.bns chess.bns [--replace] [--dry-run]
 
 ## Files in and out: disk images
 

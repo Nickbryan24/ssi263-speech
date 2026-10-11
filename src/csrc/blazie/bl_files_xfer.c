@@ -483,3 +483,98 @@ int blx_import_cp(blf_fs *fs, int codepage, const unsigned char *img, unsigned l
     fat_close(v);
     return 1;
 }
+
+/* ---- files from the PC, added (blx_add_cp) ---------------------------------------------------------------------- */
+int blx_add_cp(blf_fs *fs, int codepage, int n, const char *const *names, const unsigned char *const *data,
+               const unsigned long *sizes, const unsigned *times, const unsigned *dates, int replace, blx_report *r,
+               char *err, int errlen)
+{
+    char (*un)[BLF_NAME_MAX + 1];
+    char e[300], tmp[300];
+    int i, k, target, exists = 0;
+    if (n <= 0)
+        return fail(err, errlen, "no files");
+    if (!blf_folders_ok(fs))
+        return fail(err, errlen, "the unit's folders were never set up (on the unit: the cold reset, answering yes "
+                    "to the file system, flash and folder questions)");
+    target = blf_flash_ok(fs) && blf_folder_get(fs, 1)->type == 'f' ? 1 : 0;
+    un = (char (*)[BLF_NAME_MAX + 1])calloc((size_t)n, sizeof *un);
+    if (!un)
+        return fail(err, errlen, "out of memory");
+    /* first, nothing changed: every name made, checked against the batch and against the unit */
+    for (i = 0; i < n; i++) {
+        blx_utf8_to_unit_cp(codepage, names[i], tmp, sizeof tmp);
+        if (!unit_name(tmp, un[i])) {
+            snprintf(e, sizeof e, "%s: no file name the unit takes can be made of it", names[i]);
+            free(un);
+            return fail(err, errlen, e);
+        }
+        if (!sizes[i]) {
+            snprintf(e, sizeof e, "%s is empty", names[i]);
+            free(un);
+            return fail(err, errlen, e);
+        }
+        for (k = 0; k < i; k++)
+            if (ci_eq(un[k], un[i])) {
+                snprintf(e, sizeof e, "%s and %s would both be %s on the unit (its names are one list)", names[k],
+                         names[i], un[i]);
+                free(un);
+                return fail(err, errlen, e);
+            }
+        if (strcmp(tmp, un[i]))
+            say(r, "%s is named %s on the unit", names[i], un[i]);
+        k = blf_find(fs, un[i]);
+        if (k >= 0) {
+            const blf_file *x = blf_get(fs, k);
+            if (x->system || x->open) {
+                snprintf(e, sizeof e, "%s cannot be replaced: %s", un[i], x->system ? "it is the unit's own file"
+                         : "the unit has it open (close it on the unit first)");
+                free(un);
+                return fail(err, errlen, e);
+            }
+            say(r, "exists %s (in %s, %lu bytes)", un[i], blf_folder_get(fs, x->folder)->name, x->size);
+            exists++;
+        }
+    }
+    if (exists && !replace) {
+        free(un);
+        return BLX_ADD_EXISTS;
+    }
+    if (!target)
+        say(r, "the unit's flash is not set up: the files go into %s", blf_folder_get(fs, 0)->name);
+    /* then the changes */
+    for (i = 0; i < n; i++) {
+        unsigned char *d = (unsigned char *)malloc(sizes[i]);
+        unsigned long len = sizes[i];
+        int u = blf_find(fs, un[i]), type = u >= 0 ? blf_get(fs, u)->type : blf_type_for_name(fs, un[i]), ok;
+        if (!d) {
+            free(un);
+            return fail(err, errlen, "out of memory");
+        }
+        memcpy(d, data[i], len);
+        if (type == 'A' || type == 'B')
+            len = to_unit_lines(d, len);
+        if (u >= 0)
+            ok = blf_replace(fs, u, d, len, times[i], dates[i], e, sizeof e);
+        else
+            ok = blf_add(fs, target, un[i], d, len, times[i], dates[i], 0, e, sizeof e);
+        free(d);
+        if (!ok) {
+            unsigned long ram_free, flash_free;
+            blf_free_space(fs, &ram_free, &flash_free);
+            snprintf(tmp, sizeof tmp, "%s not %s: %s (%s free: %lu KB)", un[i], u >= 0 ? "rewritten" : "added", e,
+                     target ? "flash" : "RAM", (target ? flash_free : ram_free) / 1024);
+            free(un);
+            return fail(err, errlen, tmp);
+        }
+        if (u >= 0) {
+            r->replaced++;
+            say(r, "rewrote %s (%lu bytes)", un[i], len);
+        } else {
+            r->added++;
+            say(r, "added %s to %s (%lu bytes)", un[i], blf_folder_get(fs, target)->name, len);
+        }
+    }
+    free(un);
+    return 1;
+}

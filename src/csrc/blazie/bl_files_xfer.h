@@ -66,6 +66,23 @@ unsigned char *blx_export_cp(const blf_fs *fs, int model, int codepage, unsigned
                              int errlen);
 int blx_import_cp(blf_fs *fs, int codepage, const unsigned char *img, unsigned long size, blx_report *r, char *err,
                   int errlen);
+
+/* Files from the PC added to the unit (the emulator's "Load programs into flash", people's ask: Blazie's programs and
+   games without an image or a cable): names[i] the PC file's name (UTF-8, no folder), data[i] / sizes[i] its bytes,
+   times[i] / dates[i] its time and date (DOS format).  Each goes into the flash startup folder (the RAM startup one
+   when the unit's flash is not set up -- said in the report), under a name the unit takes; a text file's line ends
+   made the unit's, as import does (a program, holding NUL bytes, is kept as it is).  One batch, all or nothing:
+     1  every file added (r->added) or rewritten where it is (r->replaced: only with `replace`);
+     2  (BLX_ADD_EXISTS) some names are the unit's already and `replace` is 0: nothing changed, each "exists NAME"
+        line in the report -- ask, then call again with `replace` 1;
+     0  nothing could be done, the reason in err.  The images may then be part-changed: the caller drops them (a
+        saved state is only written after a 1).
+   Refused, the whole batch: a name the unit cannot take, two files with one unit name, an empty file, and replacing
+   the unit's own files (clipboard, datebook) or the file it has open. */
+#define BLX_ADD_EXISTS 2
+int blx_add_cp(blf_fs *fs, int codepage, int n, const char *const *names, const unsigned char *const *data,
+               const unsigned long *sizes, const unsigned *times, const unsigned *dates, int replace, blx_report *r,
+               char *err, int errlen);
 void blx_unit_to_utf8_cp(int codepage, const char *unit, char *out, size_t cap);
 void blx_utf8_to_unit_cp(int codepage, const char *utf8, char *out, size_t cap);
 
