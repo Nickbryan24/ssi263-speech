@@ -89,6 +89,7 @@ typedef struct ssi263_params {
     double hold_release_phonemes[4];     /* the holds it applies to (HVC); -1 = unused */
     double hold_release_after[4];        /* the phonemes before them that make the context (K, KV); -1 = unused */
     double hold_release_min_frames;      /* only holds this long or longer (mode 1: 1 frame, else 4 - DR) */
+    double mode1_rate15_formants;        /* 0.8, the BASIC tones: 0 "slew", 1 "immediate", 2 "pa_wait" */
 } ssi263_params;
 
 #define SSI263_GLOTTAL_MAX 64

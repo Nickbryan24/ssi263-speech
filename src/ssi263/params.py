@@ -85,6 +85,19 @@ DEFAULTS = {
     "amp_slew_per_phoneme": (1.0, "GUESS",
                              "A: amplitude moves linearly 'at rate dependent on the phoneme "
                              "duration setting'; full scale per phoneme duration here"),
+    "mode1_rate15_formants": ("pa_wait", "BL+EAR",
+                              "the formant fields (F1 F2 F3 NAS) in mode 1 at speech rate 15 only -- the BASIC Sound "
+                              "command's tones (chime.bas, the Pinball lesson; Astra, Replies 177-179).  'slew': as at "
+                              "every other mode and rate (0.7): each note's start glides into M's tract, a bright "
+                              "+7..+8 dB burst the real chip does not make (Jayson's crackle; real starts +0.2..+0.5 "
+                              "dB).  'immediate': every load retunes at once -- clean starts, but PA retunes the "
+                              "tract while M is still fading, a +5..+12 dB click at each note's END (Tomi's ear).  "
+                              "'pa_wait': a sounding phoneme retunes at once; PA holds the tract until both the VA "
+                              "and FA latches reach zero, then retunes.  Tomi on CHIME and Pinball: 'sounds perfect' "
+                              "(2026-10-11).  A bounded behavioural approximation, not a traced gate: the real chip's "
+                              "rate-14 and slower transitions stay bright (50-190 ms, REG_astra174/176), so it is "
+                              "limited to mode 1 at rate 15; the firmwares' speech is mode 3 (corpus_v1 DEV: 1251 of "
+                              "1251 loads)"),
 
     # ---- filters: switched-capacitor sections at fc ----------------------------------
     # LDI mapping: (2 sin(pi f/fc))^2 = K (C0 + sum w_i b_i).  Binary weights reproduce

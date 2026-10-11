@@ -127,6 +127,8 @@ class Bandpass:
 class SSI263:
     def __init__(self, params=None, rom=None, out_rate=44100, dsp=None):
         self.p = params if isinstance(params, Params) else Params(params)
+        if self.p["mode1_rate15_formants"] not in ("slew", "immediate", "pa_wait"):
+            raise ValueError("mode1_rate15_formants = %r" % (self.p["mode1_rate15_formants"],))
         self.rom = rom or Rom.load()
         self.out_rate = float(out_rate)
         self.dsp = _dsp.get(dsp)     # output stage: "numpy" (reference) or "c" (the add-ons)
@@ -399,9 +401,14 @@ class SSI263:
             frame = p["frame_xck_cycles"] * (16 - (self.regs[2] >> 4)) / self.xck
             step = p["art_codes_per_frame"][(self.regs[3] >> 4) & 7] * seconds / frame
             fm = dict(zip(FIELDS, p["field_speed_mult"]))
-            for f in self.cur:
+            # VA and FA first: mode1_rate15_formants' PA wait reads where their latches END.  Its retune is instant,
+            # so whether the latches reached zero inside the skip decides the tract's end state exactly
+            for f in ("VA", "FA", "F1", "F2", "F3", "NAS"):
                 st = (step * p["art_amp_mult"] if f in ("VA", "FA") else step) * fm[f]
                 d = self.target[f] - self.cur[f]
+                tst = self._tract_step(f, d, self._latch_code(self.cur["VA"]), self._latch_code(self.cur["FA"]))
+                if tst is not None:
+                    st = tst
                 self.cur[f] = self.target[f] if abs(d) <= st else self.cur[f] + math.copysign(st, d)
             self.g2 = self.target["FA"] * self.w2
             self.g5 = self.target["FA"] * self.w5
@@ -456,13 +463,24 @@ class SSI263:
         s = min(0.999, math.sqrt(max(K * cap, 0.0)) / 2.0)
         return 2.0 * math.asin(s)
 
+    def _latch_code(self, cur):
+        """The 4-bit code a counter value latches to."""
+        c = int((round if self.p["latch_quantize"] == "round" else math.floor)(cur))
+        return 0 if c < 0 else 15 if c > 15 else c
+
+    def _tract_step(self, f, d, va, fa):
+        """mode1_rate15_formants (the BASIC tones): how far a formant field moves this tick, or None to slew as
+        everywhere else.  'pa_wait' holds the tract through PA until the VA and FA latches given are both zero."""
+        how = self.p["mode1_rate15_formants"]
+        if how == "slew" or f in ("VA", "FA") or self.mode != 1 or (self.regs[2] >> 4) != 15:
+            return None
+        return abs(d) if (how == "immediate" or self.phoneme or (va == 0 and fa == 0)) else 0.0
+
     def _latch_all(self, force=False):
-        q = round if self.p["latch_quantize"] == "round" else math.floor
         bw = self.p["bw_ratio"]
         changed = False
         for f in FIELDS:
-            c = int(q(self.cur[f]))
-            c = 0 if c < 0 else 15 if c > 15 else c
+            c = self._latch_code(self.cur[f])
             if c != self.latch[f] or force:
                 self.latch[f] = c
                 changed = True
@@ -571,6 +589,9 @@ class SSI263:
                     d = self.target[f] - self.cur[f]
                     if d:
                         st = (step * amp_mult if f in ("VA", "FA") else step) * fmult[f]
+                        tst = self._tract_step(f, d, self.latch["VA"], self.latch["FA"])
+                        if tst is not None:
+                            st = tst
                         self.cur[f] = self.target[f] if abs(d) <= st else self.cur[f] + math.copysign(st, d)
                 if self.duration > 0:
                     astep = 15.0 * p["amp_slew_per_phoneme"] * dt / self.duration

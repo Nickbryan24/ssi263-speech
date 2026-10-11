@@ -53,7 +53,7 @@ class _Params(ctypes.Structure):
         ("closure_noise_lead_s", _c_double), ("noise_voice_swell", _c_double),
         ("hold_release", _c_double), ("hold_release_frames", _c_double), ("hold_release_ramp_ms", _c_double),
         ("hold_release_phonemes", _c_double * 4), ("hold_release_after", _c_double * 4),
-        ("hold_release_min_frames", _c_double),
+        ("hold_release_min_frames", _c_double), ("mode1_rate15_formants", _c_double),
     ]
 
 
@@ -81,6 +81,10 @@ def params_struct(p):
     s.hold_release_frames = float(p["hold_release_frames"])
     s.hold_release_ramp_ms = float(p["hold_release_ramp_ms"])
     s.hold_release_min_frames = float(p["hold_release_min_frames"])
+    tract = ("slew", "immediate", "pa_wait")
+    if p["mode1_rate15_formants"] not in tract:
+        raise ValueError("mode1_rate15_formants = %r: the C core knows %s" % (p["mode1_rate15_formants"], tract))
+    s.mode1_rate15_formants = float(tract.index(p["mode1_rate15_formants"]))
     for name in ("hold_release_phonemes", "hold_release_after"):
         codes = tuple(p[name])
         if len(codes) > 4 or any(not 0 <= int(v) <= 63 for v in codes):

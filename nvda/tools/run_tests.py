@@ -1577,6 +1577,25 @@ for brk, marks in (
                    r"^hard G: 19 FAILED$"])):
     CHECKS.append(check("hard G CONTROL (%s, must fail)" % brk, [PY, HARD_G], env={"HARD_G_BREAK": brk},
                         expect_fail=True, fail_marks=marks))
+# the BASIC tones (0.8, params mode1_rate15_formants; Astra, Replies 177-179; Tomi's ear on CHIME and Pinball): in mode 1
+# at rate 15 a note starts at M's tract at once, and PA holds the tract until the VA and FA latches are zero -- chip state
+# at every output sample and the 3-10 kHz sound, Python and C, chunks, skip, and the inactive modes and rates.  Each
+# control must fail for its own reason: slew = 0.7's glide into M (the starts); immediate = preview C's retune into PA
+# while M is still sounding (the note-end click)
+TONES = os.path.join(os.path.dirname(os.path.dirname(HERE)), "tools", "check_tone_tract.py")
+CHECKS.append(check("BASIC tones: clean note starts and ends in mode 1 at rate 15 (chip state and sound; Python, C)",
+                    [PY, TONES]))
+for brk, marks in (
+        ("slew", [r"^FAIL  C  R1=D1 R4=F8 phase  0/32 +start: the tract slewed into M .*start: \+\d+\.\d dB of 3-10 kHz",
+                  r"^FAIL  py R1=D1 R4=F8 phase  5/32 +start: the tract slewed into M .*start: \+\d+\.\d dB of 3-10 kHz",
+                  r"^FAIL  skip C 12 ms \(after it\) .*the next note slewed after the skip", r"^BASIC tones: 18 FAILED$"]),
+        ("immediate", [r"^FAIL  C  R1=D1 R4=F8 phase  0/32 +PA: the tract retuned [\d.]+ ms after PA's load with the VA "
+                       r"latch at 10; tail: \+\d+\.\d dB of 3-10 kHz",
+                       r"^FAIL  py R1=D1 R4=F8 phase  5/32 +PA: the tract retuned .*tail: \+\d+\.\d dB of 3-10 kHz",
+                       r"^FAIL  skip C 1 ms \(before the latch crossing\) F1 7\.00 after the skip, the rule says 0",
+                       r"^BASIC tones: 16 FAILED$"])):
+    CHECKS.append(check("BASIC tones CONTROL (%s, must fail)" % brk, [PY, TONES], env={"TONE_TRACT_BREAK": brk},
+                        expect_fail=True, fail_marks=marks))
 # The Mockingboard (src/csrc/mockingboard, 0.8): Sweet Micro's text-to-speech on Fake6502 and the board -- the 6502
 # core's contract (test_m6502_contract.c) with its must-fail controls (cpu/m6502_controls.py), and the host's, the
 # voice's and the disk reader's tests with theirs (mockingboard/mb_controls.py: each suite as it is, then each rule

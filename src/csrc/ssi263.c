@@ -272,13 +272,29 @@ static void set_fixed_sections(ssi263 *c)
     set_theta(&c->sec[4], 2 * M_PI * c->p.f5_ratio, c->p.bw_ratio[4]);
 }
 
+/* the 4-bit code a counter value latches to */
+static int latch_code(const ssi263 *c, double cur)
+{
+    double q = c->p.latch_round != 0.0 ? rint(cur) : floor(cur);
+    int v = (int)q;
+    return v < 0 ? 0 : v > 15 ? 15 : v;
+}
+
+/* mode1_rate15_formants (the BASIC tones): how far a formant field moves this tick, or -1 to slew as everywhere else.
+   'pa_wait' holds the tract through PA until the VA and FA latches given are both zero. */
+static double tract_step(const ssi263 *c, int f, double d, int va, int fa)
+{
+    int how = (int)c->p.mode1_rate15_formants;
+    if (!how || f >= VA || c->mode != 1 || (c->regs[2] >> 4) != 15)
+        return -1.0;
+    return (how == 1 || c->phoneme != 0 || (va == 0 && fa == 0)) ? fabs(d) : 0.0;
+}
+
 static void latch_all(ssi263 *c, int force)
 {
     int f, changed = 0;
     for (f = 0; f < NFIELDS; f++) {
-        double q = c->p.latch_round != 0.0 ? rint(c->cur[f]) : floor(c->cur[f]);
-        int v = (int)q;
-        v = v < 0 ? 0 : v > 15 ? 15 : v;
+        int v = latch_code(c, c->cur[f]);
         if (v != c->latch[f] || force) {
             c->latch[f] = v;
             changed = 1;
@@ -602,6 +618,9 @@ static long chip_run(ssi263 *c, long max_out, int stop_on_request, double *out)
                 d = c->target[f] - c->cur[f];
                 if (d != 0.0) {
                     double st = ((f == VA || f == FA) ? step * amp_mult : step) * p->field_speed_mult[f];
+                    double tst = tract_step(c, f, d, c->latch[VA], c->latch[FA]);
+                    if (tst >= 0.0)
+                        st = tst;
                     c->cur[f] = fabs(d) <= st ? (double)c->target[f] : c->cur[f] + copysign(st, d);
                 }
             }
@@ -815,8 +834,9 @@ SSI263_API void ssi263_skip(ssi263 *c, double seconds)
     if (c->apply_due)
         apply_pending(c);
     if (powered(c) && c->mode >= 0) {
+        static const int order[NFIELDS] = { VA, FA, F1, F2, F3, NAS };
         double left = c->duration - c->elapsed, frame, step, d, early_left = 0.0;
-        int f, has_early = 0;
+        int k, has_early = 0;
         if (p->release_lookahead != 0.0 && c->releases && c->mode > 0 && !c->early_req && !c->timer_done) {
             double fr = p->frame_xck_cycles * (16 - (c->regs[2] >> 4)) / c->xck;
             double sc = (p->closure_fraction != 0.0 && fr > 0) ? (c->duration / (4.0 * fr)) : 1.0;
@@ -843,9 +863,16 @@ SSI263_API void ssi263_skip(ssi263 *c, double seconds)
         c->elapsed += seconds;
         frame = p->frame_xck_cycles * (16 - (c->regs[2] >> 4)) / c->xck;
         step = p->art_codes_per_frame[(c->regs[3] >> 4) & 7] * seconds / frame;
-        for (f = 0; f < NFIELDS; f++) {
+        /* VA and FA first: mode1_rate15_formants' PA wait reads where their latches END.  Its retune is instant, so
+           whether the latches reached zero inside the skip decides the tract's end state exactly */
+        for (k = 0; k < NFIELDS; k++) {
+            int f = order[k];
             double st = ((f == VA || f == FA) ? step * p->art_amp_mult : step) * p->field_speed_mult[f];
+            double tst;
             d = c->target[f] - c->cur[f];
+            tst = tract_step(c, f, d, latch_code(c, c->cur[VA]), latch_code(c, c->cur[FA]));
+            if (tst >= 0.0)
+                st = tst;
             c->cur[f] = fabs(d) <= st ? (double)c->target[f] : c->cur[f] + copysign(st, d);
         }
         c->g2 = c->target[FA] * c->w2;
