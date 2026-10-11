@@ -187,7 +187,7 @@ def check_import(exe, data, tmp, env):
         renamed_mb = os.path.join(tmp, "speech.dat")
         shutil.copyfile(tan.MB_BIN, renamed_mb)
         cases.append(("the Mockingboard's file renamed", renamed_mb, 5))
-    toolkit, other = tan.mb_disks()
+    toolkit, disk1, other = tan.mb_disks()        # the toolkit (1.1), Mockingboard disk 1 (the early one), disk 2
     if toolkit:
         dsk = open(toolkit, "rb").read()
         po = os.path.join(tmp, "toolkit.po")
@@ -198,8 +198,10 @@ def check_import(exe, data, tmp, env):
             f.write(bytes(len(dsk)))
         cases += [("the toolkit's .dsk", toolkit, 5), ("the toolkit's .dsk in ProDOS order (.po)", po, 5),
                   ("a blank 140 KB disk", blank, -7)]
+        if disk1:
+            cases.append(("Mockingboard disk 1 (the early text-to-speech)", disk1, 6))
         if other:
-            cases.append(("another Mockingboard disk", other, -7))
+            cases.append(("another Mockingboard disk (disk 2)", other, -7))
     else:
         print("skip  import the toolkit's disk image: MOCKINGBOARD_DISKS (paths.local) does not have it")
     bad = 0
