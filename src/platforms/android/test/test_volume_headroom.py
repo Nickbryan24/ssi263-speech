@@ -19,6 +19,10 @@ The Mockingboard (imported, 0.8; measured when firmware/sweet-micro-mockingboard
 takes it as its gain too (mb_voice.h): at the default 150 it peaks at -3.1 dBFS on these lines, a little under the
 others, unclipped; the early one (mockingboard-tts-early.bin, 0.8) at -1.1 dBFS, unclipped too.
 
+Engine v0.16 (0.8: F1's code law and bandwidth) lifted every voice's peaks about 2 dB, and at 150 the Speak-Out clipped
+(the Braille Lite -0.28 dBFS); the default is 135 since.  At 135: the Speak-Out -0.86, the Accent-mini -0.97, the early
+Mockingboard -1.06, the Braille Lite -1.20, the Accent SA -1.43, the Mockingboard -1.59 dBFS, none clipped.
+
     python test_volume_headroom.py        SSI263_VOLUME_TEST_BREAK=1: volume 250 for every voice -- must fail (all clip)
                                           SSI263_VOLUME_TEST_BREAK=accent: 250 for the Accent SA alone -- must fail
 """

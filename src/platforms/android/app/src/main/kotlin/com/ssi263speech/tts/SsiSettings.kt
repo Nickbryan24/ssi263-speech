@@ -17,8 +17,9 @@ object SsiSettings {
     const val PITCH = "pitch"
     const val TONE = "tone"
     const val VOLUME = "engine_volume"        // 0.7: 0-200, default DEFAULT_VOLUME (a new key: the old 0-100 default was quieter)
-    const val DEFAULT_VOLUME = 150           // +3.5 dB over the desktop level (100): the loudest of 67 lines measured at -1.4 dBFS;
-                                             // the Accent SA's loudest of test_volume_headroom.py's at -2.5 dBFS
+    const val DEFAULT_VOLUME = 135           // +2.6 dB over the desktop level (100).  0.7-0.7.7: 150; engine v0.16's F1 (0.8) lifted
+                                             // every voice's peaks ~2 dB, so 150 clipped the Speak-Out; at 135 the loudest
+                                             // of test_volume_headroom.py's lines is the Speak-Out's at -0.86 dBFS
     const val MAX_VOLUME = 200
     const val SHORT_PAUSES = "short_pauses"
     const val RUN_AHEAD = "run_ahead"          // the Braille Lite's, EXPERIMENTAL: off by default (NVDA's runAhead)

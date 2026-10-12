@@ -316,7 +316,7 @@ samples apart (Spanish's sentence differs), so a reference from the repository's
 ## Settings: rate, pitch, volume, and each unit's own
 
 The app's sliders use the NVDA drivers' scales (rate and pitch 0-100, 50 = the unit's factory rate and pitch: the
-Braille Lite's 11 and 16, the Accents' 5 and 5, the Speak-Out's 5 and 3; engine volume 0-200, default 150, every
+Braille Lite's 11 and 16, the Accents' 5 and 5, the Speak-Out's 5 and 3; engine volume 0-200, default 135 (150 before engine v0.16's fuller F1), every
 voice: `so_voice` and `am_voice` take up to 200 as `as_voice` and `bl_voice` do, and `test_volume_headroom.py` holds
 each voice's loudest line under -0.5 dBFS at the default). Each unit's own settings are its NVDA add-on's, with its
 defaults:

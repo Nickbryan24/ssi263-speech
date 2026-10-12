@@ -1203,7 +1203,7 @@ if os.path.isfile(ANDROID_TEST):
                                     r"^accent sa volume 250: .* clipped samples -- FAILED", r"^volume headroom: FAILED$"]))
     CHECKS.append(check("Android engine: volume CONTROL (the Accent SA at 250 percent, must fail)", [PY, VOLUME_TEST],
                         env={"SSI263_VOLUME_TEST_BREAK": "accent"}, expect_fail=True,
-                        fail_marks=[r"^braille lite volume 150: .* -- ok$",
+                        fail_marks=[r"^braille lite volume \d+: .* -- ok$",
                                     r"^accent sa volume 250: .* clipped samples -- FAILED", r"^volume headroom: FAILED$"]))
     APK_CHECK = os.path.join(os.path.dirname(ANDROID_TEST), "check_apk_no_firmware.py")
     # the Accent-mini's driver (Aicom's) is let through by its sha256 beside the ROMs once the voice is built in

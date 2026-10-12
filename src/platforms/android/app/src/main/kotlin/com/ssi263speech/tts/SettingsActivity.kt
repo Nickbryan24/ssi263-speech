@@ -597,8 +597,8 @@ class SettingsActivity : Activity() {
 
         root.addView(ui.heading("Volume"))
         root.addView(ui.body("The engine's own level, for every voice; Android's accessibility or media volume " +
-                "still applies. 100 percent is the desktop voices' level; the default, 150, sits beside TalkBack's " +
-                "own sounds. Above about 150 the loudest syllables can clip."))
+                "still applies. 100 percent is the desktop voices' level; the default, 135, sits beside TalkBack's " +
+                "own sounds. Above about 140 the loudest syllables can clip."))
         ui.slider(root, "Engine volume", SsiSettings.MAX_VOLUME, s.volume,
                 { if (it == SsiSettings.DEFAULT_VOLUME) "$it percent, default" else "$it percent" }) {
             put(SsiSettings.VOLUME, it)
