@@ -5,7 +5,9 @@
  *
  *   blazie_files list STATE                    the files, their folders and sizes, the free space
  *   blazie_files export STATE IMAGE.img         every file into a FAT disk image (7-Zip opens it; Linux mounts it)
- *   blazie_files import STATE IMAGE.img [--dry-run]   the unit's files made what the image holds (bl_files_xfer.h)
+ *   blazie_files import STATE IMAGE.img [--dry-run] [--keep-exact]   the unit's files made what the image holds
+ *                                               (bl_files_xfer.h); --keep-exact: text files' line ends as they are,
+ *                                               no CR LF or LF made CR
  *   blazie_files add STATE FILE... [--replace] [--dry-run]   the files added to the flash startup folder, one batch,
  *                                               all or nothing (the menu's "Load programs into flash"); a name the
  *                                               unit has already: nothing done unless --replace
@@ -189,7 +191,7 @@ static int usage(void)
 {
     printf("usage: blazie_files list|check STATE\n"
            "       blazie_files export STATE IMAGE.img\n"
-           "       blazie_files import STATE IMAGE.img [--dry-run]\n"
+           "       blazie_files import STATE IMAGE.img [--dry-run] [--keep-exact]\n"
            "       blazie_files add STATE FILE... [--replace] [--dry-run]\n"
            "       blazie_files extract STATE DIR [--crlf]\n"
            "       blazie_files unpack IMAGE.img DIR\n"
@@ -542,12 +544,22 @@ int main(int argc, char **argv)
         blx_report r;
         unsigned long size;
         unsigned char *img = read_file(argv[3], &size);
-        int dry = argc >= 5 && !strcmp(argv[4], "--dry-run");
+        int dry = 0, keep = 0, bad = 0, k;
+        for (k = 4; k < argc; k++) {              /* the options, in any order */
+            if (!strcmp(argv[k], "--dry-run"))
+                dry = 1;
+            else if (!strcmp(argv[k], "--keep-exact"))
+                keep = 1;
+            else
+                bad = 1;
+        }
         blx_report_init(&r);
-        if (!img) {
+        if (bad)
+            rc = usage();
+        else if (!img) {
             printf("cannot read %s\n", argv[3]);
             rc = 1;
-        } else if (!blx_import_cp(fs, g_cp, img, size, &r, err, sizeof err)) {
+        } else if (!blx_import_lines(fs, g_cp, img, size, keep, &r, err, sizeof err)) {
             printf("import failed: %s\n", err);
             rc = 1;
         } else {

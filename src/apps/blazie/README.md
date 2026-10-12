@@ -418,7 +418,9 @@ first: it saves its unit when it closes), for example on Linux or the BTSpeak:
     blazie_files list english.state
     blazie_files export english.state english.img
     blazie_files import english.state changed.img      (--dry-run: say what would happen; it keeps the old
-                                                        state as english.state.before-import)
+                                                        state as english.state.before-import; --keep-exact:
+                                                        text files keep their line ends, LF or CR LF, instead
+                                                        of being made the unit's CR)
     blazie_files extract english.state myfiles --crlf  (each file as a PC text file, CR LF)
 
 **A Type 'n Speak that was never set up** (saved by the 0.6 or 0.7 previews, or a setup question answered n: "The

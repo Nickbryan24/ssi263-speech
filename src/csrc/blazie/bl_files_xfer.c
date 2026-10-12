@@ -263,6 +263,14 @@ int blx_import(blf_fs *fs, const unsigned char *img, unsigned long size, blx_rep
 int blx_import_cp(blf_fs *fs, int codepage, const unsigned char *img, unsigned long size, blx_report *r, char *err,
                   int errlen)
 {
+    return blx_import_lines(fs, codepage, img, size, 0, r, err, errlen);
+}
+
+int blx_import_lines(blf_fs *fs, int codepage, const unsigned char *img, unsigned long size, int keep_lines,
+                     blx_report *r, char *err, int errlen)
+{
+    if (blf_break == 8)
+        keep_lines = 0;
     fat_volume *v;
     want_t *want = NULL;
     int n_want = 0, i, k, root_folder;
@@ -421,7 +429,7 @@ int blx_import_cp(blf_fs *fs, int codepage, const unsigned char *img, unsigned l
             const unsigned char *ud = blf_data(fs, u, &un);
             int same = un == n && !memcmp(ud, data, n);
             int fkind = blf_folder_get(fs, w->folder)->type, same_kind = fkind == (x->in_flash ? 'f' : 'r');
-            if (!same && (type == 'A' || type == 'B')) {
+            if (!same && !keep_lines && (type == 'A' || type == 'B')) {
                 n = to_unit_lines(data, n);
                 same = un == n && !memcmp(ud, data, n);
             }
@@ -462,7 +470,7 @@ int blx_import_cp(blf_fs *fs, int codepage, const unsigned char *img, unsigned l
                 continue;
             }
         }
-        if (type == 'A' || type == 'B')
+        if (!keep_lines && (type == 'A' || type == 'B'))
             n = to_unit_lines(data, n);
         if (!n && blf_folder_get(fs, w->folder)->type == 'f') {
             say(r, "%s is empty: kept in %s (the unit keeps no empty file in flash)", w->path,

@@ -130,7 +130,8 @@ int blf_check(const blf_fs *fs, char *err, int errlen);
    is read as it stands), 2 a new flash file's blocks are not marked used, 3 a new RAM file's end-of-text one byte
    short, 4 a new file's time and date dropped, 5 the open file's number left as it was when an earlier file goes,
    6 (bl_files_xfer.c) an imported binary document's line ends converted as a PC's text (issue #16), 7 a new flash
-   file's entry written in folder 0, the deleted mark (the 0.6/0.7 previews' lost files: the unit cannot see it). */
+   file's entry written in folder 0, the deleted mark (the 0.6/0.7 previews' lost files: the unit cannot see it),
+   8 (bl_files_xfer.c) an import's keep_lines ignored (blazie_files import --keep-exact converts anyway). */
 extern int blf_break;
 
 #ifdef __cplusplus

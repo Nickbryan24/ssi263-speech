@@ -724,6 +724,15 @@ if os.path.isfile(os.path.join(EMU, "blazie_files.exe")):
                         fail_marks=[r"^FAIL 1\. the batch added .*marked used but no file's",
                                     r"^FAIL 1\. the program in flash startup, byte for byte +no file",
                                     r"^ok +4\. too big for the flash", r"^FAILED$"]))
+    # blazie_files import --keep-exact (the idea of PR #19): an LF and a CR LF text file kept byte for byte, made CR
+    # without it, the options in either order.  Control: blf_break 8, the option ignored
+    KEEP = [PY, "files_keep.py", os.path.join(EMU, "blazie_files.exe"), os.path.join(FW_BLAZIE, "bl2_2003_warm.state")]
+    CHECKS.append(check("Blazie emulator: an import keeping line ends (blazie_files import --keep-exact)", KEEP))
+    CHECKS.append(check("Blazie emulator: an import keeping line ends CONTROL (the option ignored, must fail)", KEEP,
+                        env={"TEST_FILES_BREAK": "8"}, expect_fail=True,
+                        fail_marks=[r"^FAIL 1\. --keep-exact: the LF file .*first line\\r",
+                                    r"^ok +2\. without it: the CR LF file", r"^ok +3\. --keep-exact --dry-run",
+                                    r"^FAILED$"]))
 # the Braille 'n Speak 2000 (Tomi: the Slovak firmware, a Braille 'n Speak 2000), when firmware/blazie/bns2000/ has
 # its English and Slovak firmware and their factory states (src/apps/blazie/make_state.c): the Braille Lite's board
 # with no braille display (bl_board.h bl_model).  The units told apart, the voice's import still refusing it; its

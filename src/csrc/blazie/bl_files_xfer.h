@@ -66,6 +66,11 @@ unsigned char *blx_export_cp(const blf_fs *fs, int model, int codepage, unsigned
                              int errlen);
 int blx_import_cp(blf_fs *fs, int codepage, const unsigned char *img, unsigned long size, blx_report *r, char *err,
                   int errlen);
+/* blx_import_cp with its text files' line ends kept as the image has them (keep_lines 1: no CR LF or lone LF made
+   CR -- for files edited on Linux or Windows that the firmware reads as they are; the idea of PR #19); 0 is
+   blx_import_cp. */
+int blx_import_lines(blf_fs *fs, int codepage, const unsigned char *img, unsigned long size, int keep_lines,
+                     blx_report *r, char *err, int errlen);
 
 /* Files from the PC added to the unit (the emulator's "Load programs into flash", people's ask: Blazie's programs and
    games without an image or a cable): names[i] the PC file's name (UTF-8, no folder), data[i] / sizes[i] its bytes,
