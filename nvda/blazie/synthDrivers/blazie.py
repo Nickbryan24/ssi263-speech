@@ -105,6 +105,52 @@ VOICES = {"blazie": ("Braille Lite 2000 (June 2003)", "en", FIRMWARE, STATE, "la
 NUMBER_LANGS = ("en", "es")
 # the units that never echo ^F (XON/XOFF only): their end comes from the chip alone (bl_host.c "no_echo")
 NO_ECHO = ("blazie_it", "blazie_sk")
+# 0.8: the Braille Lite 2000 in 17 more languages (Blazie's updates, an anonymous donation), one voice per language,
+# from the release table (src/csrc/blazie/bl_languages.txt) through the add-on's ssi263speech.dll: each its image and
+# state in bl2000/ beside the others, its own boot keys (a slower firmware takes them later and further apart, or it
+# never enters speech-box mode), its echo and its DOS code page.  voice id: (name, language, firmware, snapshot,
+# encoding); and per voice (slow boot, echoes ^F).
+RELEASE_DIR = os.path.join(_ENGINE_DIR, "bl2000")
+RELEASE_CODECS = {0: "latin-1", 1: "cp850", 2: "cp852", 3: "cp857", 4: "cp860", 5: "cp866"}   # bl_voice.h BLV_*
+SLOW_KEYS = (8000000, 10000000)          # bl_voice.c KEY_START_SLOW, KEY_GAP_SLOW
+_release_voices = None
+
+
+def _release_table():
+    """{voice id: (VOICES' tuple, (slow boot, echoes))} for the table's voices; {} without the library."""
+    global _release_voices
+    if _release_voices is not None:
+        return _release_voices
+    _release_voices = {}
+    try:
+        import ctypes
+        lib = ctypes.CDLL(DLL)
+        for name in ("blv_release_voice_key", "blv_release_voice_name", "blv_release_tag", "blv_release_file",
+                     "blv_release_id"):
+            getattr(lib, name).restype = ctypes.c_char_p
+            getattr(lib, name).argtypes = [ctypes.c_int]
+        for name in ("blv_release_text", "blv_release_slow_boot", "blv_release_echo"):
+            getattr(lib, name).argtypes = [ctypes.c_int]
+        for k in range(lib.blv_firmware_count()):
+            key = lib.blv_release_voice_key(k)
+            if not key:
+                continue
+            key = key.decode()
+            info = (lib.blv_release_voice_name(k).decode("utf-8"), lib.blv_release_tag(k).decode(),
+                    os.path.join(RELEASE_DIR, lib.blv_release_file(k).decode()),
+                    os.path.join(RELEASE_DIR, lib.blv_release_id(k).decode() + ".state"),
+                    RELEASE_CODECS.get(lib.blv_release_text(k), "latin-1"))
+            _release_voices[key] = (info, (lib.blv_release_slow_boot(k) == 1, lib.blv_release_echo(k) == 1))
+    except (OSError, AttributeError) as e:
+        log.warning("Braille Lite: the release table's voices not listed (%s: %s)" % (DLL, e))
+    return _release_voices
+
+
+def _voices():
+    """Every voice: the shipped ones (VOICES), then the release table's."""
+    out = dict(VOICES)
+    out.update({k: v[0] for k, v in _release_table().items()})
+    return out
 # the voices whose firmware run ahead's interaction contract has been tested on (Astra, Reply 107): the mechanism is
 # board-independent, its use is not -- another release or unit gets the lockstep until its own tests exist
 RUN_AHEAD_TESTED = ("blazie", "blazie_es")
@@ -161,7 +207,7 @@ def _translit(text, encoding="latin-1"):
         return text
     ctypes, fn = _translit_fn
     raw = text.encode("utf-8", "surrogatepass")
-    charset = {"cp850": 1, "cp852": 2}.get(encoding, 0)      # voices.h SSV_CP850 / SSV_CP852 / SSV_ASCII
+    charset = {"cp850": 1, "cp852": 2, "cp857": 3, "cp860": 4, "cp866": 5}.get(encoding, 0)   # voices.h SSV_CP*
     n = fn(raw, len(raw), charset, None, 0)
     if n < 0:
         return text
@@ -180,7 +226,7 @@ def _clean(text, encoding="latin-1"):
             out.append(" ")
         elif o < 128:
             out.append(ch)
-        elif encoding in ("cp850", "cp852") and _in_codepage(ch, encoding):
+        elif encoding != "latin-1" and _in_codepage(ch, encoding):
             out.append(ch)
         else:
             out.append({"‘": "'", "’": "'", "“": '"', "”": '"',
@@ -546,10 +592,11 @@ class SynthDriver(SynthDriver):
 
     @staticmethod
     def _present():
-        return [v for v, (_, _, fw, st, _) in VOICES.items() if os.path.isfile(fw) and os.path.isfile(st)]
+        return [v for v, (_, _, fw, st, _) in _voices().items() if os.path.isfile(fw) and os.path.isfile(st)]
 
     def _get_availableVoices(self):
-        return {v: VoiceInfo(v, VOICES[v][0], VOICES[v][1]) for v in self._present()}
+        voices = _voices()
+        return {v: VoiceInfo(v, voices[v][0], voices[v][1].replace("-", "_")) for v in self._present()}
 
     def _get_voice(self):
         return self._voice
@@ -564,8 +611,9 @@ class SynthDriver(SynthDriver):
         if not lang:
             return self._voice
         base = lang.replace("-", "_").split("_")[0].lower()
+        voices = _voices()
         for v in self._present():
-            if VOICES[v][1] == base:
+            if voices[v][1].replace("-", "_").split("_")[0].lower() == base:
                 return v
         return self._voice
 
@@ -600,9 +648,11 @@ class SynthDriver(SynthDriver):
         if self._whine != "off":
             params["carrier_rel_db"] = -300.0     # the whine model carries the carrier's lines
         chip = SSI263C(params=params, out_rate=self._out_rate)
-        _name, lang, firmware, state, encoding = VOICES[voice]
-        kw = dict(chip=chip, out_rate=self._out_rate, menu=("punct_none", "numbers_toggle"), key_start=3000000,
-                  key_gap=1500000, board_lowpass_hz=BOARD_LOWPASS_HZ,
+        _name, lang, firmware, state, encoding = _voices()[voice]
+        slow, echoes = _release_table()[voice][1] if voice in _release_table() else (False, voice not in NO_ECHO)
+        start, gap = SLOW_KEYS if slow else (3000000, 1500000)
+        kw = dict(chip=chip, out_rate=self._out_rate, menu=("punct_none", "numbers_toggle"), key_start=start,
+                  key_gap=gap, board_lowpass_hz=BOARD_LOWPASS_HZ,
                   # the snapshot has inflection on; only turning it off needs the status-menu keys
                   status=() if self._infl else ("inflection_off",))
         if os.environ.get("SSI263_BLAZIE_PIPE") == "1":     # development comparison, never an automatic fallback
@@ -616,8 +666,8 @@ class SynthDriver(SynthDriver):
         unit.run(0.05)
         unit.whine = None if self._whine == "off" else self._whine
         unit.encoding = encoding
-        unit.lang = lang
-        if voice in NO_ECHO and hasattr(type(unit), "no_echo"):
+        unit.lang = lang.split("-")[0]
+        if not echoes and hasattr(type(unit), "no_echo"):
             unit.no_echo = 1             # its end from the chip alone: it never echoes ^F
         unit.voice = voice
         unit.sent_settings = (DEFAULT_RATE, DEFAULT_PITCH, DEFAULT_TONE)   # the unit boots with these

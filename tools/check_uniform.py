@@ -4,7 +4,8 @@
 (Tomi: a green suite that hides a broken integration is worse than a red one that tells the truth).  This one does.
 
 The canonical voices are defined once: src/csrc/voices.c's VOICES[] table (voices.h), the table the SAPI engine, the
-speech-dispatcher module and Android all speak through.  Every platform must offer every one of them; a voice is
+speech-dispatcher module and Android all speak through -- its hand-written voices, then the release table's
+(src/csrc/blazie/bl_languages.txt's rows with a voice key, which voices.c lists from the generated voices_blazie.h).  Every platform must offer every one of them; a voice is
 matched by its stable id, voices.h's "<NVDA driver module>:<voice>" ("blazie:blazie", "blazie:blazie_es",
 "speakout:speakout", "accentmini:mini", "accentmini:sa"), never by its name, which differs per platform:
 
@@ -109,10 +110,22 @@ def canonical():
     voices = []
     for m in re.finditer(r'\{\s*"([^"]+)",\s*"((?:[^"\\]|\\.)*)",\s*"([^"]+)",\s*(SSV_\w+),\s*(\d+),', table.group(1)):
         voices.append(dict(id=m.group(1), name=c_string(m.group(2)), lang=m.group(3), engine=m.group(4)))
+    for r in release_rows():           # voices_blazie.h's rows, from their source
+        voices.append(dict(id="blazie:" + r["voice"], name=r["vname"], lang=r["tag"], engine="SSV_BLAZIE"))
     ids = [v["id"] for v in voices]
     if not voices or len(set(ids)) != len(ids):
         raise SystemExit("uniform: src/csrc/voices.c's table is empty or repeats an id: %s" % ids)
     return voices
+
+
+def release_rows():
+    """The release table's rows that give a voice (gen_languages.py, which writes voices_blazie.h from them)."""
+    sys.path.insert(0, os.path.join(CSRC, "blazie"))
+    import gen_languages
+    table, problems = gen_languages.rows()
+    if problems:
+        raise SystemExit("uniform: bl_languages.txt: " + "; ".join(problems))
+    return [r for r in table if r["voice"].startswith("blazie_")]
 
 
 def engine_gates():
@@ -351,6 +364,8 @@ def linux(voices, p, binary=None, conf=None):
     table = re.search(r"static const voice_def ALL\[\]\s*=\s*\{(.*?)\n\};", sdv, re.S).group(1)
     sd_ids = {c_string(m.group(2)): m.group(1)
               for m in re.finditer(r'\{\s*"([^"]+)",\s*"((?:[^"\\]|\\.)*)",\s*"[^"]+",\s*"[^"]+"', table)}
+    if "SSV_BLAZIE_RELEASE_SD_ROWS" in table:      # the release table's rows (voices_blazie.h)
+        sd_ids.update({r["vname"]: "blazie:" + r["voice"] for r in release_rows()})
     if binary is None:
         default = os.path.join(REPO, "build", "linux", "sd_ssi263")
         binary = default if os.path.isfile(default) and os.name != "nt" else None
@@ -413,10 +428,18 @@ def android(voices, p):
     header, engine_c = read(os.path.join(ANDROID, "cpp", "ssa_engine.h")), read(os.path.join(ANDROID, "cpp", "ssa_engine.c"))
     consts = {k: int(v) for k, v in re.findall(r"const val (\w+) = (\d+)", native_kt)}
     defines = {k: int(v) for k, v in re.findall(r"#define SSA_(\w+) (\d+)", header)}
-    table = re.search(r"static const voice_def VOICES\[SSA_VOICES\]\s*=\s*\{(.*?)\n\};", engine_c, re.S).group(1)
+    if "VOICES" not in defines and "RELEASE_FIRST" in defines:     # (SSA_RELEASE_FIRST + SSA_RELEASE_VOICES)
+        defines["VOICES"] = defines["RELEASE_FIRST"] + defines.get("RELEASE_VOICES", 0)
+    m = re.search(r"static const voice_def VOICES\[SSA_(\w+)\]\s*=\s*\{(.*?)\n\};", engine_c, re.S)
+    size, table = m.group(1), m.group(2)
     ids = re.findall(r'\{\s*"([^"]+)",\s*\{', table)
-    if len(ids) != defines.get("VOICES"):
-        p.errors.append("ssa_engine.c's table has %d voices, SSA_VOICES is %s" % (len(ids), defines.get("VOICES")))
+    if len(ids) != defines.get(size):
+        p.errors.append("ssa_engine.c's table has %d voices, SSA_%s is %s" % (len(ids), size, defines.get(size)))
+    if size == "RELEASE_FIRST":        # then the release voices, in the table's order (ssa_voice_release)
+        ids += ["blazie:" + r["voice"] for r in release_rows()]
+        if len(ids) != defines.get("VOICES"):
+            p.errors.append("ssa_engine.c's voices and the release table's come to %d, SSA_VOICES is %s" % (
+                len(ids), defines.get("VOICES")))
     built = built_from_sources(voices, os.path.join(REPO, "build_android.sh"), "HAVE")
     index_name = {}
     for const, name in re.findall(r'VoiceInfo\(SsiNative\.(\w+),\s*"([^"]+)"', engine_kt):

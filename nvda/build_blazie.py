@@ -1,4 +1,4 @@
-﻿"""Build Blazie on MAME's Z180. Runtime code is MIT + BSD; firmware has its own terms."""
+"""Build Blazie on MAME's Z180. Runtime code is MIT + BSD; firmware has its own terms."""
 import os
 import shutil
 import sys
@@ -42,6 +42,7 @@ def main():
     for name, src in BLAZIE_UNITS:           # the other languages' units, each when its files are here
         src = os.path.join(REPO, "firmware", "blazie", *src.split("/"))
         if os.path.isfile(src):
+            os.makedirs(os.path.dirname(os.path.join(eng, name)), exist_ok=True)
             shutil.copy2(src, os.path.join(eng, name))
     shutil.copytree(os.path.join(HERE, "blazie", "locale"), os.path.join(BUILD, "locale"))
     with open(os.path.join(BUILD, "manifest.ini"), "w", encoding="utf-8") as f:

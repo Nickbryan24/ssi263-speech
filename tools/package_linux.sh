@@ -53,6 +53,14 @@ for pair in german/Lite2000.BNS:Lite2000_de.BNS german/lite2000_de_fresh.state:l
         cp "$FW/${pair%%:*}" "$STAGE/share/ssi263-speech/${pair##*:}"
     fi
 done
+# 0.8: the Braille Lite 2000 in 17 more languages (Blazie's updates, an anonymous donation), from the release table:
+# each its image and state in bl2000/ (tools/make_release_states.py puts them in firmware/blazie/bl2000/)
+for f in $(python3 "$ROOT/tools/release_voice_files.py"); do
+    if [ -f "$FW/$f" ]; then
+        mkdir -p "$STAGE/share/ssi263-speech/bl2000"
+        cp "$FW/$f" "$STAGE/share/ssi263-speech/$f"
+    fi
+done
 # the other voices' firmware, for the voices the module has (sd_ssi263 --voices), and their notices
 VOICES="$("$ROOT/build/linux/sd_ssi263" --voices | cut -f1)"
 has() { echo "$VOICES" | grep -qx "$1"; }

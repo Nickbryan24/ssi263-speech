@@ -397,6 +397,12 @@ EXPECTED = [("Braille Lite 2000", "en-US", ("BL2ENG.BNS", "bl2_2003_warm.state")
             ("Speak-Out", "en-US", ("gw-micro-speakout/SPEAKOUT.HEX",)),
             ("Mockingboard", "en-US", ("sweet-micro-mockingboard/mockingboard-tts-1.1.bin",)),
             ("Mockingboard, early", "en-US", ("sweet-micro-mockingboard/mockingboard-tts-early.bin",))]
+# 0.8: then the release table's Braille Lite voices (sd_voices.c SSV_BLAZIE_RELEASE_SD_ROWS, in the table's order),
+# each its image and state in the data folder's bl2000/
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "csrc", "blazie"))
+import gen_languages  # noqa: E402
+EXPECTED += [(r["vname"], r["tag"], ("bl2000/" + r["file"], "bl2000/%s.state" % r["id"]))
+             for r in gen_languages.rows()[0] if r["voice"].startswith("blazie_")]
 want = ["200-%s\t%s\tMALE1" % (n, lang) for n, lang, files in EXPECTED
         if n in BUILT_NAMES and all(os.path.isfile(os.path.join(VDATA, f)) for f in files)] + ["249 OK VOICES LISTED"]
 ok = voices == want and "Accent SA" in listed and set(BUILT_NAMES) <= {e[0] for e in EXPECTED}

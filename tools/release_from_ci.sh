@@ -123,6 +123,8 @@ contents() {                        # archive, then kind (full|emu): what must a
             share/ssi263-speech/Lite2000_de.BNS share/ssi263-speech/lite2000_de_fresh.state
             share/ssi263-speech/Lite2000_it.BNS share/ssi263-speech/lite2000_it_fresh.state
             share/ssi263-speech/BS2SLL.BNS share/ssi263-speech/bs2sll_fresh.state"
+        # 0.8: the release table's voices (tools/release_voice_files.py: bl2000/<file>, bl2000/<release id>.state)
+        for f in $(python3 "$(dirname "$0")/release_voice_files.py"); do need="$need share/ssi263-speech/$f"; done
         never='bns2000/|bs03eng|bs2eng'
     else
         need="bin/blazie_emu bin/blazie_emu_gtk bin/blazie_files bin/blazie_emu_bt bin/blazie_bt README-blazie-bt.md

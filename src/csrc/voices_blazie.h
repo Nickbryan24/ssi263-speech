@@ -75,4 +75,41 @@
      "ru", SSV_BLAZIE, 25, \
      {"blazie/bl2000/BL2RUS.BNS", "blazie/bl2000/bl2_ru_1998_12.state", NULL}},
 
+/* sd_voices.c's rows for them: id, name, language, engine, files in the module's data folder */
+#define SSV_BLAZIE_RELEASE_SD_ROWS \
+    {"blazie:blazie_ar", "Braille Lite 2000 (\xd8\xa7\xd9\x84\xd8\xb9\xd8\xb1\xd8\xa8\xd9\x8a\xd8\xa9)", "ar", "braille-lite", \
+     {"bl2000/BL2ARB.BNS", "bl2000/bl2_ar_1998_12.state", NULL}}, \
+    {"blazie:blazie_ar_ae", "Braille Lite 2000 (\xd8\xa7\xd9\x84\xd8\xb9\xd8\xb1\xd8\xa8\xd9\x8a\xd8\xa9\xd8\x8c \xd8\xa7\xd9\x84\xd8\xa5\xd9\x85\xd8\xa7\xd8\xb1\xd8\xa7\xd8\xaa)", "ar-AE", "braille-lite", \
+     {"bl2000/BL2UAE.BNS", "bl2000/bl2_ar_ae_1998_12.state", NULL}}, \
+    {"blazie:blazie_pt_br", "Braille Lite 2000 (portugu\xc3\xaas do Brasil)", "pt-BR", "braille-lite", \
+     {"bl2000/BL2BPG.BNS", "bl2000/bl2_pt_br_1998_12.state", NULL}}, \
+    {"blazie:blazie_pt", "Braille Lite 2000 (portugu\xc3\xaas)", "pt", "braille-lite", \
+     {"bl2000/BL2POR.BNS", "bl2000/bl2_pt_1998_12.state", NULL}}, \
+    {"blazie:blazie_hr", "Braille Lite 2000 (hrvatski)", "hr", "braille-lite", \
+     {"bl2000/BL2CRO.BNS", "bl2000/bl2_hr_1999_07.state", NULL}}, \
+    {"blazie:blazie_cs", "Braille Lite 2000 (\xc4\x8d" "e\xc5\xa1tina)", "cs", "braille-lite", \
+     {"bl2000/BL2CZE.BNS", "bl2000/bl2_cs_1999_07.state", NULL}}, \
+    {"blazie:blazie_da", "Braille Lite 2000 (dansk)", "da", "braille-lite", \
+     {"bl2000/BL2DAN.BNS", "bl2000/bl2_da_1999_11.state", NULL}}, \
+    {"blazie:blazie_fr", "Braille Lite 2000 (fran\xc3\xa7" "ais)", "fr", "braille-lite", \
+     {"bl2000/BL2FRE.BNS", "bl2000/bl2_fr_fre_1999_07.state", NULL}}, \
+    {"blazie:blazie_el", "Braille Lite 2000 (\xce\x95\xce\xbb\xce\xbb\xce\xb7\xce\xbd\xce\xb9\xce\xba\xce\xac)", "el", "braille-lite", \
+     {"bl2000/BL2GRK.BNS", "bl2000/bl2_el_1999_07.state", NULL}}, \
+    {"blazie:blazie_he", "Braille Lite 2000 (\xd7\xa2\xd7\x91\xd7\xa8\xd7\x99\xd7\xaa)", "he", "braille-lite", \
+     {"bl2000/BL2HEB.BNS", "bl2000/bl2_he_1999_07.state", NULL}}, \
+    {"blazie:blazie_hu", "Braille Lite 2000 (magyar)", "hu", "braille-lite", \
+     {"bl2000/BL2HUN.BNS", "bl2000/bl2_hu_1999_07.state", NULL}}, \
+    {"blazie:blazie_ko", "Braille Lite 2000 (\xed\x95\x9c\xea\xb5\xad\xec\x96\xb4)", "ko", "braille-lite", \
+     {"bl2000/BL2KOR.BNS", "bl2000/bl2_ko.state", NULL}}, \
+    {"blazie:blazie_no", "Braille Lite 2000 (norsk)", "no", "braille-lite", \
+     {"bl2000/BL2NRW.BNS", "bl2000/bl2_no_1999_07.state", NULL}}, \
+    {"blazie:blazie_pl", "Braille Lite 2000 (polski)", "pl", "braille-lite", \
+     {"bl2000/BL2POL.BNS", "bl2000/bl2_pl_1998_12.state", NULL}}, \
+    {"blazie:blazie_sv", "Braille Lite 2000 (svenska)", "sv", "braille-lite", \
+     {"bl2000/BL2SWE.BNS", "bl2000/bl2_sv_1999_07.state", NULL}}, \
+    {"blazie:blazie_tr", "Braille Lite 2000 (T\xc3\xbcrk\xc3\xa7" "e)", "tr", "braille-lite", \
+     {"bl2000/BL2TUR.BNS", "bl2000/bl2_tr_1998_12.state", NULL}}, \
+    {"blazie:blazie_ru", "Braille Lite 2000 (\xd1\x80\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9)", "ru", "braille-lite", \
+     {"bl2000/BL2RUS.BNS", "bl2000/bl2_ru_1998_12.state", NULL}},
+
 #endif

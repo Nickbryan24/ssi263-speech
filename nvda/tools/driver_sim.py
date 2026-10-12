@@ -375,6 +375,34 @@ if WHICH == "blazie":
         es_ok = es_ok and results[-1]["ok"] and results[-1]["audio_s"] > 1.5
     print("blazie spanish: voice listed %s, spoken, language switching: %s" % ("blazie_es" in voices, "ok" if es_ok else "FAILED"))
     rate_ok = rate_ok and es_ok
+    # 0.8: the release table's voices (bl_languages.txt), when the add-on carries them: Hungarian, Czech (a slower
+    # firmware: its own boot keys), Turkish (code page 857) and Russian (866) each speak a sentence of its own; NVDA's
+    # language switching reaches Hungarian
+    rel_want = {"blazie_hu": ("hu", "Jó napot, hogy vagy? Ez egy próba."),
+                "blazie_cs": ("cs", "Dobrý den, jak se máte?"),
+                "blazie_tr": ("tr", "İyi günler, nasılsınız?"),
+                "blazie_ru": ("ru", "Добрый день, как "
+                                    "дела?")}
+    present = [v for v in rel_want if v in voices]
+    rel_ok = True
+    for v in present:
+        d._set_voice(v)
+        scenario("%s voice" % v, [rel_want[v][1]])
+        good = results[-1]["ok"] and results[-1]["audio_s"] > 1.0 and v in d._units and voices[v][2] == rel_want[v][0]
+        print("blazie %s: listed as %r (%s), spoken %.1f s: %s" % (v, voices[v][1], voices[v][2],
+                                                                 results[-1]["audio_s"], "ok" if good else "FAILED"))
+        rel_ok = rel_ok and good
+    if "blazie_hu" in present:
+        d._set_voice("blazie")
+        scenario("language switching (hu)", ["Hello there.", LangChangeCommand("hu"), "Jó napot.",
+                                             LangChangeCommand("en"), "Goodbye."])
+        good = results[-1]["ok"] and results[-1]["audio_s"] > 1.5
+        print("blazie language switching to Hungarian: %s" % ("ok" if good else "FAILED"))
+        rel_ok = rel_ok and good
+    if not present:
+        print("blazie release voices: none in this build (skipped)")
+    d._set_voice("blazie")
+    rate_ok = rate_ok and rel_ok
 
 if SA:
     # The shipping default is MAME's C host; the Python core is a development reference.

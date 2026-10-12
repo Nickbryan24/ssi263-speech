@@ -8,6 +8,9 @@
 #include "translit.h"
 #include "blazie/bl_cp850.h"
 #include "blazie/bl_cp852.h"
+#include "blazie/bl_cp857.h"
+#include "blazie/bl_cp860.h"
+#include "blazie/bl_cp866.h"
 #include "blazie/bl_voice.h"
 #include "blazie/bl_firmware.h"            /* blv_release_of, blv_release_text: a release's own encoding */
 #include "voices_blazie.h"
@@ -475,6 +478,9 @@ static int known_in(const unsigned short *high, unsigned c)      /* bl_voice.c's
 }
 static int known_cp850(unsigned c) { return known_in(bl_cp850_high, c); }
 static int known_cp852(unsigned c) { return known_in(bl_cp852_high, c); }
+static int known_cp857(unsigned c) { return known_in(bl_cp857_high, c); }
+static int known_cp860(unsigned c) { return known_in(bl_cp860_high, c); }
+static int known_cp866(unsigned c) { return known_in(bl_cp866_high, c); }
 
 SSV_API int ssv_translit(const char *utf8, int n, int charset, char *out, int cap)
 {
@@ -487,7 +493,9 @@ SSV_API int ssv_translit(const char *utf8, int n, int charset, char *out, int ca
     k = tl_utf8_decode(utf8, n, in);
     t = (unsigned *)malloc(sizeof(unsigned) * (size_t)tl_room(k));
     if (!t) { free(in); return -1; }
-    m = tl_apply(in, k, charset == SSV_CP850 ? known_cp850 : charset == SSV_CP852 ? known_cp852 : tl_known_ascii, t);
+    m = tl_apply(in, k, charset == SSV_CP850 ? known_cp850 : charset == SSV_CP852 ? known_cp852
+                      : charset == SSV_CP857 ? known_cp857 : charset == SSV_CP860 ? known_cp860
+                      : charset == SSV_CP866 ? known_cp866 : tl_known_ascii, t);
     free(in);
     u = (unsigned char *)malloc((size_t)m * 4 + 1);
     if (!u) { free(t); return -1; }

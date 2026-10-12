@@ -133,6 +133,14 @@ def render_voices(table):
         lines.append('     "%s", SSV_BLAZIE, %d, \\' % (r["tag"], FIRST_SLOT + i))
         lines.append('     {"blazie/bl2000/%s", "blazie/bl2000/%s.state", NULL}},%s' % (
             r["file"], r["id"], " \\" if i + 1 < len(new) else ""))
+    # the same voices for speech-dispatcher's module (src/platforms/speechd/sd_voices.c): its voice_def rows, the
+    # files relative to its data folder
+    lines += ["", "/* sd_voices.c's rows for them: id, name, language, engine, files in the module's data folder */",
+              "#define SSV_BLAZIE_RELEASE_SD_ROWS \\"]
+    for i, r in enumerate(new):
+        lines.append('    {"blazie:%s", %s, "%s", "braille-lite", \\' % (r["voice"], c_string(r["vname"]), r["tag"]))
+        lines.append('     {"bl2000/%s", "bl2000/%s.state", NULL}},%s' % (
+            r["file"], r["id"], " \\" if i + 1 < len(new) else ""))
     lines += ["", "#endif", ""]
     return "\n".join(lines)
 

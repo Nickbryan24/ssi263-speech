@@ -80,6 +80,11 @@ TEXTS = {"en": TEXT_EN, "es": TEXT_ES, "de": ["Grüß Gott, wie geht's? Zimmer 1
 AFTER_ABORT = {"de": "Mein Computer"}
 NATIVE_ONLY = ("mockingboard:mockingboard", "mockingboard:early", "blazie:blazie_de", "blazie:blazie_it",
                "blazie:blazie_sk")
+# 0.8: and the release table's Braille Lite voices (src/csrc/blazie/bl_languages.txt): no Python server for them --
+# held to the native serve host, as the others above
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "csrc", "blazie"))
+import gen_languages  # noqa: E402
+NATIVE_ONLY += tuple("blazie:" + r["voice"] for r in gen_languages.rows()[0] if r["voice"].startswith("blazie_"))
 LONG = "This sentence is long enough to be cut somewhere in the middle of it, surely. And a few more words follow it."
 ABORT_AFTER = 6
 

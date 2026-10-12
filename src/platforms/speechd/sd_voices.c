@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "../../csrc/voices.h"
+#include "../../csrc/voices_blazie.h"   /* the release table's Braille Lite voices (blazie/bl_languages.txt) */
 #include "sd_voices.h"
 
 void sdv_defaults(sd_settings *s)
@@ -60,6 +61,9 @@ static const voice_def ALL[] = {
      {"sweet-micro-mockingboard/mockingboard-tts-1.1.bin", NULL}},
     {"mockingboard:early", "Mockingboard, early", "en-US", "mockingboard",      /* Mockingboard disk 1's program */
      {"sweet-micro-mockingboard/mockingboard-tts-early.bin", NULL}},
+    /* 0.8: the Braille Lite 2000 in 17 more languages (Blazie's updates, an anonymous donation), from the release
+       table, each its image and state in the data folder's bl2000/ (tools/make_release_states.py) */
+    SSV_BLAZIE_RELEASE_SD_ROWS
 };
 #define N_ALL ((int)(sizeof ALL / sizeof ALL[0]))
 

@@ -35,6 +35,27 @@ BLAZIE_UNITS = [
 ]
 
 
+def _release_units():
+    """0.8: the release table's voices (src/csrc/blazie/bl_languages.txt rows with a voice key, Blazie's updates in 17
+    more languages, an anonymous donation): each its image and its state under bl2000/, in the engine folder as in
+    firmware/blazie/ (tools/make_release_states.py makes them there)."""
+    sys.path.insert(0, os.path.join(REPO, "src", "csrc", "blazie"))
+    import gen_languages
+    table, problems = gen_languages.rows()
+    if problems:
+        sys.exit("bl_languages.txt: " + "; ".join(problems))
+    out = []
+    for r in table:
+        if r["voice"].startswith("blazie_"):
+            for name in (r["file"], r["id"] + ".state"):
+                out.append(("bl2000/" + name, "bl2000/" + name))
+    return out
+
+
+RELEASE_UNITS = _release_units()
+BLAZIE_UNITS += RELEASE_UNITS
+
+
 def read_manifest(addon_dir):
     """An add-on's manifest.ini, kept in its own folder (nvda/<name>/manifest.ini) so add-on crawlers
     find it in the repo; the build copies it into the package as is.  Returns (text, version)."""

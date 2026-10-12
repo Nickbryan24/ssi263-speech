@@ -335,9 +335,11 @@ public:
                     int m=g_api.find("mockingboard:mockingboard"),q=g_api.find("mockingboard:early");
                     int de=g_api.find("blazie:blazie_de"),it=g_api.find("blazie:blazie_it"),sk=g_api.find("blazie:blazie_sk");
                     if(idx==e&&g_api.available(s,g_fwdir))idx=s; else if(idx==s&&g_api.available(e,g_fwdir))idx=e;
-                    else if((idx==m||idx==q||idx==de||idx==it||idx==sk)&&g_api.available(e,g_fwdir))idx=e;
-                                                      /* either Mockingboard, and 0.8's German, Italian and Slovak
-                                                         units, as ssi_voice's fallback would speak them: the
+                    else if((idx==m||idx==q||idx==de||idx==it||idx==sk
+                             ||!strncmp(g_api.info(idx)->id,"blazie:",7))&&g_api.available(e,g_fwdir))idx=e;
+                                                      /* either Mockingboard, 0.8's German, Italian and Slovak
+                                                         units and every other Braille Lite voice (the release
+                                                         table's), as ssi_voice's fallback would speak them: the
                                                          English Braille Lite */
                 }
 #endif

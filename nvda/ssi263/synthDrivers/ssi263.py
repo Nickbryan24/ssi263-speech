@@ -55,6 +55,13 @@ if mockingboard is not None:
     # the earlier text-to-speech of Mockingboard disk 1: its own rules ("Mocking-bo-wrd", "dough-lars")
     FIRMWARE_TYPES["mockingboardearly"] = ("Mockingboard, early", mockingboard, OrderedDict([("en", "early")]))
 LANGUAGES = {"en": "English", "es": "Español", "de": "Deutsch", "it": "Italiano", "sk": "Slovenčina"}
+# 0.8: the Braille Lite 2000 in 17 more languages (Blazie's updates, an anonymous donation), from the release table
+# through the Braille Lite driver (blazie.py _release_table): each its language under the firmware type, named in its
+# own words as the voice is ("Braille Lite 2000 (magyar)" -> "Magyar")
+for _key, (_info, _boot) in blazie._release_table().items():
+    FIRMWARE_TYPES["braillelite2000"][2][_info[1]] = _key
+    _own = _info[0].rsplit("(", 1)[-1].rstrip(")")
+    LANGUAGES.setdefault(_info[1], _own[:1].upper() + _own[1:])
 # the units' own string settings with choices (NVDA's available<Id>s, its id capitalized)
 CHOICES = ("variant", "sampleRate", "whine")
 BOOT_TIMEOUT = 30.0              # seconds a unit may take to boot its firmware before it counts as failed
