@@ -57,7 +57,7 @@ object FirmwareImport {
     /** A release voice: a Braille Lite 2000 language update the release table names a voice for (bl_languages.txt:
      * Hungarian, Turkish, ...), its index ssa_engine.h's from SSA_RELEASE_FIRST.  `id` names its state, `file` is the
      * file a person brings (the firmware list's), `name` the release in English ("Braille Lite 2000 (Hungarian)"),
-     * `voiceName` the voice's in its own language ("Braille Lite 2000 (magyar)"), `tag` its BCP 47 language. */
+     * `voiceName` the voice's (the table's vname, "Braille Lite 2000 (Hungarian)"), `tag` its BCP 47 language. */
     class Release(val voice: Int, val id: String, val file: String, val name: String, val voiceName: String,
                   val tag: String) {
         val files get() = listOf(file, "$id.state")
