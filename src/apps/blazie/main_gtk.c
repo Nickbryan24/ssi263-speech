@@ -31,11 +31,13 @@
  * For the tests (tools/linux_tests.sh, test_emu_gtk.py): --no-sound, --trace FILE (the unit's level every 100 ms of
  * its time, every key action, the status lines, --ram-has texts as the unit's memory first holds them), and
  * BLAZIE_GTK_BREAK=noname (the keyboard area left without its accessible name: the must-fail control);
- * BLAZIE_GTK_BREAK=brlfrozen (the braille display field never updated after its first cells: the braille check's).
+ * BLAZIE_GTK_BREAK=brlfrozen (the braille display field never updated after its first cells: the braille check's);
+ * BLAZIE_GTK_BREAK=brlreadonly (the field read-only and named, as 0.8's first preview: Orca 49+ left it stale).
  *
  * The braille display (Settings > Braille display in the window, Alt+Shift+B), as the Windows app's (brl_win.h): a
- * read-only field holding the unit's cells as Unicode braille (U+2800 + the dots), which Orca shows on the person's
- * own braille display.  The field keeps the keyboard: the unit's keys work as before, and the field never edits or
+ * field holding the unit's cells as Unicode braille (U+2800 + the dots), which Orca shows on the person's own braille
+ * display -- editable to Orca (49 and later refresh braille only from an editable field) though only the unit changes
+ * it, and unnamed, so the display holds the cells.  The field keeps the keyboard: the unit's keys work as before, and the field never edits or
  * moves.  The display's own keys stay Orca's, so the unit's bars are the PC keyboard's: Alt+Shift+Right and Left
  * (the Braille Lite's ; and A too), held as long as the arrow is.  A unit without a display (the Type 'n Speak, the
  * Braille 'n Speak 2000) shows "no braille display".
@@ -1333,6 +1335,43 @@ static void brl_text(const unsigned char *cells, int n, char *out, int cap)
     out[k] = 0;
 }
 
+/* the field's text is the unit's alone: anything else that would change it (a paste, a middle click, a key the window
+   let through) is stopped */
+static int g_brl_setting;                       /* on_brl_tick changing the text */
+
+static void on_brl_insert(GtkEditable *e, gchar *text, gint len, gint *pos, gpointer data)
+{
+    (void)text; (void)len; (void)pos; (void)data;
+    if (!g_brl_setting)
+        g_signal_stop_emission_by_name(e, "insert-text");
+}
+
+static void on_brl_delete(GtkEditable *e, gint start, gint end, gpointer data)
+{
+    (void)start; (void)end; (void)data;
+    if (!g_brl_setting)
+        g_signal_stop_emission_by_name(e, "delete-text");
+}
+
+/* focused, the field selects none of its text (a GTK entry selects it all on focus: Orca then says the cells
+   "selected", and "text unselected" at the next key) and puts its cursor on the unit's first cell */
+static gboolean on_brl_focus_idle(gpointer data)
+{
+    (void)data;
+    if (g_brl) {
+        gtk_editable_select_region(GTK_EDITABLE(g_brl), 0, 0);
+        gtk_editable_set_position(GTK_EDITABLE(g_brl), 0);
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean on_brl_focus_in(GtkWidget *w, GdkEventFocus *ev, gpointer data)
+{
+    (void)w; (void)ev; (void)data;
+    g_idle_add(on_brl_focus_idle, NULL);    /* after GTK's own select-on-focus */
+    return FALSE;
+}
+
 /* the unit's cells into the field, as the firmware last latched them, when they changed (every 50 ms) */
 static gboolean on_brl_tick(gpointer data)
 {
@@ -1352,9 +1391,11 @@ static gboolean on_brl_tick(gpointer data)
     if (!n && display)
         text[0] = 0;                            /* a Braille Lite before its first latch: its display, still blank */
     /* the control: frozen once the field holds the unit's cells */
-    if (strcmp(text, g_brl_text) && !(g_break_brl && (unsigned char)g_brl_text[0] == 0xE2)) {
+    if (strcmp(text, g_brl_text) && !(g_break_brl == 1 && (unsigned char)g_brl_text[0] == 0xE2)) {
         snprintf(g_brl_text, sizeof g_brl_text, "%s", text);
+        g_brl_setting = 1;
         gtk_entry_set_text(GTK_ENTRY(g_brl), text);
+        g_brl_setting = 0;
         gtk_editable_set_position(GTK_EDITABLE(g_brl), 0);   /* the cursor at the unit's first cell */
         trace("braille %d cells", n);
     }
@@ -2021,16 +2062,26 @@ static void on_activate(GtkApplication *app, gpointer data)
     gtk_container_add(GTK_CONTAINER(frame), g_area);
     gtk_box_pack_start(GTK_BOX(box), frame, TRUE, TRUE, 0);
 
-    /* the braille display field and its label (its name to Orca), hidden unless Settings > Braille display */
+    /* the braille display field and its caption, hidden unless Settings > Braille display.  Editable to a screen
+       reader, though nothing but the unit changes it (on_brl_edit): Orca 49 and later present a text change -- and
+       refresh the braille display with it -- only in an editable field or a terminal, so a read-only one left the
+       person's display on the old cells (as NVDA did on Windows, 0.8's first preview).  With Orca's defaults the change
+       is silent (character echo is off).  And no name: Orca puts a field's name before its text on the display, and
+       the caption would take 17 cells of 40 before the unit's 18 (the caption is for the eye only, as brl_win.c's) */
     {
         GtkWidget *label = gtk_label_new("Braille display:");
         g_brl_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
         g_brl = gtk_entry_new();
-        gtk_editable_set_editable(GTK_EDITABLE(g_brl), FALSE);
         gtk_entry_set_width_chars(GTK_ENTRY(g_brl), EMU_CELLS);
-        gtk_label_set_mnemonic_widget(GTK_LABEL(label), g_brl);
-        atk_object_set_name(gtk_widget_get_accessible(g_brl), "Braille display");
+        if (g_break_brl == 2) {                 /* the tests' control: 0.8's first preview, read-only and named */
+            gtk_editable_set_editable(GTK_EDITABLE(g_brl), FALSE);
+            gtk_label_set_mnemonic_widget(GTK_LABEL(label), g_brl);
+            atk_object_set_name(gtk_widget_get_accessible(g_brl), "Braille display");
+        }
+        g_signal_connect(g_brl, "insert-text", G_CALLBACK(on_brl_insert), NULL);
+        g_signal_connect(g_brl, "delete-text", G_CALLBACK(on_brl_delete), NULL);
         g_signal_connect(g_brl, "focus-out-event", G_CALLBACK(on_area_focus_out), NULL);
+        g_signal_connect(g_brl, "focus-in-event", G_CALLBACK(on_brl_focus_in), NULL);
         gtk_box_pack_start(GTK_BOX(g_brl_box), label, FALSE, FALSE, 0);
         gtk_box_pack_start(GTK_BOX(g_brl_box), g_brl, TRUE, TRUE, 0);
         gtk_widget_set_margin_start(g_brl_box, 6);
@@ -2111,6 +2162,8 @@ int main(int argc, char **argv)
         g_break_name = 1;                       /* the tests' control: the keyboard area unnamed */
     if (getenv("BLAZIE_GTK_BREAK") && !strcmp(getenv("BLAZIE_GTK_BREAK"), "brlfrozen"))
         g_break_brl = 1;                        /* the tests' control: the braille display field frozen */
+    if (getenv("BLAZIE_GTK_BREAK") && !strcmp(getenv("BLAZIE_GTK_BREAK"), "brlreadonly"))
+        g_break_brl = 2;                        /* the tests' control: the field read-only and named (the preview's) */
     if (trace_path && !(g_trace = fopen(trace_path, "w"))) {
         fprintf(stderr, "blazie_emu_gtk: could not write %s\n", trace_path);
         return 2;

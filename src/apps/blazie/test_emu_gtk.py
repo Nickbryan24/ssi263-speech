@@ -17,8 +17,8 @@ FIRMWARE_DIR as test_emu_linux.py's (BL2ENG.BNS + bl2_2003_warm.state; BL2SPA.BN
              alert (added to flash startup, how to run it), the result announced
   menu       F11 and Alt+Shift+F open the Firmware menu; Escape gives the keyboard back
   dialog     Help > About through the screen reader's own action: its text read from the alert, closed with OK
-  braille    Alt+Shift+B: the braille display field's explanation read and closed; the field ("Braille display")
-             focused, its text the English unit's 18 cells as Unicode braille; Alt+Shift+Right (the advance bar)
+  braille    Alt+Shift+B: the braille display field's explanation read and closed; the field focused, its text the
+             English unit's 18 cells as Unicode braille; editable to a screen reader (Orca 49+) and unnamed; Alt+Shift+Right (the advance bar)
              changes it; F typed in the field still reaches the unit as dot 1; Alt+Shift+B again gives the keyboard
              area back
   announce   Firmware > the Spanish Braille Lite: "Switched to ..." announced (object:announcement), the area renamed
@@ -34,7 +34,8 @@ The tree check also wants the two Braille 'n Speak 2000 items in the Firmware me
 when it is not.
 Controls (tools/linux_tests.sh judges them by their marks): BLAZIE_GTK_BREAK=noname leaves the keyboard area
 unnamed -- tree must FAIL for that alone; BLAZIE_GTK_BREAK=brlfrozen keeps the braille display field's first cells
--- braille must FAIL for the advance bar alone; BLAZIE_KEYS_BREAK=1 swaps dots 1 and 4 -- held must FAIL.
+-- braille must FAIL for the advance bar alone; BLAZIE_GTK_BREAK=brlreadonly (the preview's field: read-only and named)
+-- braille must FAIL for the editable/unnamed check alone; BLAZIE_KEYS_BREAK=1 swaps dots 1 and 4 -- held must FAIL.
 """
 import os
 import re
@@ -468,8 +469,8 @@ def run_main(exe, fw, tmp, want):
             emu.focus()
 
         if want("braille"):
-            def field():
-                return find(app, "text", "Braille display")
+            def field():                         # the one text field (unnamed: its caption is for the eye only)
+                return find(app, "text", pred=lambda o: has_state(o, Atspi.StateType.SHOWING))
 
             def cells(o):
                 try:
@@ -493,6 +494,12 @@ def run_main(exe, fw, tmp, want):
                   and braille, "dialog %s; field %s; text %r" % (
                       "read and closed" if "Alt+Shift+Right" in text else "NOT read: %r" % text[:60],
                       "focused" if f is not None else "NOT focused", first))
+            # as Orca 49 and later need it: editable (they present -- and refresh braille with -- only an editable
+            # field's or a terminal's text changes) and unnamed (a name goes on the display before the cells)
+            check("braille display field: editable to a screen reader, and no name before the cells",
+                  f is not None and has_state(f, Atspi.StateType.EDITABLE) and not name(f),
+                  "editable %s; name %r" % (f is not None and has_state(f, Atspi.StateType.EDITABLE),
+                                            name(f) if f is not None else None))
             # the advance bar from the PC keyboard: the display moves on
             xdo("keydown", "alt", "keydown", "shift", "keydown", "Right", "sleep", "0.4", "keyup", "Right",
                 "keyup", "shift", "keyup", "alt")

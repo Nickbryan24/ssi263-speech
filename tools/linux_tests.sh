@@ -341,7 +341,7 @@ fi
 # window read as Orca reads it (AT-SPI): the menu bar's items, the keyboard area's name and focus, a chord answered,
 # F11 and Alt+Shift+F, the dialogs' text, the announcements, the Type 'n Speak's keys, i-chord held through a
 # restart, the braille display field for Orca.  Its controls leave the keyboard area unnamed (BLAZIE_GTK_BREAK=noname),
-# freeze the braille display field (brlfrozen) and swap dots 1 and 4.  Skipped,
+# freeze the braille display field (brlfrozen), make it read-only and named (brlreadonly) and swap dots 1 and 4.  Skipped,
 # saying why, where GTK, Xvfb, xdotool or the accessibility bus is missing (the BTSpeak, a minimal build).
 GTK_EMU=build/linux/blazie_emu_gtk
 GTK_SHIP=""
@@ -378,8 +378,15 @@ gobject-2\.0|gio-2\.0|atk-1\.0|pango-1\.0|pangocairo-1\.0|cairo|cairo-gobject|gd
         # the braille display field (Alt+Shift+B, for Orca): frozen after its first cells, the advance bar must fail
         control "emulator (GTK): braille display CONTROL (the field frozen, must fail)" \
             "^ok +braille display field shown and focused" "^FAIL +braille display field: Alt\+Shift\+Right is the advance bar" \
-            "^gtk emulator: 1 of 4 FAILED$" \
+            "^gtk emulator: 1 of 5 FAILED$" \
             -- env BLAZIE_GTK_BREAK=brlfrozen $XRUN "-screen 0 1024x768x24" \
+            python3 src/apps/blazie/test_emu_gtk.py "$GTK_EMU" "$DATA" --only braille
+        # 0.8's first preview: the field read-only (Orca 49 and later then never refresh braille from it) and named
+        # (its caption before the cells on the display) -- that check must fail, and only it
+        control "emulator (GTK): braille display CONTROL (read-only and named, must fail)" \
+            "^FAIL +braille display field: editable to a screen reader" "^ok +braille display field: Alt\+Shift\+Right is the advance bar" \
+            "^gtk emulator: 1 of 5 FAILED$" \
+            -- env BLAZIE_GTK_BREAK=brlreadonly $XRUN "-screen 0 1024x768x24" \
             python3 src/apps/blazie/test_emu_gtk.py "$GTK_EMU" "$DATA" --only braille
         control "emulator (GTK): held keys CONTROL (dots 1 and 4 swapped, must fail)" \
             "^FAIL +i-chord held through the restart +the unit asked \"initialize file system\": no" \
