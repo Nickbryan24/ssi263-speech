@@ -208,6 +208,27 @@ static void bl_checks(void)
         bl_case("keys mode: the advance bar, the back bar, back with dot 1", BLK_KEYS, bars, 4, 1.5,
                 "C80 C100 C101");
     }
+    {   /* 0.8: period and comma the bars too (no screen reader takes them in a text field) */
+        static const typed bars[] = {{0.0, "."}, {0.5, ","}, {1.0, ","}, {1.01, "f"}};
+        bl_case("keys mode: period the advance bar, comma the back bar, back with dot 1", BLK_KEYS, bars, 4, 1.5,
+                "C80 C100 C101");
+    }
+    {   /* a settings file written before 0.8 ("advance = ; brl_dot8", "back = a brl_dot7", the old defaults): read as
+           today's, period and comma included -- one changed by hand stays as written */
+        bl_keys k;
+        char got[64], got2[64], d[200];
+        static const typed both[] = {{0.0, "."}, {0.5, ","}, {1.0, ";"}, {1.5, "a"}};
+        blk_defaults(&k);
+        blk_set(&k, "advance", "; brl_dot8");
+        blk_set(&k, "back", "a brl_dot7");
+        run_bl(&k, both, 4, 2.0, got, sizeof got);
+        blk_defaults(&k);
+        blk_set(&k, "advance", "; brl_dot8 x");
+        run_bl(&k, both, 1, 0.5, got2, sizeof got2);
+        snprintf(d, sizeof d, "old defaults: [%s]; changed by hand: [%s]", got, got2);
+        check("settings: the old defaults mean today's; a changed line stays", !strcmp(got, "C80 C100 C80 C100")
+              && !strcmp(got2, ""), d);
+    }
     {   /* an input device: a bar is down while held and no part of the chord typed under it (dot 8 the advance
            bar, dot 7 back) */
         bl_keys k;
@@ -311,6 +332,10 @@ static void name_checks(const char *dir)
     check("names: ctrl-o", k == 'o' && m == KM_CTRL, "");
     check("names: f11, code:57, space, escape", key_parse("f11", &m) == K_F11 && key_parse("code:57", &m) == K_CODE + 57
           && key_parse("space", &m) == ' ' && key_parse("escape", &m) == K_ESC, "");
+    check("names: comma, period, semicolon, apostrophe, backslash, lbracket",
+          key_parse("comma", &m) == ',' && key_parse("period", &m) == '.' && key_parse("Semicolon", &m) == ';'
+          && key_parse("apostrophe", &m) == '\'' && key_parse("backslash", &m) == '\\'
+          && key_parse("lbracket", &m) == '[' && key_parse("alt-comma", &m) == ',' && m == KM_ALT, "");
     n = key_list("a ;", c, 8);
     check("names: the advance bar's \"a ;\"", n == 2 && c[0].key == 'a' && c[1].key == ';', "");
     n = key_list("a, ;", c, 8);

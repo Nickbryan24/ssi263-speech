@@ -144,6 +144,15 @@ static void status(const char *text)
 /* ---- the keyboard map --------------------------------------------------------------------------------------- */
 static int vk_of(const char *name)
 {
+    /* by name, as the Linux shells' settings take them (keys.c), the character itself being awkward in a list */
+    static const struct { const char *name; int vk; } NAMED[] = {
+        {"comma", VK_OEM_COMMA}, {"period", VK_OEM_PERIOD}, {"semicolon", VK_OEM_1}, {"apostrophe", VK_OEM_7},
+        {"slash", VK_OEM_2}, {"backslash", VK_OEM_5}, {"minus", VK_OEM_MINUS}, {"equals", VK_OEM_PLUS},
+        {"grave", VK_OEM_3}, {"lbracket", VK_OEM_4}, {"rbracket", VK_OEM_6}};
+    unsigned i;
+    for (i = 0; i < sizeof NAMED / sizeof NAMED[0]; i++)
+        if (!_stricmp(name, NAMED[i].name))
+            return NAMED[i].vk;
     if (!strcmp(name, "space")) return VK_SPACE;
     if (!strcmp(name, ";")) return VK_OEM_1;
     if (!strcmp(name, ",")) return VK_OEM_COMMA;
@@ -177,7 +186,10 @@ static void load_keymap(void)
     map_keys("dot5", "K", CHORD_DOT(5));
     map_keys("dot6", "L", CHORD_DOT(6));
     map_keys("space", "space", CHORD_SPACE);
-    map_keys("advance", "A ;", CHORD_ADVANCE);
+    /* the bars: period and comma too, which no screen reader takes in a text field (Alt+Shift+Right and Left are
+       JAWS's and Orca's table navigation); A the back bar, as on Linux -- before 0.8 it was a second advance */
+    map_keys("advance", "semicolon period", CHORD_ADVANCE);
+    map_keys("back", "A comma", CHORD_BACK);
 }
 
 /* ---- the unit ------------------------------------------------------------------------------------------------ */
@@ -1295,8 +1307,9 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                             "Your braille display's own keys stay your screen reader's, so they cannot press the "
                             "unit's advance bars, and the display does not advance by itself at the end of the "
                             "field. Advance from your PC keyboard instead:\n\n"
-                            "Alt+Shift+Right Arrow = the advance bar\nAlt+Shift+Left Arrow = the back bar\n"
-                            "(on the Braille Lite, ; and A as well)\n\n"
+                            "Period = the advance bar\nComma = the back bar\n"
+                            "(and ; and A, the Braille Lite's own; Alt+Shift+Right and Left Arrow too, where your "
+                            "screen reader does not take them for its table navigation, as JAWS does)\n\n"
                             "Please turn off any braille translation done by your screen reader: it can interfere "
                             "with the unit's braille cells.", "Braille display", MB_OK | MB_ICONINFORMATION);
             set_braille(!g_braille);
@@ -1321,8 +1334,10 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             break;
         case ID_KEYS:
             MessageBoxA(w, "Braille Lite, while this window is in front:\n\n"
-                        "F D S = dots 1 2 3\nJ K L = dots 4 5 6\nSpace bar = space\nA or ; = advance bar\n"
-                        "Alt+Shift+Right, Left Arrow = the advance bar, the back bar\n"
+                        "F D S = dots 1 2 3\nJ K L = dots 4 5 6\nSpace bar = space\n"
+                        "Period or ; = advance bar, comma or A = back bar\n"
+                        "Alt+Shift+Right, Left Arrow = the advance bar, the back bar (with NVDA)\n"
+                        "These can be changed in blazie_emu.ini, section [keys] (advance, back).\n"
                         "Alt+Shift+B = the braille display in the window, on or off\n"
                         "The Braille 'n Speak 2000 takes the same keys; it has no advance bar.\n\n"
                         "Press the keys of a chord together; it goes to the unit when you let go of them.\n"

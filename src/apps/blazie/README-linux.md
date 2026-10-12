@@ -130,11 +130,12 @@ Run one at a time (each saves its unit when it closes).
 - **The keyboard area**, the one thing in the window that takes the focus. When it does Orca says its name, "Braille
   Lite 2000 (English): keyboard. F11 or Alt+Shift+F opens the menu", and "panel".
 - **The braille display** (Braille Lite; off until you turn it on: **Alt+Shift+B**, or Settings > Braille display
-  in the window): a read-only field, "Braille display", holding the unit's 18 cells as Unicode braille, which Orca
-  shows on your braille display as the unit's own dots. It takes the focus and keeps the keyboard, so the unit's keys
-  work as before; the field never edits or moves. Your display's own keys stay Orca's, so they cannot press the
-  unit's bars: from the PC keyboard, **Alt+Shift+Right Arrow** is the advance bar and **Alt+Shift+Left Arrow** the
-  back bar (the Braille Lite's ; and A as well), held as long as the arrow is. Turn off contracted braille in Orca's
+  in the window): a field holding the unit's 18 cells as Unicode braille, which Orca shows on your braille display
+  as the unit's own dots. It is editable to Orca, though only the unit changes it: Orca 49 and later refresh braille
+  only from an editable field (tried with Orca 51), and it has no name, so your display holds the cells. It takes the
+  focus and keeps the keyboard, so the unit's keys work as before. Your display's own keys stay Orca's, so they cannot
+  press the unit's bars: from the PC keyboard, **period** is the advance bar and **comma** the back bar (and ; and A;
+  Alt+Shift+Right and Left Arrow too, but Orca takes those for its table navigation), held as long as the key is. Turn off contracted braille in Orca's
   braille settings: it can interfere with the unit's cells. The Windows app's field, the same way (README.md).
 - **The status line**: short results -- "Switched to the Type 'n Speak (Spanish).", "Exported 12 files to ...",
   "Sample rate 22050 Hz." -- which Orca speaks as they come (ATK's announcement: ATK 2.46 and later, as on Debian 12
@@ -151,8 +152,8 @@ the desktop session ends (GTK's query-end), and on SIGTERM or SIGHUP.
 **Keys.** GTK says when each key goes down and when it comes up, so the keys are as on Windows (and as the input
 devices in a terminal) -- no hold key:
 
-- **Braille Lite**: F D S = dots 1 2 3, J K L = dots 4 5 6, the space bar, ; = the advance bar, A = the back bar
-  (the Braille Lite 2000's two advance bars; `[keys]` `dot1` .. `advance`, `back` in the settings). A chord goes to the unit when its last key comes up, and the keys held down
+- **Braille Lite**: F D S = dots 1 2 3, J K L = dots 4 5 6, the space bar, period or ; = the advance bar, comma or
+  A = the back bar (the Braille Lite 2000's two advance bars; `[keys]` `dot1` .. `advance`, `back` in the settings). A chord goes to the unit when its last key comes up, and the keys held down
   are held on the unit while you hold them: p-chord, l, then hold i-chord at once -- the cold reset ("initialize file
   system?"). Every other key is the program's: Alt and a letter for the menus, Tab, and so on.
 - **Type 'n Speak**: the whole keyboard is the unit's (`tns_keys.h`, the one table Windows and the terminal use),
@@ -228,9 +229,12 @@ program characters, not keys. So the program takes the Braille Lite's six keys, 
 (and a fourth on a BTSpeak or BT Braille, the device's keyboard server: README-btspeak.md):
 
 **Keys mode** (`[keys] mode = keys`, the default; a PC keyboard in a terminal): F D S = dots 1 2 3, J K L = dots
-4 5 6, the space bar, ; = the advance bar, A = the back bar. The keys you type close together are one chord: it goes to the unit
+4 5 6, the space bar, period or ; = the advance bar, comma or A = the back bar. The keys you type close together are one chord: it goes to the unit
 80 ms after the last (`chord_ms`). Holding a chord down does not repeat it (a key typed again within 150 ms,
-`repeat_ms`, is the keyboard's auto-repeat). The keys are set in `[keys]` (`dot1 = f brl_dot1` ...).
+`repeat_ms`, is the keyboard's auto-repeat). The keys are set in `[keys]` (`dot1 = f brl_dot1` ...; punctuation
+by name: comma, period, semicolon, apostrophe, slash, backslash, minus, equals, grave, lbracket, rbracket). A
+settings file from before 0.8 with the old bar lines (`advance = ; brl_dot8`, `back = a brl_dot7`) gets period and
+comma too; a line changed by hand stays as written.
 
 **Letters mode** (`[keys] mode = letters`, or menu 13; the BTSpeak's own braille keyboard, or any braille display's
 keyboard through BRLTTY): each character typed is its braille cell, in computer braille (North American Braille

@@ -241,14 +241,15 @@ static void update_names(void)
     snprintf(name, sizeof name, "%s: keyboard. F11 or Alt+Shift+F opens the menu", unit);
     snprintf(g_area_text, sizeof g_area_text, "%s\n\n%s\n\nF11 or Alt+Shift+F: the menu.", unit, tns
              ? "The whole keyboard is the unit's." : "F D S = dots 1 2 3, J K L = dots 4 5 6, the space bar, "
-             "; = the advance bar, A = the back bar. Alt and the letter: the menus.");
+             "period or ; = the advance bar, comma or A = the back bar. Alt and the letter: the menus.");
     if (g_area) {
         AtkObject *a = gtk_widget_get_accessible(g_area);
         if (!g_break_name)                      /* the tests' control leaves it without its name */
             atk_object_set_name(a, name);
         atk_object_set_description(a, tns ? "The Type 'n Speak's keyboard: every key goes to the unit."
                                    : "The Braille Lite's keys: F D S and J K L are dots 1 to 6, the space bar is "
-                                     "space, semicolon the advance bar and A the back bar; press a chord's keys together.");
+                                     "space, period or semicolon the advance bar and comma or A the back bar; press a chord's keys "
+                                     "together.");
         gtk_widget_queue_draw(g_area);
     }
 }
@@ -372,7 +373,8 @@ static const char DEFAULT_INI[] =
     "; The Blazie emulator's settings (Linux).  Lines starting with ; are comments.  The program changes the [unit],\n"
     "; [sound] and [serial] settings from its menu (F11); the keys are yours to change here.  Key names: a letter or\n"
     "; symbol, space, enter, tab, backspace, esc, up, down, left, right, home, end, pageup, pagedown, insert, delete,\n"
-    "; f1-f12, brl_dot1-brl_dot8 (a braille keyboard's own dot keys), code:N (an input device's key code N); with\n"
+    "; f1-f12, comma, period, semicolon, apostrophe, slash, backslash, minus, equals, grave, lbracket, rbracket,\n"
+    "; brl_dot1-brl_dot8 (a braille keyboard's own dot keys), code:N (an input device's key code N); with\n"
     "; ctrl-, alt-, shift- in front for a combination.  Several keys: separated by spaces.\n"
     "\n"
     "[keys]\n"
@@ -387,8 +389,8 @@ static const char DEFAULT_INI[] =
     "dot6 = l brl_dot6\n"
     "space = space\n"
     "; the Braille Lite 2000's two advance bars: advance (forward) and back\n"
-    "advance = ; brl_dot8\n"
-    "back = a brl_dot7\n"
+    "advance = semicolon period brl_dot8\n"
+    "back = a comma brl_dot7\n"
     "; keys mode: keys typed within chord_ms of each other are one chord; the same key again within repeat_ms is\n"
     "; the keyboard's auto-repeat (dropped)\n"
     "chord_ms = 80\n"
@@ -1438,8 +1440,9 @@ static void do_braille(int on)
                 "Your braille display's own keys stay Orca's, so they cannot press the unit's advance bars, and the "
                 "display does not advance by itself at the end of the field. Advance from your PC keyboard "
                 "instead:\n\n"
-                "Alt+Shift+Right Arrow = the advance bar\nAlt+Shift+Left Arrow = the back bar\n"
-                "(on the Braille Lite, ; and A as well)\n\n"
+                "Period = the advance bar\nComma = the back bar\n"
+                "(and ; and A, the Braille Lite's own; Alt+Shift+Right and Left Arrow too, where Orca does not take "
+                "them for its table navigation)\n\n"
                 "Please turn off contracted braille in Orca's braille settings: it can interfere with the unit's "
                 "braille cells.");
     set_braille(on);
@@ -1691,7 +1694,8 @@ static void do_keys(int unused)
     (void)unused;
     snprintf(text, sizeof text,
              "Braille Lite, while the keyboard area has the focus:\n\n"
-             "F D S = dots 1 2 3\nJ K L = dots 4 5 6\nSpace bar = space\n; = advance bar, A = back bar\n\n"
+             "F D S = dots 1 2 3\nJ K L = dots 4 5 6\nSpace bar = space\n"
+             "Period or ; = advance bar, comma or A = back bar\n\n"
              "Press the keys of a chord together; it goes to the unit when you let go of them.\n"
              "Keys held while the unit starts are read as it starts: p-chord, l restarts it; hold i-chord at once "
              "for the cold reset.\n"
@@ -1700,7 +1704,7 @@ static void do_keys(int unused)
              "Type 'n Speak: the whole keyboard is the unit's, Alt and the function keys included.\n\n"
              "F11 or Alt+Shift+F opens this program's menu, whichever unit runs.\n"
              "Alt+Shift+B shows the unit's braille display in a field Orca shows on your braille display; "
-             "Alt+Shift+Right and Left Arrow are then the advance and back bars.\n"
+             "period and comma (or Alt+Shift+Right and Left Arrow) are the advance and back bars.\n"
              "With Orca, its own keys (the Orca key, Insert or Caps Lock, and the keys pressed with it) stay Orca's "
              "and do not reach the unit.\n\n%s", g_ini_path, TNS_FIRST_START);
     message(GTK_MESSAGE_INFO, "Keys", text);

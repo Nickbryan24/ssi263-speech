@@ -16,7 +16,7 @@ including the channel left open (hiss or whine) until the firmware clicks it off
 | `main_win.c` | The Windows shell: the window, the menu (firmware -- its units from `emu_catalog.c`, the release units under More languages --, idle channel, keep open, pop and tick, sample rate, sound buffer, serial port, help), the keyboard, waveOut. |
 | `audio_pace.h`, `.c` | The sound queue: how many blocks the sound thread keeps at the card (automatic, short, medium, long), a gap told from the card's played position, the minute's save after rendering ahead; for the Linux shells, a card's queue and played position from its delay, and the sleep until a block is wanted. Portable: `main_win.c`, `audio_linux.c`. |
 | `test_audio.c` | The sound queue against a simulated sound card (calibrated on this desktop's waveOut): a steady card, a busy machine, a remote card, a slow save, and the gap detector -- for `main_win.c`'s sound thread and the Linux shells' (`audio_linux.c`); the Linux card's arithmetic; `--old` (the 0.7.0 draft's queue) is the must-fail control of run_tests and `tools/linux_tests.sh`. |
-| `brl_win.c`, `.h` | The unit's braille display in the Windows window (Settings > Braille display, Alt+Shift+B; off by default): a read-only field holding the cells as Unicode braille, which the screen reader shows on the user's display; the field passes every key to the window. The bars from the keyboard: Alt+Shift+Right and Left (`main_win.c`). |
+| `brl_win.c`, `.h` | The unit's braille display in the Windows window (Settings > Braille display, Alt+Shift+B; off by default): a read-only field holding the cells as Unicode braille, which the screen reader shows on the user's display; the field passes every key to the window and tells the screen reader of each change (a name change event), and has no name. The bars from the keyboard: period and comma, ; and A, Alt+Shift+Right and Left (`main_win.c`). |
 | `test_brl_win.c` | The field in a hidden window: keys to the window, cells as Unicode braille; `test_brl_win_break.exe` (keys kept in the field) is its must-fail control. |
 | `serial_win.c`, `.h` | The unit's serial port on a Windows COM port: the port list, and a thread moving bytes and setting the port as the firmware programs it. The portable half is `../../csrc/blazie/bl_serial.c`. |
 | `tns_keymap_win.c`, `.h` | A Windows key to the Type 'n Speak's key code (measured on the running firmware). |
@@ -61,18 +61,23 @@ The Linux shells (`README-linux.md`: build, keys, sound, the BTSpeak, the deskto
 
 ## Keys
 
-**Braille Lite**, while the window is in front: F D S = dots 1 2 3, J K L = dots 4 5 6, the space bar = space, A or ; = the advance
-bar. There are no cursor-routing keys and no dots 7 and 8: the Braille Lite 2000 has none. Every other key goes to
-Windows (Alt opens the menu). The keys can be changed in `blazie_emu.ini` beside the program, section `[keys]`
-(`dot1=F`, ..., `space=space`, `advance=A ;`).
+**Braille Lite**, while the window is in front: F D S = dots 1 2 3, J K L = dots 4 5 6, the space bar = space, period or ; = the
+advance bar, comma or A = the back bar. There are no cursor-routing keys and no dots 7 and 8: the Braille Lite 2000
+has none. Every other key goes to Windows (Alt opens the menu). The keys can be changed in `blazie_emu.ini` beside the
+program, section `[keys]` (`dot1=F`, ..., `space=space`, `advance=semicolon period`, `back=A comma`; punctuation by
+name: comma, period, semicolon, apostrophe, slash, backslash, minus, equals, grave, lbracket, rbracket). Before 0.8,
+A was a second advance bar.
 
 **The braille display** (Braille Lite): **Alt+Shift+B** (or Settings > Braille display in the window; off until you
 turn it on) shows the unit's 18 cells in a read-only field, which your screen reader shows on your own braille display
-as the unit's real dots (Unicode braille; tried with NVDA; on Linux the desktop app does the same for Orca). The field keeps the keyboard, so the unit's keys work as
-before. Your display's own keys stay your screen reader's: they cannot press the unit's bars, and the display does not
-advance by itself at the end of the field. From the PC keyboard: **Alt+Shift+Right Arrow** = the advance bar,
-**Alt+Shift+Left Arrow** = the back bar (on every unit but the Type 'n Speak, whose keyboard is its own). Turn off
-any braille translation your screen reader does: it can interfere with the unit's cells.
+as the unit's real dots (Unicode braille; tried with NVDA; on Linux the desktop app does the same for Orca). Each
+change is told to the screen reader (a name change event: NVDA redraws your display on it, saying nothing), and the
+field has no name, so your display holds "ro edt" and all of the unit's cells. The field keeps the keyboard, so the
+unit's keys work as before. Your display's own keys stay your screen reader's: they cannot press the unit's bars, and
+the display does not advance by itself at the end of the field. From the PC keyboard: **period** = the advance bar,
+**comma** = the back bar (and ; and A; **Alt+Shift+Right** and **Left Arrow** too where the screen reader leaves them
+alone -- NVDA does; JAWS and Orca take them for their table navigation). Not the Type 'n Speak's: its keyboard is its
+own. Turn off any braille translation your screen reader does: it can interfere with the unit's cells.
 
 **Braille 'n Speak 2000**: the Braille Lite's keys, the same six dots and space bar. It has no braille display and no
 advance bar (its firmware never reads that bit).

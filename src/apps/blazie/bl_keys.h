@@ -73,6 +73,12 @@ typedef struct {
    advance bar, A (or dot 7) the back bar -- the Braille Lite 2000 has two (emu_unit.h EMU_ADVANCE); chord 80 ms, repeat 150 ms; hold F12 or Ctrl+K; letters mode's prefix Ctrl+C, capitals as chords, and the
    BTSpeak's keys for chords mapped back */
 void blk_defaults(bl_keys *k);
+/* the bars' keys unless the settings say otherwise: period and comma too, which no screen reader takes in a text
+   field (Alt+Shift+Right and Left are JAWS's and Orca's table navigation); before 0.8 only ";" and "a" -- a settings
+   file holding exactly those old defaults gets these (blk_set) */
+#define BLK_ADVANCE_DEFAULT "semicolon period brl_dot8"
+#define BLK_BACK_DEFAULT "a comma brl_dot7"
+
 /* settings from the shell's file: setting is the name ("dot1".."dot6", "space", "advance", "back", "hold", "chord_ms",
    "repeat_ms", "mode"; letters mode: "prefix", "capital_is_chord", or a key's name for a special: "up = 1-chord");
    0 if the name or value is not understood */

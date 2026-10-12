@@ -4,7 +4,7 @@
  * terminal, and the BTSpeak (Blazie Technologies' Linux notetaker, on ARM) -- no desktop needed.
  *
  * The keyboard (README-linux.md has it all):
- *   Braille Lite: chords (bl_keys.c) from the terminal -- keys mode, F D S J K L, space, ; and A (the bars; the keys typed
+ *   Braille Lite: chords (bl_keys.c) from the terminal -- keys mode, F D S J K L, space, period ; and comma A (the bars; the keys typed
  *   together are one chord), or letters mode (each character typed is its braille cell: the BTSpeak's own braille
  *   keyboard) -- or from the input devices (evdev_linux.c), where keys are seen going down and up.
  *   Type 'n Speak: the whole keyboard (tns_term.c, tns_keys.h).
@@ -270,7 +270,8 @@ static const char DEFAULT_INI[] =
     "; The Blazie emulator's settings (Linux).  Lines starting with ; are comments.  The program changes the [unit],\n"
     "; [sound] and [serial] settings from its menu (F11); the keys are yours to change here.  Key names: a letter or\n"
     "; symbol, space, enter, tab, backspace, esc, up, down, left, right, home, end, pageup, pagedown, insert, delete,\n"
-    "; f1-f12, brl_dot1-brl_dot8 (a braille keyboard's own dot keys), code:N (an input device's key code N); with\n"
+    "; f1-f12, comma, period, semicolon, apostrophe, slash, backslash, minus, equals, grave, lbracket, rbracket,\n"
+    "; brl_dot1-brl_dot8 (a braille keyboard's own dot keys), code:N (an input device's key code N); with\n"
     "; ctrl-, alt-, shift- in front for a combination.  Several keys: separated by spaces.\n"
     "\n"
     "[keys]\n"
@@ -285,8 +286,8 @@ static const char DEFAULT_INI[] =
     "dot6 = l brl_dot6\n"
     "space = space\n"
     "; the Braille Lite 2000's two advance bars: advance (forward) and back\n"
-    "advance = ; brl_dot8\n"
-    "back = a brl_dot7\n"
+    "advance = semicolon period brl_dot8\n"
+    "back = a comma brl_dot7\n"
     "; keys mode: keys typed within chord_ms of each other are one chord; the same key again within repeat_ms is\n"
     "; the keyboard's auto-repeat (dropped)\n"
     "chord_ms = 80\n"
@@ -930,7 +931,8 @@ static void keys_tick(double now)
 /* ---- the menu ---------------------------------------------------------------------------------------------------- */
 static void keys_help(void)
 {
-    say("Braille Lite, keys mode: F D S = dots 1 2 3, J K L = dots 4 5 6, the space bar, ; = advance bar, A = back bar.");
+    say("Braille Lite, keys mode: F D S = dots 1 2 3, J K L = dots 4 5 6, the space bar, period or ; = advance bar,");
+    say("  comma or A = back bar.");
     say("  Press the keys of a chord together: they are sent as one chord when you stop.");
     say("Braille Lite, letters mode (the BTSpeak's braille keyboard): each character typed is its braille cell.");
     say("  A chord with the space bar: Ctrl+C, then the character; or a capital letter (dot 7): P is p-chord.");

@@ -7,7 +7,9 @@
  * From an input device (evdev) keys go DOWN and come UP, each physical key on its own (shift is a key there, and a
  * letter is its lowercase character).
  *
- * Names (the settings file's): a character stands for itself (letters in lowercase: "f", ";", "/"), or "space",
+ * Names (the settings file's): a character stands for itself (letters in lowercase: "f", ";", "/"), or by name
+ * ("comma", "period", "semicolon", "apostrophe", "slash", "backslash", "minus", "equals", "grave", "lbracket",
+ * "rbracket": the same keys), or "space",
  * "enter", "tab", "backspace", "esc", "up", "down", "left", "right", "home", "end", "pageup", "pagedown",
  * "insert", "delete", "f1".."f12", "lshift", "rshift", "lctrl", "rctrl", "lalt", "ralt", "capslock", "numlock",
  * "scrolllock", "print", "pause", "brl_dot1".."brl_dot8" (a braille keyboard's own keys, as Linux names them), or

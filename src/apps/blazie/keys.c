@@ -12,6 +12,12 @@ static const char *const NAMES[K_NAMED_END - K_ENTER] = {
     "brl_dot1", "brl_dot2", "brl_dot3", "brl_dot4", "brl_dot5", "brl_dot6", "brl_dot7", "brl_dot8",
 };
 
+/* the punctuation keys by name, for a settings line where the character itself would be awkward ("," separates,
+   ";" starts a comment) or simply harder to read: each the key that types it (on Linux, by its place) */
+static const struct { const char *name; int key; } PUNCT[] = {
+    {"comma", ','}, {"period", '.'}, {"semicolon", ';'}, {"apostrophe", '\''}, {"slash", '/'}, {"backslash", '\\'},
+    {"minus", '-'}, {"equals", '='}, {"grave", '`'}, {"lbracket", '['}, {"rbracket", ']'}, {NULL, 0}};
+
 static int lower(int c)
 {
     return c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c;
@@ -52,6 +58,9 @@ int key_parse(const char *name, int *mods)
     for (k = 0; k < K_NAMED_END - K_ENTER; k++)
         if (same_text(name, NAMES[k], n))
             return K_ENTER + k;
+    for (k = 0; PUNCT[k].name; k++)             /* punctuation by name: "comma" for "," (a list's separator) */
+        if (same_text(name, PUNCT[k].name, n))
+            return PUNCT[k].key;
     if (same_text(name, "escape", n))
         return K_ESC;
     if (same_text(name, "return", n))

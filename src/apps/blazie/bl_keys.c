@@ -155,8 +155,8 @@ void blk_defaults(bl_keys *k)
     map_add(k, "k brl_dot5", CHORD_DOT(5));
     map_add(k, "l brl_dot6", CHORD_DOT(6));
     map_add(k, "space", CHORD_SPACE);
-    map_add(k, "; brl_dot8", CHORD_ADVANCE);
-    map_add(k, "a brl_dot7", CHORD_BACK);
+    map_add(k, BLK_ADVANCE_DEFAULT, CHORD_ADVANCE);
+    map_add(k, BLK_BACK_DEFAULT, CHORD_BACK);
     k->chord_s = 0.08;
     k->repeat_s = 0.15;
     k->n_hold = key_list("f12 ctrl-k", k->hold, 4);
@@ -173,6 +173,11 @@ int blk_set(bl_keys *k, const char *setting, const char *value)
 {
     static const char *const BITS[] = {"dot1", "dot2", "dot3", "dot4", "dot5", "dot6", "space", "advance", "back"};
     int i, mods, key;
+    /* a settings file written before 0.8 holds the bars' old defaults: those mean today's (period and comma too) */
+    if (!strcmp(setting, "advance") && !strcmp(value, "; brl_dot8"))
+        value = BLK_ADVANCE_DEFAULT;
+    if (!strcmp(setting, "back") && !strcmp(value, "a brl_dot7"))
+        value = BLK_BACK_DEFAULT;
     for (i = 0; i < 9; i++)
         if (!strcmp(setting, BITS[i])) {
             key_combo c[8];
