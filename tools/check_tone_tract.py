@@ -5,16 +5,23 @@ PA between notes (chime.bas, the Pinball lesson).  Through 0.7 the formants glid
 bright +7..+8 dB burst the real chip does not make (Jayson's "crackle"; real starts +0.2..+0.5 dB).  Retuning at once
 (Astra's preview C) cleaned the starts but retuned the tract to PA while M was still fading: a click at every note's
 END (Tomi's ear).  'pa_wait' (preview F, Tomi: "sounds perfect", 2026-10-11): a sounding phoneme retunes at once; PA
-holds the tract until the VA and FA latches are both zero, then retunes.  Mode 1 at rate 15 only.
+holds the tract until the VA and FA latches are both zero, then retunes.  That retune at once, the filters still
+ringing, left a faint click at the ends of the Pinball lesson's right-side notes (Tomi; Astra, Replies 202-203): a ring
+near 1.9 kHz, below the 3-10 kHz this check watched.  'pa_slew' (v0.18, Tomi: "both fixed it"): as pa_wait, but from
+the latches' zero PA's tract is slewed to as everywhere else.  Mode 1 at rate 15 only.
 
   STATE, every output sample, Python reference and C core: the first sample after M's load has F1 F2 F3 NAS at M's
-  targets; from PA's load until both latches are zero they stay at M's; within a sample after that they are at PA's.
+  targets; from PA's load until both latches are zero they stay at M's; after that they slew toward PA's, none moving
+  more than JUMP codes in a sample.
   SOUND: a note's first 25 ms and the 10 ms before to 30 ms after its PA carry no more 3-10 kHz energy per pitch
-  period than the note's steady part (+2 dB allowed; preview C's tails reached +12, 0.7's starts +8).
+  period than the note's steady part (+2 dB allowed; preview C's tails reached +12, 0.7's starts +8); and the 20 ms
+  after the latches' zero no more 1.2-3 kHz energy than RING_DB under the steady part's (pa_slew -9 at worst, pa_wait
+  up to -0.4).  CHIME's notes and two of Pinball's right side.
   PARITY: Python and C sample for sample (within check_native_core's 1e-9).
   CHUNKS: the C core rendered one sample per call equals one call for the whole sequence.
   SKIP: ssi263_skip / chip.skip across PA's latch crossing (before it, after it) leaves the formant fields and latches
-  where running would, and the next note's start is clean.
+  where running would (past the crossing within SKIP_TOL: the skip slews for its part after the crossing, Astra
+  Reply 203), and the next note's start is clean.
   NOISE -> PA (Astra, Reply 179): S (VA 0, FA up) starts at its tract at once, and PA waits for the FA latch alone.
   RATE CHANGES INSIDE PA: 15 -> 14 lets the tract go (it slews as everywhere else); 14 -> 15 with the latches still up
   holds it from the change until they are zero.  (The mode latches only at a CTL fall, so it cannot change inside PA.)
@@ -23,7 +30,7 @@ holds the tract until the VA and FA latches are both zero, then retunes.  Mode 1
     python tools/check_tone_tract.py            exit 1 on any failure
 
 Controls (TONE_TRACT_BREAK), each of which must fail, and for its own reason: slew (0.7's glide into M: the start
-checks), immediate (preview C: the PA checks and the tail)."""
+checks), immediate (preview C: the PA checks and the tail), pa_wait (v0.17: the jump at the latches' zero, the ring)."""
 import math
 import os
 import sys
@@ -38,14 +45,21 @@ from ssi263.native import SSI263C              # noqa: E402
 from ssi263.rom import Rom                     # noqa: E402
 
 BREAK = os.environ.get("TONE_TRACT_BREAK", "")
-POLICY = BREAK or "pa_wait"
+POLICY = BREAK or "pa_slew"
 RATE = 44100
 M, PA = 0x37, 0x00
 FORMANTS = ("F1", "F2", "F3", "NAS")
 ROM = Rom.load()
 LIMIT_DB = 2.0
-# CHIME's four pitch / filter-clock settings (R1, R4)
-NOTES = [(0xD1, 0xF8), (0xC4, 0xF8), (0xCB, 0xF8), (0xB0, 0xF7)]
+# the ring after the latches' zero (v0.18): 1.2-3 kHz over the 20 ms after it, against the steady note's.  Measured
+# per note and phase (CHIME's four, Pinball's right side): pa_slew -9.0 dB at worst, pa_wait up to -0.4 (13 of 21
+# above -7), immediate +12
+RING_DB = -7.0
+JUMP = 0.1                     # pa_slew: no formant moves more than this many codes in one output sample
+SKIP_TOL = 0.02                # ... and a skip lands within a tick's step (0.012 codes for F1) of a run
+# CHIME's four pitch / filter-clock settings (R1, R4), then two of the Pinball lesson's right-side notes (R4 F9), where
+# Tomi heard pa_wait's click
+NOTES = [(0xD1, 0xF8), (0xC4, 0xF8), (0xCB, 0xF8), (0xB0, 0xF7), (0xE0, 0xF9), (0xE8, 0xF9)]
 fails = []
 
 
@@ -124,6 +138,35 @@ def hf_excess(ys, i_m, i_pa, f0):
     return 10 * math.log10(start / steady), 10 * math.log10(tail / steady)
 
 
+def ring(ys, i_m, k_zero, f0):
+    """The retune ring (Astra, Reply 202: near 1.9 kHz, below the 3-10 kHz above): 1.2-3 kHz energy per pitch period
+    over the 20 ms after the latches' zero, against the steady note's, in dB."""
+    x = np.asarray(ys, dtype=float)
+    b = biquad(biquad(biquad(biquad(x, "hp", 1200.0), "hp", 1200.0), "lp", 3000.0), "lp", 3000.0)
+    p = int(round(RATE / f0))
+    e = np.convolve(b * b, np.ones(p), "valid")
+    steady = e[i_m + int(0.06 * RATE): i_m + int(0.14 * RATE) - p].mean()
+    return 10 * math.log10(e[k_zero: k_zero + int(0.020 * RATE)].max() / steady)
+
+
+def after_zero(rows, k_zero, before):
+    """The rule from the latches' zero on (v0.18 pa_slew): the formants slew from `before` toward PA's -- none jumps
+    more than JUMP codes in a sample, and 10 ms on they have moved toward PA's.  [] when they do."""
+    pa_t = ROM.entry(PA)
+    bad = []
+    for k in range(k_zero, len(rows) - 1):
+        big = [f for f in FORMANTS if abs(rows[k + 1][1][f] - rows[k][1][f]) > JUMP]
+        if big:
+            bad.append("the tract jumped %.2f ms after the latches' zero (%s)" % (
+                (k + 1 - k_zero) * 1e3 / RATE, ", ".join("%s %.2f -> %.2f" % (f, rows[k][1][f], rows[k + 1][1][f])
+                                                         for f in big)))
+            break
+    k10 = min(len(rows) - 1, k_zero + int(0.010 * RATE))
+    if not any(abs(rows[k10][1][f] - pa_t[f]) < abs(before[f] - pa_t[f]) for f in FORMANTS if before[f] != pa_t[f]):
+        bad.append("10 ms after the latches' zero the tract had not moved toward PA's")
+    return bad
+
+
 # ---- the judgement ---------------------------------------------------------------------------------------------------
 def judge_note(core, pitch, ff, phase):
     rows, i_m, i_pa, f0 = note(core, pitch, ff, phase)
@@ -147,15 +190,17 @@ def judge_note(core, pitch, ff, phase):
         if moved is not None:
             bad.append("PA: the tract retuned %.2f ms after PA's load with the VA latch at %d" % (
                 (moved - i_pa + 1) * 1e3 / RATE, rows[moved][2]["VA"]))
-        if k_zero + 1 < len(rows) and any(rows[k_zero + 1][1][f] != pa_t[f] for f in FORMANTS):
-            bad.append("PA: the tract did not retune once the latches were zero")
+        bad += ["PA: " + b for b in after_zero(rows, k_zero, m_t)]
     start_db, tail_db = hf_excess([r[0] for r in rows], i_m, i_pa, f0)
+    ring_db = ring([r[0] for r in rows], i_m, k_zero, f0) if k_zero is not None else float("inf")
     if start_db > LIMIT_DB:
         bad.append("start: %+.1f dB of 3-10 kHz over the steady note" % start_db)
     if tail_db > LIMIT_DB:
         bad.append("tail: %+.1f dB of 3-10 kHz over the steady note" % tail_db)
-    report(label, bad, "start %+.2f dB, tail %+.2f dB, PA tract held %.2f ms" % (
-        start_db, tail_db, ((k_zero or i_pa) - i_pa + 1) * 1e3 / RATE))
+    if ring_db > RING_DB:
+        bad.append("ring: %+.1f dB of 1.2-3 kHz after the latches' zero (limit %+.0f)" % (ring_db, RING_DB))
+    report(label, bad, "start %+.2f dB, tail %+.2f dB, ring %+.1f dB, PA tract held %.2f ms" % (
+        start_db, tail_db, ring_db, ((k_zero or i_pa) - i_pa + 1) * 1e3 / RATE))
     return [r[0] for r in rows]
 
 
@@ -210,9 +255,16 @@ def check_skip(core):
         b.run(t)
         (ca, la), (cb, lb) = observe(a), observe(b)
         bad = ["latch %s: skip %d, run %d" % (f, la[f], lb[f]) for f in FORMANTS + ("VA", "FA") if la[f] != lb[f]]
-        want = pa_t if la["VA"] == 0 and la["FA"] == 0 else m_t
-        bad += ["%s %.2f after the skip, the rule says %d" % (f, ca[f], want[f]) for f in FORMANTS if ca[f] != want[f]]
-        bad += ["%s: skip %.2f, run %.2f" % (f, ca[f], cb[f]) for f in FORMANTS if ca[f] != cb[f]]
+        if la["VA"] == 0 and la["FA"] == 0:
+            # past the crossing: slewing from it (pa_slew), within a tick's step of where running puts it -- the
+            # skip slews for the part after the crossing (Astra, Reply 203), running from the tick that crosses
+            bad += ["%s: skip %.4f, run %.4f" % (f, ca[f], cb[f]) for f in FORMANTS if abs(ca[f] - cb[f]) > SKIP_TOL]
+            bad += ["%s %.2f after the skip: at PA's %d at once" % (f, ca[f], pa_t[f]) for f in FORMANTS
+                    if pa_t[f] != m_t[f] and ca[f] == pa_t[f] and abs(cb[f] - pa_t[f]) > SKIP_TOL]
+        else:
+            bad += ["%s %.2f after the skip, the rule says %d" % (f, ca[f], m_t[f]) for f in FORMANTS
+                    if ca[f] != m_t[f]]
+            bad += ["%s: skip %.2f, run %.2f" % (f, ca[f], cb[f]) for f in FORMANTS if ca[f] != cb[f]]
         # the next note after the skip starts clean: at M's tract at once
         a.write(0, M)
         a.run(1.0 / RATE)
@@ -223,8 +275,7 @@ def check_skip(core):
 
 
 def held_then_retuned(rows, i_pa, before, label, extra=None):
-    """From PA's load until both latches are zero the formants stay at `before`; a sample later they are at PA's."""
-    pa_t = ROM.entry(PA)
+    """From PA's load until both latches are zero the formants stay at `before`; then they slew toward PA's."""
     bad = list(extra or [])
     k_zero = next((k for k in range(i_pa, len(rows)) if rows[k][2]["VA"] == 0 and rows[k][2]["FA"] == 0), None)
     if k_zero is None:
@@ -234,9 +285,8 @@ def held_then_retuned(rows, i_pa, before, label, extra=None):
         if moved is not None:
             bad.append("the tract moved %.2f ms after PA's load with the latches at VA %d FA %d" % (
                 (moved - i_pa + 1) * 1e3 / RATE, rows[moved][2]["VA"], rows[moved][2]["FA"]))
-        if k_zero + 1 < len(rows) and any(rows[k_zero + 1][1][f] != pa_t[f] for f in FORMANTS):
-            bad.append("the tract did not retune once the latches were zero")
-    report(label, bad, "held %.2f ms, then PA's tract" % (((k_zero or i_pa) - i_pa + 1) * 1e3 / RATE))
+        bad += after_zero(rows, k_zero, before)
+    report(label, bad, "held %.2f ms, then slewed toward PA's tract" % (((k_zero or i_pa) - i_pa + 1) * 1e3 / RATE))
 
 
 def check_noise_pa(core):
@@ -293,8 +343,8 @@ def check_rate_change(core):
                 k_zero = next((j for j in range(k, len(rows)) if rows[j][2]["VA"] == 0 and rows[j][2]["FA"] == 0), None)
                 if k_zero is None or any(rows[j][1][f] != at_switch[f] for j in range(k, k_zero) for f in FORMANTS):
                     bad.append("after the change to rate 15 the tract did not hold while the latches were up")
-                elif any(rows[k_zero + 1][1][f] != pa_t[f] for f in FORMANTS):
-                    bad.append("after the change to rate 15 the tract did not retune at the latches' zero")
+                else:
+                    bad += ["after the change to rate 15: " + b for b in after_zero(rows, k_zero, at_switch)]
         report("rate %d -> %d inside PA %s" % (first, second, core), bad,
                "let go and slewed" if first == 15 else "held from the change, then PA's tract")
 
@@ -302,7 +352,7 @@ def check_rate_change(core):
 def check_inactive():
     for mode, rate in [(1, 14), (3, 15), (3, 8)]:
         outs = []
-        for policy in ("slew", "immediate", "pa_wait"):
+        for policy in ("slew", "immediate", "pa_wait", "pa_slew"):
             chip = make("C", policy)
             basic_setup(chip, 0xD1, 0xF8, mode, rate)
             z = []
@@ -310,9 +360,9 @@ def check_inactive():
                 chip.write(0, code)
                 z += list(chip.run(0.06))
             outs.append(z)
-        same = outs[0] == outs[1] == outs[2]
+        same = outs[0] == outs[1] == outs[2] == outs[3]
         report("inactive: mode %d rate %d" % (mode, rate), [] if same else ["the settings render differently"],
-               "identical under slew / immediate / pa_wait")
+               "identical under slew / immediate / pa_wait / pa_slew")
 
 
 def main():

@@ -1658,24 +1658,32 @@ for brk, marks in (
     CHECKS.append(check("hard G CONTROL (%s, must fail)" % brk, [PY, HARD_G], env={"HARD_G_BREAK": brk},
                         expect_fail=True, fail_marks=marks))
 # the BASIC tones (0.8, params mode1_rate15_formants; Astra, Replies 177-179; Tomi's ear on CHIME and Pinball): in mode 1
-# at rate 15 a note starts at M's tract at once, and PA holds the tract until the VA and FA latches are zero -- chip state
-# at every output sample and the 3-10 kHz sound, Python and C, chunks, skip, and the inactive modes and rates.  Each
-# control must fail for its own reason: slew = 0.7's glide into M (the starts); immediate = preview C's retune into PA
-# while M is still sounding (the note-end click)
+# at rate 15 a note starts at M's tract at once, and PA holds the tract until the VA and FA latches are zero, then slews to
+# its own (v0.18 pa_slew; Astra, Replies 202-203) -- chip state at every output sample, the 3-10 kHz sound and the
+# 1.2-3 kHz ring after the latches' zero, Python and C, chunks, skip, and the inactive modes and rates.  Each control must
+# fail for its own reason: slew = 0.7's glide into M (the starts); immediate = preview C's retune into PA while M is
+# still sounding (the note-end click); pa_wait = v0.17's retune at once at the latches' zero (Pinball's faint click)
 TONES = os.path.join(os.path.dirname(os.path.dirname(HERE)), "tools", "check_tone_tract.py")
 CHECKS.append(check("BASIC tones: clean note starts and ends in mode 1 at rate 15 (chip state and sound; Python, C)",
                     [PY, TONES]))
 for brk, marks in (
         ("slew", [r"^FAIL  C  R1=D1 R4=F8 phase  0/32 +start: the tract slewed into M .*start: \+\d+\.\d dB of 3-10 kHz",
                   r"^FAIL  py R1=D1 R4=F8 phase  5/32 +start: the tract slewed into M .*start: \+\d+\.\d dB of 3-10 kHz",
-                  r"^FAIL  skip C 12 ms \(after it\) .*the next note slewed after the skip", r"^BASIC tones: 24 FAILED$"]),
+                  r"^FAIL  skip C 12 ms \(after it\) .*the next note slewed after the skip", r"^BASIC tones: 30 FAILED$"]),
+        # v0.17's pa_wait: held, then retuned AT ONCE at the latches' zero, the filters still ringing -- the faint
+        # click at the Pinball lesson's right-side note ends (Tomi), a ring the 3-10 kHz tail check misses
+        ("pa_wait", [r"^FAIL  C  R1=D1 R4=F8 phase  0/32 +PA: the tract jumped [\d.]+ ms after the latches' zero",
+                     r"^FAIL  C  R1=E8 R4=F9 phase 11/32 +ring: -?\d+\.\d dB of 1\.2-3 kHz after the latches' zero",
+                     r"^FAIL  py R1=D1 R4=F8 phase  5/32 +PA: the tract jumped",
+                     r"^FAIL  rate 14 -> 15 inside PA C +after the change to rate 15: the tract jumped",
+                     r"^BASIC tones: 20 FAILED$"]),
         ("immediate", [r"^FAIL  C  R1=D1 R4=F8 phase  0/32 +PA: the tract retuned [\d.]+ ms after PA's load with the VA "
                        r"latch at 10; tail: \+\d+\.\d dB of 3-10 kHz",
                        r"^FAIL  py R1=D1 R4=F8 phase  5/32 +PA: the tract retuned .*tail: \+\d+\.\d dB of 3-10 kHz",
                        r"^FAIL  skip C 1 ms \(before the latch crossing\) F1 7\.00 after the skip, the rule says 0",
                        r"^FAIL  noise -> PA C \(S: VA 0, FA 15\) +the tract moved [\d.]+ ms after PA's load with the "
                        r"latches at VA 0 FA 15$",
-                       r"^BASIC tones: 22 FAILED$"])):
+                       r"^BASIC tones: 28 FAILED$"])):
     CHECKS.append(check("BASIC tones CONTROL (%s, must fail)" % brk, [PY, TONES], env={"TONE_TRACT_BREAK": brk},
                         expect_fail=True, fail_marks=marks))
 # The Mockingboard (src/csrc/mockingboard, 0.8): Sweet Micro's text-to-speech on Fake6502 and the board -- the 6502

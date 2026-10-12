@@ -293,7 +293,25 @@ static double tract_step(const ssi263 *c, int f, double d, int va, int fa)
     int how = (int)c->p.mode1_rate15_formants;
     if (!how || f >= VA || c->mode != 1 || (c->regs[2] >> 4) != 15)
         return -1.0;
+    if (how == 3 && c->phoneme == 0)            /* v0.18 pa_slew: PA holds while the latches sound, then slews */
+        return (va == 0 && fa == 0) ? -1.0 : 0.0;
     return (how == 1 || c->phoneme != 0 || (va == 0 && fa == 0)) ? fabs(d) : 0.0;
+}
+
+/* pa_slew's PA (as chip.py _pa_slewing) */
+static int pa_slewing(const ssi263 *c)
+{
+    return (int)c->p.mode1_rate15_formants == 3 && c->mode == 1 && (c->regs[2] >> 4) == 15 && c->phoneme == 0;
+}
+
+/* as chip.py _zero_at: when, as a fraction of a skip moving field f by st, its latch reaches zero */
+static double zero_at(const ssi263 *c, double cur0, int f, double st)
+{
+    if (latch_code(c, cur0) == 0)
+        return 0.0;
+    if (latch_code(c, (double)c->target[f]) != 0 || st <= 0.0)
+        return HUGE_VAL;
+    return (cur0 - (c->p.latch_round != 0.0 ? 0.5 : 1.0)) / st;
 }
 
 static void latch_all(ssi263 *c, int force)
@@ -938,15 +956,30 @@ SSI263_API void ssi263_skip(ssi263 *c, double seconds)
         step = p->art_codes_per_frame[(c->regs[3] >> 4) & 7] * seconds / frame;
         /* VA and FA first: mode1_rate15_formants' PA wait reads where their latches END.  Its retune is instant, so
            whether the latches reached zero inside the skip decides the tract's end state exactly */
-        for (k = 0; k < NFIELDS; k++) {
-            int f = order[k];
-            double st = ((f == VA || f == FA) ? step * p->art_amp_mult : step) * p->field_speed_mult[f];
-            double tst;
-            d = c->target[f] - c->cur[f];
-            tst = tract_step(c, f, d, latch_code(c, c->cur[VA]), latch_code(c, c->cur[FA]));
-            if (tst >= 0.0)
-                st = tst;
-            c->cur[f] = fabs(d) <= st ? (double)c->target[f] : c->cur[f] + copysign(st, d);
+        {
+            double va0 = c->cur[VA], fa0 = c->cur[FA], part = -1.0;
+            for (k = 0; k < NFIELDS; k++) {
+                int f = order[k];
+                double st = ((f == VA || f == FA) ? step * p->art_amp_mult : step) * p->field_speed_mult[f];
+                double tst;
+                d = c->target[f] - c->cur[f];
+                tst = tract_step(c, f, d, latch_code(c, c->cur[VA]), latch_code(c, c->cur[FA]));
+                if (tst >= 0.0) {
+                    st = tst;
+                } else if (f != VA && f != FA && pa_slewing(c)) {
+                    /* pa_slew (v0.18): held until both latches are zero, so the formants slew only for the part of
+                       the skip after that crossing (Astra, Reply 203), as running would (chip.py) */
+                    if (part < 0.0) {
+                        double amp = step * p->art_amp_mult;
+                        double za = zero_at(c, va0, VA, amp * p->field_speed_mult[VA]);
+                        double zf = zero_at(c, fa0, FA, amp * p->field_speed_mult[FA]);
+                        double z = za > zf ? za : zf;
+                        part = 1.0 - z > 0.0 ? 1.0 - z : 0.0;      /* max(0.0, 1.0 - max(...)) */
+                    }
+                    st = st * part;
+                }
+                c->cur[f] = fabs(d) <= st ? (double)c->target[f] : c->cur[f] + copysign(st, d);
+            }
         }
         c->g2 = c->target[FA] * c->w2;
         c->g5 = c->target[FA] * c->w5;

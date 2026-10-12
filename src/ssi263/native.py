@@ -85,7 +85,7 @@ def params_struct(p):
     s.hold_release_frames = float(p["hold_release_frames"])
     s.hold_release_ramp_ms = float(p["hold_release_ramp_ms"])
     s.hold_release_min_frames = float(p["hold_release_min_frames"])
-    tract = ("slew", "immediate", "pa_wait")
+    tract = ("slew", "immediate", "pa_wait", "pa_slew")
     if p["mode1_rate15_formants"] not in tract:
         raise ValueError("mode1_rate15_formants = %r: the C core knows %s" % (p["mode1_rate15_formants"], tract))
     s.mode1_rate15_formants = float(tract.index(p["mode1_rate15_formants"]))

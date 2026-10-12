@@ -89,7 +89,7 @@ typedef struct ssi263_params {
     double hold_release_phonemes[4];     /* the holds it applies to (HVC); -1 = unused */
     double hold_release_after[4];        /* the phonemes before them that make the context (K, KV); -1 = unused */
     double hold_release_min_frames;      /* only holds this long or longer (mode 1: 1 frame, else 4 - DR) */
-    double mode1_rate15_formants;        /* 0.8, the BASIC tones: 0 "slew", 1 "immediate", 2 "pa_wait" */
+    double mode1_rate15_formants;        /* 0.8, the BASIC tones: 0 "slew", 1 "immediate", 2 "pa_wait", 3 "pa_slew" */
     double noise_own;                    /* v0.17 noise_path: 1 "own" (the noise's own F2..F5 cascade), 0 "shared" */
     double noise_path_f4_ratio;          /* the noise path's F4 and F5 (f / fc) */
     double noise_path_f5_ratio;

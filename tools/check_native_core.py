@@ -44,6 +44,9 @@ SWITCHES = [
     {"noise_path_route_b02": ((1.0, 0.0), (0.5, 0.5)), "noise_path_bw45": (0.01, 0.02)},
     {"noise_voice_swell": 0.0},
     {"noise_voice_swell": 0.5},
+    {"mode1_rate15_formants": "pa_wait"},                               # v0.17's BASIC tones (v0.18: pa_slew)
+    {"mode1_rate15_formants": "immediate"},
+    {"mode1_rate15_formants": "slew"},
     {"latch_quantize": "floor"},
     {"section_numerator": "allpole"},
     {"closure_timing": "frames"},

@@ -86,7 +86,7 @@ DEFAULTS = {
     "amp_slew_per_phoneme": (1.0, "GUESS",
                              "A: amplitude moves linearly 'at rate dependent on the phoneme "
                              "duration setting'; full scale per phoneme duration here"),
-    "mode1_rate15_formants": ("pa_wait", "BL+EAR",
+    "mode1_rate15_formants": ("pa_slew", "BL+EAR",
                               "the formant fields (F1 F2 F3 NAS) in mode 1 at speech rate 15 only -- the BASIC Sound "
                               "command's tones (chime.bas, the Pinball lesson; Astra, Replies 177-179).  'slew': as at "
                               "every other mode and rate (0.7): each note's start glides into M's tract, a bright "
@@ -98,7 +98,14 @@ DEFAULTS = {
                               "(2026-10-11).  A bounded behavioural approximation, not a traced gate: the real chip's "
                               "rate-14 and slower transitions stay bright (50-190 ms, REG_astra174/176), so it is "
                               "limited to mode 1 at rate 15; the firmwares' speech is mode 3 (corpus_v1 DEV: 1251 of "
-                              "1251 loads)"),
+                              "1251 loads).  'pa_slew' (v0.18, Astra, Replies 202-203): as pa_wait, but once both "
+                              "latches are zero PA's tract is slewed to as everywhere else, not retuned at once -- "
+                              "the instant retune, the filters still ringing, left a faint click at the ends of the "
+                              "Pinball lesson's right-side notes, a ring near 1.9 kHz below the 3-10 kHz the tone "
+                              "check watched.  Tomi heard it gone (2026-10-12: 'both fixed it'); held-through-PA "
+                              "passed too, but pa_slew still reaches PA's settings.  Neither is a traced circuit: the "
+                              "real recording's weak ring near the model's pause resonance forbids claiming the chip "
+                              "holds its tract"),
 
     # ---- filters: switched-capacitor sections at fc ----------------------------------
     # LDI mapping: (2 sin(pi f/fc))^2 = K (C0 + sum w_i b_i).  Binary weights reproduce

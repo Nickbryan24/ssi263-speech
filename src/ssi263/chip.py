@@ -127,7 +127,7 @@ class Bandpass:
 class SSI263:
     def __init__(self, params=None, rom=None, out_rate=44100, dsp=None):
         self.p = params if isinstance(params, Params) else Params(params)
-        if self.p["mode1_rate15_formants"] not in ("slew", "immediate", "pa_wait"):
+        if self.p["mode1_rate15_formants"] not in ("slew", "immediate", "pa_wait", "pa_slew"):
             raise ValueError("mode1_rate15_formants = %r" % (self.p["mode1_rate15_formants"],))
         self.rom = rom or Rom.load()
         self.out_rate = float(out_rate)
@@ -411,12 +411,21 @@ class SSI263:
             fm = dict(zip(FIELDS, p["field_speed_mult"]))
             # VA and FA first: mode1_rate15_formants' PA wait reads where their latches END.  Its retune is instant,
             # so whether the latches reached zero inside the skip decides the tract's end state exactly
+            va0, fa0, part = self.cur["VA"], self.cur["FA"], None
             for f in ("VA", "FA", "F1", "F2", "F3", "NAS"):
                 st = (step * p["art_amp_mult"] if f in ("VA", "FA") else step) * fm[f]
                 d = self.target[f] - self.cur[f]
                 tst = self._tract_step(f, d, self._latch_code(self.cur["VA"]), self._latch_code(self.cur["FA"]))
                 if tst is not None:
                     st = tst
+                elif f not in ("VA", "FA") and self._pa_slewing():
+                    # pa_slew (v0.18): held until both latches are zero, so the formants slew only for the part of
+                    # the skip after that crossing (Astra, Reply 203), as running would
+                    if part is None:
+                        amp = step * p["art_amp_mult"]
+                        part = max(0.0, 1.0 - max(self._zero_at(va0, "VA", amp * fm["VA"]),
+                                                  self._zero_at(fa0, "FA", amp * fm["FA"])))
+                    st = st * part
                 self.cur[f] = self.target[f] if abs(d) <= st else self.cur[f] + math.copysign(st, d)
             self.g2 = self.target["FA"] * self.w2
             self.g5 = self.target["FA"] * self.w5
@@ -497,7 +506,24 @@ class SSI263:
         how = self.p["mode1_rate15_formants"]
         if how == "slew" or f in ("VA", "FA") or self.mode != 1 or (self.regs[2] >> 4) != 15:
             return None
+        if how == "pa_slew" and not self.phoneme:
+            # v0.18: PA holds the tract while the latches sound, then slews to its own as everywhere else
+            return None if (va == 0 and fa == 0) else 0.0
         return abs(d) if (how == "immediate" or self.phoneme or (va == 0 and fa == 0)) else 0.0
+
+    def _pa_slewing(self):
+        """pa_slew's PA: mode 1 at rate 15, PA loaded (the tract held, then slewed once the latches are zero)."""
+        return (self.p["mode1_rate15_formants"] == "pa_slew" and self.mode == 1 and (self.regs[2] >> 4) == 15
+                and not self.phoneme)
+
+    def _zero_at(self, cur0, f, st):
+        """When, as a fraction of a skip moving field f by st, its latch reaches zero: 0 when it already is, inf when
+        it does not get there (its target's latch is not zero)."""
+        if self._latch_code(cur0) == 0:
+            return 0.0
+        if self._latch_code(self.target[f]) != 0 or st <= 0.0:
+            return math.inf
+        return (cur0 - (0.5 if self.p["latch_quantize"] == "round" else 1.0)) / st
 
     def _latch_all(self, force=False):
         bw = self.p["bw_ratio"]
