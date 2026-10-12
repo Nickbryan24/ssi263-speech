@@ -6,6 +6,7 @@ Source tags (message-from-claude-2.md section 26.1):
   P      the Visual6502 SSI-263P die (cell readings, visible-metal graphs)
   BL     Braille Lite 2000 audio, MASTER capture 2026-09-24 (one unit, its firmware and
          its capture path; silicon revision not established)
+  REG    register programs played on Tomi's real SSI-263 (the regprog corpus, DEV sessions only)
   SC01   borrowed from MAME's SC-01 model -- a different chip; a baseline, never a fact
   GUESS  placeholder; nothing measured yet
 
@@ -102,8 +103,15 @@ DEFAULTS = {
     # ---- filters: switched-capacitor sections at fc ----------------------------------
     # LDI mapping: (2 sin(pi f/fc))^2 = K (C0 + sum w_i b_i).  Binary weights reproduce
     # the BL audio (free fits: F2 0.96 2.27 3.77 7.96, F3 0.89 2.00 3.96 8.02 units).
-    "f1_K": (0.00255, "BL", "tone 13 pitch 32 LPC late medians, dev reps, 25 entries"),
-    "f1_C0": (3.38, "BL", "fixed capacitance in unit caps"),
+    "f1_K": (0.0032919482808173167, "REG",
+             "v0.16 (Astra, Reply 197): fitted to one controlled ROM pair on the real chip, E/AY (pass 0 only; same "
+             "VA, pitch and other fields, only the F1 code differs), with f1_C0 and bw_ratio[0], then frozen.  It "
+             "predicts the second pair AI/:A (0.375 -> 0.075 dB RMS) and the older R3=3 vowels below 1 kHz (E, Y, "
+             "OO, OU, EH, HV, L, UH against AH: 3-5 dB -> 0.2-0.5 dB), reproduced independently (Claude, letter "
+             "198).  Tomi: 'speakout keeps the same voice and does the accent too'; the nasals keep their body by "
+             "ear.  Open: M, N, NG against AH now fit in shape but sit 3-6 dB low below 1 kHz, the gap growing "
+             "with the F2 code.  v0.15 and before: 0.00255 (BL, tone 13 pitch 32 LPC late medians)"),
+    "f1_C0": (1.5534412035140888, "REG", "fixed capacitance in unit caps; with f1_K.  v0.15 and before: 3.38 (BL)"),
     "f1_w": ((1.0, 2.0, 4.0, 8.0), "P+BL",
              "row assignment from the P decode (b0 = PAR row); binary AREAS are not measured, "
              "only compatible with the BL fit.  BL audio fit gives b0 = 0.0 +- 0.3 unit; "
@@ -123,8 +131,9 @@ DEFAULTS = {
     "section_numerator": ("bilinear", "GUESS",
                           "ISSCC: low-pass sections.  'bilinear' puts the null at fc/2, as "
                           "MAME's SC-01 filters do; 'allpole' leaves the band up to fc/2 open"),
-    "bw_ratio": ((0.0025, 0.0040, 0.0060, 0.0300, 0.0600), "GUESS",
-                 "B/fc per section; code-independent, as a fixed damping capacitor gives"),
+    "bw_ratio": ((0.0027834165999045335, 0.0040, 0.0060, 0.0300, 0.0600), "REG+GUESS",
+                 "B/fc per section; code-independent, as a fixed damping capacitor gives.  F1's (REG, v0.16) is "
+                 "fitted with f1_K (v0.15: 0.0025); the other four are GUESS"),
     "nas_f2_bw_gain": (0.5, "GUESS",
                        "NAS -> F2Q is a tracing hypothesis: F2 bandwidth x (1 + gain x NAS)"),
 
