@@ -1,6 +1,7 @@
 """bns_live.exe speed-ups must not change a single write: a fixed scenario through the Blazie host (boot, lines,
 cancels mid-word and when idle, stacked '?', money and numbers), recording every SSI-263 write with its emulated
-time, the unit's serial output and a hash of the audio.  Run it with two builds and compare the signatures; it
+time, the unit's serial output and a hash of the audio as 16-bit PCM (the same on every platform; a float hash was
+not: the maths libraries differ in a sample's last bits).  Run it with two builds and compare the signatures; it
 also reports the wall time of the scenario and of a cancel + next line.
 
     python bns_equiv.py <bns_live.exe> [signature_out.txt]
@@ -75,8 +76,13 @@ audio = hashlib.sha1()
 
 
 def run(seconds):
+    # the audio as 16-bit PCM, what a listener gets: the platforms' maths libraries differ in a sample's last bits
+    # (msvcrt and glibc, engine v0.16: a float32 hash flipped on Linux, the PCM identical), never in what is heard
     y = u.run(seconds)
-    audio.update(np.asarray(y, dtype=np.float32).tobytes() if np is not None else _array("f", y).tobytes())
+    if np is not None:
+        audio.update(np.clip(np.rint(np.asarray(y) * 32767.0), -32768, 32767).astype("<i2").tobytes())
+    else:
+        audio.update(_array("h", [max(-32768, min(32767, int(round(v * 32767.0)))) for v in y]).tobytes())
 
 
 u.send(b"\x18")
