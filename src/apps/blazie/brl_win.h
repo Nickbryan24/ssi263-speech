@@ -15,14 +15,16 @@
 
 #define BRLW_NONE L"no braille display"
 
-/* the field and its label ("Braille display", its name to a screen reader), children of parent, hidden; keys: the
-   procedure the field's keys go to (the window's own) */
+/* the field and its caption ("Braille display", for the eye only: no name for a screen reader, so the user's display
+   holds the unit's cells and little else), children of parent, hidden; keys: the procedure the field's keys go to
+   (the window's own) */
 HWND brlw_create(HWND parent, HINSTANCE inst, WNDPROC keys);
 /* the field and its label shown or hidden */
 void brlw_visible(HWND field, int on);
 /* the field across the window's client area (width, height) under its label */
 void brlw_layout(HWND field, int width, int height);
-/* the unit's cells shown (dot 1 = bit 0 .. dot 8 = bit 7), when they changed: 1 if the field's text changed */
+/* the unit's cells shown (dot 1 = bit 0 .. dot 8 = bit 7), when they changed, and the screen reader told (a name
+   change event: NVDA redraws the user's display on it): 1 if the field's text changed */
 int brlw_show(HWND field, const unsigned char *cells, int n);
 /* the field's text for n cells: n characters and a 0 (cap at least n + 1), or BRLW_NONE when n is 0 */
 void brlw_text(const unsigned char *cells, int n, wchar_t *out, int cap);

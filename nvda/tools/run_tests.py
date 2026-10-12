@@ -451,6 +451,12 @@ if os.path.isfile(os.path.join(EMU, "test_emu_unit.exe")):
                             [os.path.join(EMU, "test_brl_win_break.exe")], expect_fail=True,
                             fail_marks=[r"^FAIL  a character goes to the window",
                                         r"^FAIL  Alt keys go to the window"]))
+        # 0.8's first preview: the screen reader never told of a change (NVDA's braille stayed on the old cells), the
+        # caption the field's name (23 of 40 cells before the unit's) -- must fail on exactly those
+        CHECKS.append(check("Blazie emulator: the braille display field CONTROL (never told, named, must fail)",
+                            [os.path.join(EMU, "test_brl_win_stale.exe")], expect_fail=True,
+                            fail_marks=[r"^FAIL  the change told to the screen reader",
+                                        r"^FAIL  no name for a screen reader"]))
     # its sound queue (src/apps/blazie/audio_pace.c; Tomi: the emulator's speech stutters, the add-on's doesn't)
     # against a simulated sound card calibrated on this desktop's waveOut: a busy machine and a remote card heard
     # without gaps once the automatic queue has grown, a slow save without gaps; the control puts the 0.7.0 draft's

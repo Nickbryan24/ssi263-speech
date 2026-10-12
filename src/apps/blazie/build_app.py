@@ -119,12 +119,16 @@ def main():
     rescue = compile_c(os.path.join(HERE, "tns_rescue.c"), APP)
     shell = [compile_c(os.path.join(HERE, f), APP) for f in ("main_win.c", "tns_keymap_win.c", "serial_win.c",
                                                              "audio_pace.c", "brl_win.c")]
-    # the braille display field: its keys to the window, the cells as Unicode braille; _break: the keys kept in the
-    # field (its must-fail control)
+    # the braille display field: its keys to the window, the cells as Unicode braille, each change told to the screen
+    # reader, no name before the cells; _break: the keys kept in the field, _stale: 0.8's first preview (no event, the
+    # caption as its name) -- the must-fail controls
     test_brl = compile_c(os.path.join(HERE, "test_brl_win.c"), APP)
-    link("test_brl_win.exe", [test_brl, os.path.join(obj, "brl_win.o")], libs=("-lgdi32",))
+    brl_libs = ("-lgdi32", "-loleacc", "-lole32", "-loleaut32", "-luuid")
+    link("test_brl_win.exe", [test_brl, os.path.join(obj, "brl_win.o")], libs=brl_libs)
     link("test_brl_win_break.exe", [test_brl, compile_c(os.path.join(HERE, "brl_win.c"), APP, name="brl_win_break",
-                                                        defines=("BRLW_NO_FORWARD",))], libs=("-lgdi32",))
+                                                        defines=("BRLW_NO_FORWARD",))], libs=brl_libs)
+    link("test_brl_win_stale.exe", [test_brl, compile_c(os.path.join(HERE, "brl_win.c"), APP, name="brl_win_stale",
+                                                        defines=("BRLW_NO_EVENT", "BRLW_LABEL_FIRST"))], libs=brl_libs)
     # the sound queue against a simulated sound card (Tomi: the emulator's speech stutters); --old: its control
     link("test_audio.exe", [compile_c(os.path.join(HERE, "test_audio.c"), APP), os.path.join(obj, "audio_pace.o")],
          libs=())

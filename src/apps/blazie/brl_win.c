@@ -32,10 +32,17 @@ HWND brlw_create(HWND parent, HINSTANCE inst, WNDPROC keys)
     HWND field;
     HFONT font = CreateFontW(-24, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI Symbol");
     g_keys = keys;
-    /* the label first: a screen reader names the field from the label before it */
+#ifdef BRLW_LABEL_FIRST                     /* test_brl_win's control: the label names the field, as 0.8's first preview */
     g_label = CreateWindowExW(0, L"STATIC", L"Braille display", WS_CHILD, 8, 8, 300, 20, parent, NULL, inst, NULL);
+#endif
     field = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", BRLW_NONE, WS_CHILD | WS_TABSTOP | ES_READONLY | ES_AUTOHSCROLL,
                             8, 32, 400, 36, parent, NULL, inst, NULL);
+#ifndef BRLW_LABEL_FIRST
+    /* the caption after the field, so it never becomes the field's name: a screen reader would put that name before
+       the cells on the user's display ("Braille display ro edt" took 23 of 40 cells, and the unit's last ones fell off
+       -- Pitermach, 0.8's first preview); with no name NVDA shows "ro edt" and all of the unit's cells */
+    g_label = CreateWindowExW(0, L"STATIC", L"Braille display", WS_CHILD, 8, 8, 300, 20, parent, NULL, inst, NULL);
+#endif
     if (font)
         SendMessageW(field, WM_SETFONT, (WPARAM)font, 0);
     g_edit_proc = (WNDPROC)SetWindowLongPtrW(field, GWLP_WNDPROC, (LONG_PTR)field_proc);
@@ -76,5 +83,13 @@ int brlw_show(HWND field, const unsigned char *cells, int n)
     if (!wcscmp(want, have))
         return 0;
     SetWindowTextW(field, want);           /* the caret stays at the start: the field never moves */
+#ifndef BRLW_NO_EVENT                       /* test_brl_win's control: the screen reader never told */
+    /* and the screen reader told.  NVDA redraws an edit field's braille on its caret moving, which this one never
+       does: the text alone changing left the user's display on the old cells until a key moved the caret
+       (Pitermach, 0.8's first preview).  Of the events an edit field can send, the name change is the one NVDA's
+       braille follows for it (a value change only marks the text changed; a caret event without a move is dropped);
+       it speaks nothing, the name being the same (checked with NVDA 2026.3 through its own braille output) */
+    NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, field, OBJID_CLIENT, CHILDID_SELF);
+#endif
     return 1;
 }

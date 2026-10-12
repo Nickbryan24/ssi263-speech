@@ -1,9 +1,14 @@
 /* test_brl_win.c -- the braille display field (brl_win.c) in a window that is never shown: its keys go to the
  * window's procedure and leave the field as it was, it asks for every key, and the unit's cells become Unicode
- * braille (changed only when they change; "no braille display" with none).  Built with BRLW_NO_FORWARD (the keys kept
- * in the field) it must fail.  Exit 0 when all pass. */
+ * braille (changed only when they change; "no braille display" with none), each change told to the screen reader by a
+ * name change event (NVDA redraws the user's display on it), and the field has no name for a screen reader to put
+ * before the cells (read through MSAA, as NVDA reads it).  Built with BRLW_NO_FORWARD (the keys kept in the field) it
+ * must fail on the keys; with BRLW_NO_EVENT and BRLW_LABEL_FIRST (0.8's first preview) on the event and the name.
+ * Exit 0 when all pass. */
+#define COBJMACROS
 #include <stdio.h>
 #include <wchar.h>
+#include <oleacc.h>
 #include "brl_win.h"
 
 static UINT g_msg;
@@ -22,6 +27,45 @@ static LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcW(w, msg, wp, lp);
 }
 
+static HWND g_field;
+static int g_events;                        /* name change events for the field's own object */
+
+static void CALLBACK on_event(HWINEVENTHOOK hook, DWORD event, HWND w, LONG obj, LONG child, DWORD thread, DWORD ms)
+{
+    if (event == EVENT_OBJECT_NAMECHANGE && w == g_field && obj == OBJID_CLIENT && child == CHILDID_SELF)
+        g_events++;
+}
+
+static int events_after(void)               /* the events delivered (out of context: through this thread's queue) */
+{
+    MSG m;
+    g_events = 0;
+    while (PeekMessageW(&m, NULL, 0, 0, PM_REMOVE))
+        DispatchMessageW(&m);
+    return g_events;
+}
+
+/* the field's name as a screen reader gets it (MSAA; a Win32 edit field takes the caption before it as its name) */
+static int field_name(wchar_t *out, int cap)
+{
+    IAccessible *acc = NULL;
+    VARIANT self;
+    BSTR name = NULL;
+    out[0] = 0;
+    if (FAILED(AccessibleObjectFromWindow(g_field, (DWORD)OBJID_CLIENT, &IID_IAccessible, (void **)&acc)))
+        return 0;
+    VariantInit(&self);
+    self.vt = VT_I4;
+    self.lVal = CHILDID_SELF;
+    if (SUCCEEDED(IAccessible_get_accName(acc, self, &name)) && name) {
+        wcsncpy(out, name, (size_t)cap - 1);
+        out[cap - 1] = 0;
+        SysFreeString(name);
+    }
+    IAccessible_Release(acc);
+    return 1;
+}
+
 static void check(int ok, const char *what)
 {
     printf("%s  %s\n", ok ? "ok  " : "FAIL", what);
@@ -34,8 +78,9 @@ int main(void)
     WNDCLASSW wc = {0};
     HWND parent, field;
     HINSTANCE inst = GetModuleHandleW(NULL);
-    wchar_t text[64];
-    const unsigned char cells[3] = {0x01, 0x03, 0x3F}, none[1] = {0};
+    wchar_t text[64], name[64];
+    const unsigned char cells[3] = {0x01, 0x03, 0x3F}, other[3] = {0x01, 0x03, 0x07}, none[1] = {0};
+    HWINEVENTHOOK hook;
     wc.lpfnWndProc = window_proc;
     wc.hInstance = inst;
     wc.lpszClassName = L"TestBrlWin";
@@ -43,11 +88,25 @@ int main(void)
     parent = CreateWindowW(L"TestBrlWin", L"test", WS_OVERLAPPEDWINDOW, 0, 0, 400, 200, NULL, NULL, inst, NULL);
     field = brlw_create(parent, inst, window_proc);
     check(field != NULL, "the field made");
+    g_field = field;
+    brlw_visible(field, 1);                 /* the field and its caption shown (in a window never shown) */
+    CoInitialize(NULL);
+    hook = SetWinEventHook(EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE, NULL, on_event, GetCurrentProcessId(), 0,
+                           WINEVENT_OUTOFCONTEXT);
+    check(hook != NULL, "listening for the field's events");
+    events_after();
 
     check(brlw_show(field, cells, 3) == 1, "new cells change the field");
     GetWindowTextW(field, text, 64);
     check(!wcscmp(text, L"\x2801\x2803\x283F"), "dots 1, 1-2, 1-2-3-4-5-6 as Unicode braille");
+    check(events_after() == 1, "the change told to the screen reader: one name change event (NVDA redraws on it)");
     check(brlw_show(field, cells, 3) == 0, "the same cells leave it alone");
+    check(events_after() == 0, "and tell nothing");
+    brlw_show(field, other, 3);
+    check(events_after() == 1, "the next change told too");
+    check(field_name(name, 64) && name[0] == 0, "no name for a screen reader to put before the cells");
+    if (name[0])
+        printf("      (its name: \"%ls\")\n", name);
     brlw_show(field, none, 0);
     GetWindowTextW(field, text, 64);
     check(!wcscmp(text, BRLW_NONE), "no cells: \"no braille display\"");
@@ -69,7 +128,10 @@ int main(void)
     check(g_msg == WM_SYSKEYDOWN && g_wp == VK_RIGHT, "Alt keys go to the window (Alt+Shift+Right: a bar)");
     GetWindowTextW(field, text, 64);
     check(!wcscmp(text, L"\x2801\x2803\x283F"), "the field's text unchanged by the keys");
+    if (hook)
+        UnhookWinEvent(hook);
     DestroyWindow(parent);
+    CoUninitialize();
     printf(g_fail ? "FAILED\n" : "all passed\n");
     return g_fail;
 }

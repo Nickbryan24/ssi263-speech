@@ -84,7 +84,11 @@ NATIVE_ONLY = ("mockingboard:mockingboard", "mockingboard:early", "blazie:blazie
 # held to the native serve host, as the others above
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "csrc", "blazie"))
 import gen_languages  # noqa: E402
-NATIVE_ONLY += tuple("blazie:" + r["voice"] for r in gen_languages.rows()[0] if r["voice"].startswith("blazie_"))
+RELEASE = tuple("blazie:" + r["voice"] for r in gen_languages.rows()[0] if r["voice"].startswith("blazie_"))
+NATIVE_ONLY += RELEASE
+# each release voice: its default utterance and its voice control.  What is its own -- its boot keys, echo and code page
+# -- shows there; rate, pitch, bookmarks, aborts and the dialog go through the same DLL code for every voice and are
+# the other voices' cases (all of them at 8 cases each doubled the run past the suite's 240 s)
 LONG = "This sentence is long enough to be cut somewhere in the middle of it, surely. And a few more words follow it."
 ABORT_AFTER = 6
 
@@ -101,18 +105,22 @@ def cases(voices):
                      ("44100 Hz", dict(DEFAULTS, SampleRate=44100))):
         for vid, _name, lang in voices:
             texts = TEXTS.get(lang, TEXT_EN)
-            if group.endswith("Hz") and vid != rates_voice:
+            if group.endswith("Hz") and vid != rates_voice or group and vid in RELEASE:
                 continue                     # the rates: one voice shows the DLL declares and renders them (every
                                              # voice at every rate is test_native.py's, through the same mapping)
             if group:
                 out.append(("%s %s" % (vid, group), vid, 0, 0, s, "-", 0, texts[-1], None))
                 continue
-            out += [("%s default" % vid, vid, 0, 0, s, "-", 0, texts[0], None),
-                    ("%s rate 5 pitch -4" % vid, vid, 5, -4, s, "-", 0, texts[-1], None),
+            out.append(("%s default" % vid, vid, 0, 0, s, "-", 0, texts[0], None))
+            if vid in RELEASE:
+                continue
+            out += [("%s rate 5 pitch -4" % vid, vid, 5, -4, s, "-", 0, texts[-1], None),
                     ("%s rate -6 pitch 10" % vid, vid, -6, 10, s, "-", 0, texts[0], None),
                     ("%s bookmark" % vid, vid, 0, 2, s, "-", 0, texts[0], "and the rest.")]
         if not group:
             for vid, _name, lang in voices:
+                if vid in RELEASE:
+                    continue
                 out += [("%s abort" % vid, vid, 0, 0, s, "-", ABORT_AFTER, LONG, None),
                         ("%s after the abort" % vid, vid, 0, 0, s, "-", 0, AFTER_ABORT.get(lang, "OK button"),
                          None)]
