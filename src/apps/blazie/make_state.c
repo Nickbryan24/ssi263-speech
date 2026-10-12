@@ -30,13 +30,24 @@ int main(int argc, char **argv)
     static const char *names[] = {"english", "spanish", "german", "italian", "french"};
     static const int ids[] = {BLV_STATE_ENGLISH, BLV_STATE_SPANISH, BLV_STATE_GERMAN, BLV_STATE_ITALIAN,
                               BLV_STATE_FRENCH};
-    int k;
+    /* yes=LETTER: the English recipe answered with that letter (a-z in computer braille, as the unit takes it) */
+    static const unsigned char letter[26] = {0x01, 0x03, 0x09, 0x19, 0x11, 0x0B, 0x1B, 0x13, 0x0A, 0x1A, 0x05, 0x07,
+                                             0x0D, 0x1D, 0x15, 0x0F, 0x1F, 0x17, 0x0E, 0x1E, 0x25, 0x27, 0x3A, 0x2D,
+                                             0x3D, 0x35};
+    int k, yes = -1, shape = BLV_SHAPE_ENGLISH;
     language = -1;
     for (k = 0; argc == 4 && k < 5; k++)
         if (!strcmp(argv[2], names[k]))
             language = ids[k];
-    if (language < 0) {
-        fprintf(stderr, "usage: make_state FIRMWARE english|spanish|german|italian|french OUT\n");
+    /* yes=LETTER: the English recipe's shape; slow=LETTER: the Spanish recipe's (bl_state.h BLV_SHAPE_*) */
+    if (argc == 4 && (!strncmp(argv[2], "yes=", 4) || !strncmp(argv[2], "slow=", 5))) {
+        const char *v = strchr(argv[2], '=') + 1;
+        if (v[0] >= 'a' && v[0] <= 'z' && !v[1])
+            yes = letter[v[0] - 'a'];
+        shape = argv[2][0] == 's' ? BLV_SHAPE_SLOW : BLV_SHAPE_ENGLISH;
+    }
+    if (language < 0 && yes < 0) {
+        fprintf(stderr, "usage: make_state FIRMWARE english|spanish|german|italian|french|yes=L|slow=L OUT\n");
         return 2;
     }
     u = bl_create(argv[1], NULL, 20.0, NULL, NULL, 0, err, sizeof err);
@@ -46,7 +57,8 @@ int main(int argc, char **argv)
     }
     model = bl_model(u);
     bl_destroy(u);
-    if (!blv_make_state(argv[1], language, argv[3], NULL, NULL, err, sizeof err)) {
+    if (!(yes >= 0 ? blv_make_state_yes(argv[1], shape, (unsigned char)yes, argv[3], NULL, NULL, err, sizeof err)
+                   : blv_make_state(argv[1], language, argv[3], NULL, NULL, err, sizeof err))) {
         fprintf(stderr, "make_state: %s\n", err);
         return 1;
     }

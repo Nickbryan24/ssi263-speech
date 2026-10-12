@@ -65,24 +65,48 @@ static unsigned char yes_of(int language)
          : 0x3D;                                          /* y */
 }
 
+static int run_recipe(const char *firmware, const run *runs, int n_runs, const char *out_path,
+                      blv_state_progress progress, void *ctx, char *err, int errlen);
+
 BL_API int blv_make_state(const char *firmware, int language, const char *out_path, blv_state_progress progress,
                           void *ctx, char *err, int errlen)
 {
+    if (language == BLV_STATE_SPANISH)
+        return run_recipe(firmware, SPANISH, (int)(sizeof SPANISH / sizeof *SPANISH), out_path, progress, ctx, err,
+                          errlen);
+    if (language == BLV_STATE_ENGLISH || language == BLV_STATE_GERMAN || language == BLV_STATE_ITALIAN
+            || language == BLV_STATE_FRENCH)
+        return blv_make_state_yes(firmware, BLV_SHAPE_ENGLISH, yes_of(language), out_path, progress, ctx, err,
+                                  errlen);
+    snprintf(err, errlen, "no state recipe for language %d", language);
+    return 0;
+}
+
+BL_API int blv_make_state_yes(const char *firmware, int shape, unsigned char yes_chord, const char *out_path,
+                              blv_state_progress progress, void *ctx, char *err, int errlen)
+{
     run own[sizeof ENGLISH / sizeof *ENGLISH];
-    const run *runs = language == BLV_STATE_SPANISH ? SPANISH : ENGLISH;
-    int n_runs = language == BLV_STATE_SPANISH ? (int)(sizeof SPANISH / sizeof *SPANISH)
-                                               : (int)(sizeof ENGLISH / sizeof *ENGLISH);
-    unsigned long long total = 0, before = 0;
-    int r, i;
-    if (language == BLV_STATE_GERMAN || language == BLV_STATE_ITALIAN || language == BLV_STATE_FRENCH) {
+    int i, n;
+    if (shape == BLV_SHAPE_SLOW) {                         /* the Spanish recipe's single long run, any yes */
+        memcpy(own, SPANISH, sizeof SPANISH);
+        n = (int)(sizeof SPANISH / sizeof *SPANISH);
+    } else if (shape == BLV_SHAPE_ENGLISH) {
         memcpy(own, ENGLISH, sizeof own);
-        for (i = 0; i < own[0].n_keys; i++)
-            own[0].keys[i].chord = yes_of(language);       /* run 1: the hard reset's five yes */
-        runs = own;
-    } else if (language != BLV_STATE_ENGLISH && language != BLV_STATE_SPANISH) {
-        snprintf(err, errlen, "no state recipe for language %d", language);
+        n = (int)(sizeof own / sizeof *own);
+    } else {
+        snprintf(err, errlen, "no state recipe shape %d", shape);
         return 0;
     }
+    for (i = 0; i < own[0].n_keys; i++)
+        own[0].keys[i].chord = yes_chord;                  /* run 1: the hard reset's answers */
+    return run_recipe(firmware, own, n, out_path, progress, ctx, err, errlen);
+}
+
+static int run_recipe(const char *firmware, const run *runs, int n_runs, const char *out_path,
+                      blv_state_progress progress, void *ctx, char *err, int errlen)
+{
+    unsigned long long total = 0, before = 0;
+    int r, i;
     for (r = 0; r < n_runs; r++)
         total += runs[r].run;
     for (r = 0; r < n_runs; r++) {

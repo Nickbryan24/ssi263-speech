@@ -35,6 +35,17 @@ typedef int (*blv_state_progress)(void *ctx, double done);
 BL_API int blv_make_state(const char *firmware, int language, const char *out_path, blv_state_progress progress,
                           void *ctx, char *err, int errlen);
 
+/* A recipe of a given shape with its hard-reset answers given as `yes_chord` (port 40h bits: a letter's computer
+   braille, y = 3Dh, j = 1Ah, s = 0Eh, o = 15h, d = 19h, t = 1Eh, e = 11h).  BLV_SHAPE_ENGLISH: the English
+   recipe's three power-ons, five answers early in the first (what German, Italian and French take, and most of the
+   Braille Lite 2000 languages); BLV_SHAPE_SLOW: the Spanish recipe's one long run, twelve answers 80 million
+   instructions apart (a firmware whose questions come late).  The language table names each firmware's shape and
+   letter.  As blv_make_state. */
+#define BLV_SHAPE_ENGLISH 0
+#define BLV_SHAPE_SLOW 1
+BL_API int blv_make_state_yes(const char *firmware, int shape, unsigned char yes_chord, const char *out_path,
+                              blv_state_progress progress, void *ctx, char *err, int errlen);
+
 /* The test's control (test_import_native.py sets it; an app never does): nonzero holds the wrong chord (7Eh) at the
    English warm reset, so the state -- and the speech -- must differ. */
 BL_API extern int blv_state_break;
