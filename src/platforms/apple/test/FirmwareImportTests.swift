@@ -650,6 +650,21 @@ test("releasesComeAfterTheShippedUnitsInOneZip") {
     eq(plan.notes, [])
 }
 
+test("theAddOnsLanguageUpdatesComeInTheSameImport") {
+    // the unified add-on keeps the Blazie engine's language updates one folder further, bl2000/, with their states
+    let d = "synthDrivers/_ssi263_unified/_ssi263_blazie/"
+    let plan = inspect("ssi263-speech-0.8.0.nvda-addon", zip([("manifest.ini", bytes("name = ssi263")),
+        (d + "BL2ENG.BNS", bns("E")), (d + "bl2_2003_warm.state", state()),
+        (d + "bl2000/BL2HUN.BNS", bns("H")), (d + "bl2000/bl2_hu_1999_07.state", state()),
+        (d + "bl2000/BL2JPN.BNS", bns("J")), (d + "bl2000/bl2_x1.state", state()),
+        (d + "bl2000/bl2_x2.state", state()), (d + "bl2000/bl2_x3.state", state())]))
+    eq(plan.refusal, nil)
+    eq(kinds(plan), [E, HU, JA])
+    eq(plan.found.dropFirst().first?.from, d + "bl2000/BL2HUN.BNS")
+    eq(plan.notes, ["5 state files (\(d)bl2_2003_warm.state and others) are not firmware, and are not used: this " +
+        "device prepares each unit's state itself from its firmware."])
+}
+
 // ---- the Accents: Aicom's files, which the Apple apps never carry ------------------------------------------------
 
 let SA = [FirmwareImport.accentU2, FirmwareImport.accentU3, FirmwareImport.accentU4]

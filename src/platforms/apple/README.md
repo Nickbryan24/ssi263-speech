@@ -16,8 +16,9 @@ Lite 2000 in English, Spanish, German and Italian, the Slovak Braille 'n Speak 2
 release table names a voice for (`src/csrc/blazie/bl_languages.txt`: Hungarian, Turkish, Polish and 14 more), read
 from the library (`blv_release_*`, `ssa_release_voice`), never listed in Swift. Each is offered under the system's
 own locale for its language (hu-HU; Arabic as ar-001, Norwegian as nb-NO, Portuguese as pt-PT beside Brazil's
-pt-BR). The Setup list shows each voice's file (`BL2HUN.BNS — not imported`); the languages not yet imported wait
-behind "Show all Braille Lite importable languages". A release no voice speaks yet (the betas, Japanese) is still
+pt-BR), and named in English ("Braille Lite 2000 (Russian)", the table's `vname`). The Setup list shows each
+voice's file (`BL2HUN.BNS — not imported`); the languages wait behind "Show all Braille Lite importable languages (17,
+N imported)", imported or not. One import takes them all from the NVDA add-on too (`_ssi263_blazie/bl2000/`). A release no voice speaks yet (the betas, Japanese) is still
 imported, kept under `units/` for the Braille Lite unit tab. Languages work as in TGSpeechBox's speech extension. Each voice is offered once
 per locale it speaks: the English voices as en-US, en-GB, en-AU and en-CA, and the Spanish Braille Lite as es-ES and
 es-MX. The locale ends the voice's identifier (`com.ssi263speech.braillelite.de-de`), and VoiceOver switches language

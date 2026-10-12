@@ -192,7 +192,7 @@ static int speak(const char *data, const char *aicom, const char *dvc)
     ssa_settings s;
     int bad = 0;
     ssa_default_settings(&s);
-    s.volume = 150;                    /* the app's default engine volume, as Android's */
+    s.volume = 135;                    /* the app's default engine volume, as Android's */
     for (int v = 0; v < SSA_VOICES; v++) {
         ssa_engine *mine = ssa_new(data), *ref = ssa_new(data);
         ssp_speech *p = ssp_speech_new(mine);

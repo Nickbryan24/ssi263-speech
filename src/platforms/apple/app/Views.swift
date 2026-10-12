@@ -46,19 +46,20 @@ struct SetupView: View {
     var body: some View {
         Form {
             Section {
-                // the release voices (the Braille Lite's many languages) only once imported, or when asked for all:
-                // nobody scrolls through thirty rows to find a file name (Tomi)
+                // the release voices (the Braille Lite's many languages) only when asked for, imported or not:
+                // seventeen more lines are a wall to read past (Tomi); the button counts the imported ones
                 let languages = model.voices.filter { $0.voice.release >= 0 }
-                ForEach(model.voices.filter { $0.voice.release < 0 || $0.label != nil || allLanguages }) { v in
+                ForEach(model.voices.filter { $0.voice.release < 0 || allLanguages }) { v in
                     VStack(alignment: .leading) {
                         Text(v.voice.listName).font(.headline)
                         Text(v.voice.bring + " — " + (v.label ?? "not imported")).font(.subheadline)
                     }
                     .accessibilityElement(children: .combine)
                 }
-                if languages.contains(where: { $0.label == nil }) {
-                    Button(allLanguages ? "Hide the Braille Lite languages not imported"
-                           : "Show all Braille Lite importable languages (\(languages.count))") {
+                if !languages.isEmpty {
+                    let here = languages.filter { $0.label != nil }.count
+                    Button(allLanguages ? "Hide the Braille Lite languages"
+                           : "Show all Braille Lite importable languages (\(languages.count), \(here) imported)") {
                         allLanguages.toggle()
                     }
                 }

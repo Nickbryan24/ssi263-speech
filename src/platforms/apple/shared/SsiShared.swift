@@ -196,7 +196,9 @@ enum SsiShared {
         static let firmwareStamp = "firmware_stamp"     // bumped by the app when the firmware changes
     }
 
-    static let defaultVolume = 150                      // Android's: +3.5 dB over the desktop level, with headroom
+    // Android's: +2.6 dB over the desktop level (100).  150 until engine v0.16's F1 lifted every voice's peaks about
+    // 2 dB and the Speak-Out clipped; at 135 the loudest of test_volume_headroom.py's lines is at -0.86 dBFS
+    static let defaultVolume = 135
 
     struct Settings {
         var rate = 50, pitch = 50, volume = SsiShared.defaultVolume, tone = 7

@@ -300,7 +300,10 @@ enum FirmwareImport {
                 notes.append("\(from) is Braille Lite 2000 firmware of a release this app does not know; it is left out.")
             }
             for (from, why) in otherHex + withReason { notes.append("\(from) is \(why); it is left out.") }
-            if !states.isEmpty {
+            if states.count > 3 {           // the unified add-on's: one per unit and language, a wall to read
+                notes.append("\(states.count) state files (\(states[0]) and others) are not firmware, and are not " +
+                    "used: this device prepares each unit's state itself from its firmware.")
+            } else if !states.isEmpty {
                 let one = states.count == 1
                 notes.append("\(states.joined(separator: ", ")) \(one ? "is a state file" : "are state files"), not " +
                     "firmware, and \(one ? "is" : "are") not used: this device prepares the unit's state itself " +
