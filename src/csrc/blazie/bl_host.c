@@ -604,7 +604,8 @@ BL_API double bh_skip(bl_host *h, double seconds)
     /* skipped output is discarded, as ssi263_skip lets the chip's own ringing die: the board pole forgets the last
        sample it was given too, or that sample comes out at the head of the next block (after a stop: a blip v0.16's
        F1 lifted over the voices' lead threshold, so the silence before the next speech went untrimmed, 76 ms) */
-    h->board_state[0] = h->board_state[1] = 0.0;
+    if (t > 0.0)                                           /* a skip of no time discards nothing (Astra, Reply 200) */
+        h->board_state[0] = h->board_state[1] = 0.0;
     return t;
 }
 

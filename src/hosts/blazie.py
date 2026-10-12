@@ -354,7 +354,7 @@ class Blazie:
         # skipped output is discarded, as chip.skip lets the chip's own ringing die: the board pole forgets the last
         # sample it was given too, or that sample comes out at the head of the next block (after a stop: a blip
         # v0.16's F1 lifted over the lead threshold, so the silence before the next speech went untrimmed, 76 ms)
-        if self.board:
+        if self.board and t > 0.0:              # a skip of no time discards nothing (Astra, Reply 200)
             self.board.reset()
         return t
 
