@@ -146,7 +146,11 @@ static int release_of(const unsigned char *image, long n)
     return -1;
 }
 
-BL_API int blv_import_firmware(const unsigned char *data, long n, const char *out_bns, char *msg, int msglen)
+/* The image in data written to out_bns as a .BNS, when it is a release on the list that the board runs: its row, or
+   BLV_FW_NONE, _WRITE, _REFUSED, _UNKNOWN with the reason in msg (out_bns removed); TAKEN under the control.  unit:
+   for the emulator, every Braille 'n Speak 2000 release too (the voices' import takes the Slovak one alone). */
+#define TAKEN (-100)
+static int import_image(const unsigned char *data, long n, const char *out_bns, int unit, char *msg, int msglen)
 {
     long at = blv_find_image(data, n), len;
     int k, ok;
@@ -176,16 +180,16 @@ BL_API int blv_import_firmware(const unsigned char *data, long n, const char *ou
        Braille 'n Speak 2000's, which the board runs (the emulator's), only the Slovak release is a voice (0.8) */
     u = bl_create(out_bns, NULL, 20.0, NULL, NULL, 0, msg, msglen);
     if (!u || (bl_model(u) != BL_MODEL_BRAILLE_LITE
-               && !(bl_model(u) == BL_MODEL_BNS2000 && k >= 0 && KNOWN[k].language != BLV_FW_NONE))) {
+               && !(bl_model(u) == BL_MODEL_BNS2000 && k >= 0 && (unit || KNOWN[k].language != BLV_FW_NONE)))) {
         bl_destroy(u);
         remove(out_bns);
         snprintf(msg, msglen, "Braille Lite firmware, but not a release this voice can run");
         return BLV_FW_REFUSED;
     }
     bl_destroy(u);
-    if (k < 0 && blv_firmware_break) {           /* the control: the list dropped */
+    if (k < 0 && blv_firmware_break && !unit) {  /* the control: the list dropped */
         snprintf(msg, msglen, "%s", "a release not on the list (the control)");
-        return BLV_FW_ENGLISH;
+        return TAKEN;
     }
     if (k < 0) {
         /* the voice could start it, but it was never heard: another country's release may lay its memory out
@@ -194,6 +198,16 @@ BL_API int blv_import_firmware(const unsigned char *data, long n, const char *ou
         snprintf(msg, msglen, "Braille Lite 2000 firmware, but not a release this app knows");
         return BLV_FW_UNKNOWN;
     }
+    return k;
+}
+
+BL_API int blv_import_firmware(const unsigned char *data, long n, const char *out_bns, char *msg, int msglen)
+{
+    int k = import_image(data, n, out_bns, 0, msg, msglen);
+    if (k == TAKEN)
+        return BLV_FW_ENGLISH;
+    if (k < 0)
+        return k;
     if (KNOWN[k].language == BLV_FW_NONE && blv_firmware_break == 2) {   /* the control: handed out as English */
         snprintf(msg, msglen, "%s (the control: taken as English)", KNOWN[k].label);
         return BLV_FW_ENGLISH;
@@ -206,6 +220,14 @@ BL_API int blv_import_firmware(const unsigned char *data, long n, const char *ou
     }
     snprintf(msg, msglen, "%s", KNOWN[k].label);
     return KNOWN[k].language;
+}
+
+BL_API int blv_import_release(const unsigned char *data, long n, const char *out_bns, char *msg, int msglen)
+{
+    int k = import_image(data, n, out_bns, 1, msg, msglen);
+    if (k >= 0)
+        snprintf(msg, msglen, "%s", KNOWN[k].label);
+    return k;
 }
 
 BL_API int blv_firmware_count(void)

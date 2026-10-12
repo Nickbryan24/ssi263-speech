@@ -13,6 +13,8 @@
 #include <string.h>
 
 #include "voices.h"
+#include "voices_blazie.h"             /* SSV_BLAZIE_RELEASE_VOICES */
+#include "blazie/bl_firmware.h"        /* the release table: blv_release_* */
 #include "accentsa/as_voice.h"
 #include "speakout/so_voice.h"
 #ifdef SSV_HAVE_MOCKINGBOARD
@@ -32,7 +34,7 @@ typedef struct {
     const char *files[3];              /* imported, in the data folder (ssv_info.files' order); none: in memory */
 } voice_def;
 
-static const voice_def VOICES[SSA_VOICES] = {
+static const voice_def VOICES[SSA_RELEASE_FIRST] = {
     {"blazie:blazie", {"BL2ENG.BNS", "bl2_2003_warm.state", NULL}},
     {"blazie:blazie_es", {"BL2SPA.BNS", "bl2spa_fresh.state", NULL}},
     {"accentmini:sa", {NULL}},
@@ -46,7 +48,53 @@ static const voice_def VOICES[SSA_VOICES] = {
 };
 static const size_t ROM_SIZES[3] = {0x10000, 0x8000, 0x8000};
 
-static int ssv_of(int voice) { return voice >= 0 && voice < SSA_VOICES ? ssv_find(VOICES[voice].id) : -1; }
+/* ssa_engine.h's count of the release voices is the generated table's */
+typedef char release_voices_match[SSA_RELEASE_VOICES == SSV_BLAZIE_RELEASE_VOICES ? 1 : -1];
+
+int ssa_voice_release(int voice)
+{
+    int k, n = voice - SSA_RELEASE_FIRST;
+    if (voice < SSA_RELEASE_FIRST || voice >= SSA_VOICES) return -1;
+    for (k = 0; k < blv_firmware_count(); k++)
+        if (blv_release_voice_key(k) && n-- == 0) return k;
+    return -1;
+}
+
+int ssa_release_voice(int release)
+{
+    int k, voice = SSA_RELEASE_FIRST;
+    if (release < 0 || release >= blv_firmware_count() || !blv_release_voice_key(release)) return -1;
+    for (k = 0; k < release; k++)
+        if (blv_release_voice_key(k)) voice++;
+    return voice < SSA_VOICES ? voice : -1;
+}
+
+int ssa_voice_file(int voice, int i, char *out, int cap)
+{
+    int k = ssa_voice_release(voice);
+    const char *name = NULL;
+    if (voice >= 0 && voice < SSA_RELEASE_FIRST && i >= 0 && i < 3)
+        name = VOICES[voice].files[i];
+    else if (k >= 0 && i == 0)
+        name = blv_release_file(k);
+    else if (k >= 0 && i == 1) {
+        snprintf(out, (size_t)cap, "%s.state", blv_release_id(k));
+        return 1;
+    }
+    if (!name) return 0;
+    snprintf(out, (size_t)cap, "%s", name);
+    return 1;
+}
+
+static int ssv_of(int voice)
+{
+    char id[80];
+    int k = ssa_voice_release(voice);
+    if (voice >= 0 && voice < SSA_RELEASE_FIRST) return ssv_find(VOICES[voice].id);
+    if (k < 0) return -1;
+    snprintf(id, sizeof id, "blazie:%s", blv_release_voice_key(k));
+    return ssv_find(id);
+}
 
 struct ssa_engine {
     char *datadir;
@@ -101,11 +149,11 @@ static int is_mb(int voice) { return voice == SSA_MOCKINGBOARD || voice == SSA_M
 /* Every one of the voice's files is in the data folder (imported). */
 static int imported(const ssa_engine *e, int voice)
 {
-    const char *const *f;
-    if (!VOICES[voice].files[0]) return 0;
-    for (f = VOICES[voice].files; *f; f++) {
-        char p[1200];
-        path(e, *f, p, sizeof p);
+    char name[256], p[1200];
+    int i;
+    if (!ssa_voice_file(voice, 0, name, sizeof name)) return 0;
+    for (i = 0; ssa_voice_file(voice, i, name, sizeof name); i++) {
+        path(e, name, p, sizeof p);
         if (!readable(p)) return 0;
     }
     return 1;
@@ -121,7 +169,7 @@ int ssa_mockingboard_source(const ssa_engine *e, int voice)
 /* A unit of the voice, made by voices.c from where the app keeps its files. */
 static ssv_voice *make_unit(ssa_engine *e, int voice, char *err, int errlen)
 {
-    char paths[3][1200];
+    char paths[3][1200], name[256];
     ssv_source src;
     ssv_boot b;
     int k;
@@ -135,8 +183,8 @@ static ssv_voice *make_unit(ssa_engine *e, int voice, char *err, int errlen)
         src.data[0] = e->mb[voice - SSA_MOCKINGBOARD];
         src.size[0] = e->mb_n[voice - SSA_MOCKINGBOARD];
     } else
-        for (k = 0; k < 3 && VOICES[voice].files[k]; k++) {
-            path(e, VOICES[voice].files[k], paths[k], sizeof paths[k]);
+        for (k = 0; k < 3 && ssa_voice_file(voice, k, name, sizeof name); k++) {
+            path(e, name, paths[k], sizeof paths[k]);
             src.path[k] = paths[k];
         }
     ssv_boot_defaults(&b);
@@ -165,6 +213,10 @@ static void settings_for(const ssa_engine *e, int voice, const ssa_settings *s, 
         o->line_lift = s->line_lift && ssa_voice_break != 10;  /* bl_voice.h blv_set_line_lift */
         o->numbers = s->numbers && ssa_voice_break != 4;    /* bl_numbers (voices.c), English or Spain's */
         break;
+    default:
+        if (ssa_voice_release(voice) < 0)
+            break;
+        /* fall through: the release voices (bl_languages.txt's), as the three below */
     case SSA_GERMAN:
     case SSA_ITALIAN:
     case SSA_SLOVAK:                   /* 0.8's Blazie units: as the two above, less what they do not have -- each

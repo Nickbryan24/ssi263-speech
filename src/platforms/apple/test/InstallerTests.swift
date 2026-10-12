@@ -12,7 +12,7 @@ var failures = 0
 
 let disks = CommandLine.arguments.count > 2 ? URL(fileURLWithPath: CommandLine.arguments[2]) : nil
 
-func run(_ label: String, _ files: [String], expect: [String], from base: URL? = nil) {
+func run(_ label: String, _ files: [String], expect: [String], kept: [String] = [], from base: URL? = nil) {
     let urls = files.map { (base ?? repo.appendingPathComponent("firmware")).appendingPathComponent($0) }
     guard urls.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
         print("skip  \(label): its firmware is not there")
@@ -24,7 +24,9 @@ func run(_ label: String, _ files: [String], expect: [String], from base: URL? =
         let job = FirmwareInstaller.Job(plan: plan)
         let labels = try job.commit()
         let installed = SsiShared.voices.filter(SsiShared.installed).map { $0.key }
+        let unit = SsiShared.unitFolder!
         let ok = expect.allSatisfy(installed.contains)
+            && kept.allSatisfy { FileManager.default.fileExists(atPath: unit.appendingPathComponent($0).path) }
         print("\(ok ? "ok   " : "FAIL ") \(label): \(labels.joined(separator: "; ")); installed: \(installed)")
         if !ok { failures += 1 }
     } catch {
@@ -42,6 +44,11 @@ run("the Slovak Braille 'n Speak 2000 (its state made with the English recipe)",
     expect: ["braillenspeak-sk"])
 run("the German Braille Lite", ["blazie/german/Lite2000.BNS"], expect: ["braillelite-de"])
 run("the Italian Braille Lite", ["blazie/italian/Lite2000.BNS"], expect: ["braillelite-it"])
+// the release table's: a release voice (its state by its own recipe), and a release kept for the unit tab alone
+run("the Hungarian Braille Lite (a release voice)", ["blazie/bl2000/BL2HUN.BNS"], expect: ["braillelite-hu"],
+    kept: ["BL2HUN.BNS", "bl2_hu_1999_07.state", "BL2HUN.BNS.label"])
+run("the Japanese Braille Lite (the unit tab's alone, beside the Hungarian)", ["blazie/bl2000/BL2JPN.BNS"],
+    expect: ["braillelite-hu"], kept: ["units/bl2_ja.BNS", "units/bl2_ja.BNS.label"])
 if let d = disks {
     run("the Mockingboard from the toolkit's disk image", ["Sweet Micro Systems Mockingboard Developers toolkit 1984.dsk"],
         expect: ["mockingboard"], from: d)

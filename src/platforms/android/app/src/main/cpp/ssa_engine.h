@@ -66,7 +66,20 @@ typedef struct ssa_engine ssa_engine;
 #define SSA_GERMAN 7                   /* Lite2000_de.BNS + lite2000_de_fresh.state (0.8) */
 #define SSA_ITALIAN 8                  /* Lite2000_it.BNS + lite2000_it_fresh.state */
 #define SSA_SLOVAK 9                   /* the Braille 'n Speak 2000's BS2SLL.BNS + bs2sll_fresh.state */
-#define SSA_VOICES 10
+/* Then the Braille Lite voices the release table gives (src/csrc/blazie/bl_languages.txt: Hungarian, Turkish, ...;
+   voices.c's voices_blazie.h, voice ids blazie:blazie_hu ...), one per row that names a new voice, in the table's order
+   from SSA_RELEASE_FIRST: each a Braille Lite 2000 unit as the three above, its files the one a person brings and its
+   state, under the release's own names (ssa_voice_file: BL2HUN.BNS + bl2_hu_1999_07.state). */
+#define SSA_RELEASE_FIRST 10
+#define SSA_RELEASE_VOICES 17          /* = voices_blazie.h's SSV_BLAZIE_RELEASE_VOICES (checked when compiled) */
+#define SSA_VOICES (SSA_RELEASE_FIRST + SSA_RELEASE_VOICES)
+/* A release voice's row in the release table (bl_firmware.h blv_release_*), or -1; and back: a row's voice, or -1
+   (a release that names no new voice: a shipped voice's, or the emulator's only). */
+int ssa_voice_release(int voice);
+int ssa_release_voice(int release);
+/* The voice's i-th file in the data folder (its firmware, then its state) into out: 1, or 0 past the last (and for
+   the voices kept in memory, the Accents'). */
+int ssa_voice_file(int voice, int i, char *out, int cap);
 
 /* The imported files' names in the data folder (the Speak-Out's and the Mockingboard's: SsiImport writes them there;
    the Mockingboard's is mb_host.h's MB_FILE). */

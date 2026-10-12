@@ -6,7 +6,7 @@
 // real judgement has its own tests on the real files (test_apple_speech.py, test_android_native.py).
 //
 //     sh src/platforms/apple/test/run_swift_tests.sh                      every case
-//     SSI263_IMPORT_BREAK=1|state|speakout|accent sh .../run_swift_tests.sh    the controls: each must FAIL
+//     SSI263_IMPORT_BREAK=1|state|speakout|accent|release sh .../run_swift_tests.sh   the controls: each must FAIL
 
 import Compression
 import Foundation
@@ -83,7 +83,8 @@ func bytes(_ s: String) -> Data { s.data(using: .isoLatin1)! }
 func filled(_ n: Int, _ f: (Int) -> UInt8) -> Data { Data((0..<n).map(f)) }
 
 /// A made-up image: the signature, then E (English, the newest release), e (an older English release on the list),
-/// S (Spanish), U (a Braille Lite 2000 release not on the list) or T (Type 'n Speak).
+/// S (Spanish), U (a Braille Lite 2000 release not on the list), H (Hungarian: a release voice), J (Japanese: a
+/// release no voice speaks, the unit tab's alone) or T (Type 'n Speak).
 func image(_ kind: Character) -> Data {
     Data([0xF3, 0xC3, 0x32, 0x03, 0xFF]) + bytes("COPYRIGHT") + bytes(String(kind)) + filled(1000) { UInt8(($0 * 7) & 0xFF) }
 }
@@ -170,6 +171,8 @@ struct Fake: FirmwareImport.Identify {
         case "G": (kind, label) = (FirmwareImport.german, Fake.labels[3])
         case "I": (kind, label) = (FirmwareImport.italian, Fake.labels[4])
         case "K": (kind, label) = (FirmwareImport.slovak, Fake.labels[5])
+        case "H": (kind, label) = (FirmwareImport.release + Fake.hungarian, "Braille Lite Hungarian")
+        case "J": (kind, label) = (FirmwareImport.release + Fake.japanese, "Braille Lite Japanese")
         case "U": return (FirmwareImport.unknown, "not a release this app knows")
         default: return (FirmwareImport.refused, "not a release this voice can run")
         }
@@ -178,6 +181,20 @@ struct Fake: FirmwareImport.Identify {
     }
 
     func known() -> [String] { Fake.labels }
+
+    /// Two rows of a made-up release table: a release voice (its voice number made up too), and one no voice speaks.
+    static let hungarian = 7, japanese = 20
+    func release(_ row: Int) -> FirmwareImport.Release? {
+        switch row {
+        case Fake.hungarian:
+            return FirmwareImport.Release(id: "bl2_hu_1999_07", name: "Braille Lite 2000 (Hungarian)",
+                                          file: "BL2HUN.BNS", voice: 21)
+        case Fake.japanese:
+            return FirmwareImport.Release(id: "bl2_ja", name: "Braille Lite 2000 (Japanese)", file: "BL2JPN.BNS",
+                                          voice: -1)
+        default: return nil
+        }
+    }
 }
 
 // ---- the harness ---------------------------------------------------------------------------------------------------
@@ -601,6 +618,36 @@ test("eachBlazieUnitHasFilesOfItsOwnAndAState") {
     eq(FirmwareImport.name(of: IT), "Italian Braille Lite")
     eq(FirmwareImport.name(of: SK), "Slovak Braille 'n Speak 2000")
     eq(FirmwareImport.name(of: SO), "Speak-Out")
+}
+
+// ---- the release table's other releases: a release voice's (Hungarian ...), or the unit tab's alone -------------
+
+let HU = FirmwareImport.release + Fake.hungarian, JA = FirmwareImport.release + Fake.japanese
+
+test("aReleaseVoiceIsTakenWithItsOwnFiles") {
+    let plan = inspect("BL2HUN.BNS", bns("H"))
+    eq(plan.refusal, nil)
+    eq(kinds(plan), [HU])
+    let kept = FirmwareImport.keptAs(HU, Fake())
+    eq(kept?.file, "BL2HUN.BNS")
+    eq(kept?.state, "bl2_hu_1999_07.state")
+    eq(FirmwareImport.name(of: HU, Fake()), "Braille Lite 2000 (Hungarian)")
+}
+
+test("aReleaseNoVoiceSpeaksIsKeptForTheUnitTab") {
+    let plan = inspect("BL2JPN.BNS", bns("J"))
+    eq(plan.refusal, nil)
+    eq(kinds(plan), [JA])
+    let kept = FirmwareImport.keptAs(JA, Fake())
+    eq(kept?.file, "units/bl2_ja.BNS")
+    eq(kept?.state, nil)
+}
+
+test("releasesComeAfterTheShippedUnitsInOneZip") {
+    let plan = inspect("bl2000.zip", zip([("BL2JPN.BNS", bns("J")), ("BL2HUN.BNS", bns("H")),
+                                          ("BL2ENG.BNS", bns("E"))]))
+    eq(kinds(plan), [E, HU, JA])
+    eq(plan.notes, [])
 }
 
 // ---- the Accents: Aicom's files, which the Apple apps never carry ------------------------------------------------

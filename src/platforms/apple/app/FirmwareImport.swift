@@ -6,8 +6,10 @@
 // Braille Lite releases and ssa_import.c's SPEAKOUT.HEX) behind `Identify`, by content and never by name.
 //
 // Only the Blazie releases on the native side's list are taken (the Braille Lite in English, Spanish, German and
-// Italian, the Slovak Braille 'n Speak 2000), only GW Micro's known SPEAKOUT.HEX, the Mockingboards' two known files
-// and only Aicom's own files, and never a unit's state: the app always makes its own from the firmware (Tomi, 2026-09-30).  MIT.
+// Italian, the Slovak Braille 'n Speak 2000, and every other release the table lists: a release voice's, Hungarian
+// and the others, or one the Braille Lite unit tab runs alone), only GW Micro's known SPEAKOUT.HEX, the Mockingboards'
+// two known files and only Aicom's own files, and never a unit's state: the app always makes its own from the
+// firmware (Tomi, 2026-09-30).  MIT.
 
 import Foundation
 
@@ -26,6 +28,7 @@ enum FirmwareImport {
     static let accentU3 = 11                // its dictionary, part 1
     static let accentU4 = 12                // its dictionary, part 2
     static let accentMini = 13              // the Accent-mini's SPKEMS.DVC
+    static let release = 100                // + a release's row (ssp_import.h's SSP_FW_RELEASE): no shipped voice
     static let none = -1                    // no firmware in the bytes
     static let refused = -2                 // Blazie firmware, but another unit's: not one the voice can run
     static let unknown = -4                 // Braille Lite 2000 firmware, but not a release on the list
@@ -67,7 +70,8 @@ enum FirmwareImport {
     /// to get them, and never which package carries what.
     static let whatToChoose = "Choose firmware files you own. For the Braille Lite 2000: its update program (such " +
         "as blt2000.exe), or the BL2ENG.BNS (English), BL2SPA.BNS (Spanish) or Lite2000.BNS (German, Italian) " +
-        "inside it. For the Slovak Braille 'n Speak 2000: BS2SLL.BNS. For the Speak-Out: GW Micro's SPEAKOUT.HEX, " +
+        "inside it, or one of its language updates (BL2HUN.BNS, BL2POL.BNS and the others). For the Slovak " +
+        "Braille 'n Speak 2000: BS2SLL.BNS. For the Speak-Out: GW Micro's SPEAKOUT.HEX, " +
         "or the speakout.zip holding it. For the Mockingboard: your own copy of the Mockingboard Developers " +
         "Toolkit disk, as its image (.dsk, .do or .po), or the mockingboard-tts-1.1.bin made from it; for the early " +
         "Mockingboard, your own copy of Mockingboard disk 1, or the mockingboard-tts-early.bin made from it. For " +
@@ -78,7 +82,7 @@ enum FirmwareImport {
     /// The host-side tests' controls (SSI263_IMPORT_BREAK; never set in the app): `1` looks at a zip's top only -- no
     /// folder down, no add-on layout -- so the layout tests must fail; `state` stops knowing a state file;
     /// `speakout` drops what the native side says is the Speak-Out's; `mockingboard` both Mockingboards'; `accent`
-    /// drops Aicom's files.
+    /// drops Aicom's files; `release` the releases with no shipped voice.
     static var control = ProcessInfo.processInfo.environment["SSI263_IMPORT_BREAK"] ?? ""
 
     /// What the native side says about some bytes: the app's NativeIdentify, a fake in the tests.
@@ -88,10 +92,34 @@ enum FirmwareImport {
         func firmware(_ data: Data, out: URL) -> (Int, String)
         /// The Blazie releases on the list, by label, newest first.
         func known() -> [String]
+        /// A release found as `release` + its row: the table's words for it (blv_release_*).
+        func release(_ row: Int) -> Release?
     }
 
-    /// The unit, in words: "German Braille Lite", "Slovak Braille 'n Speak 2000", the others by their own names.
-    static func name(of found: Int) -> String {
+    /// A release with no shipped voice, as the table has it.
+    struct Release {
+        let id: String                      // "bl2_hu_1999_07": its files' names
+        let name: String                    // "Braille Lite 2000 (Hungarian)"
+        let file: String                    // "BL2HUN.BNS": the file a person brings
+        let voice: Int                      // its voice (ssa_release_voice), or -1: the unit tab's alone
+    }
+
+    static func isRelease(_ kind: Int) -> Bool { kind >= release }
+
+    /// Where a found firmware is kept in the unit folder, and its state beside it when the app makes one: the
+    /// shipped kinds' `files` and `stateFiles`; a release voice's under the name a person brings and its id
+    /// (ssa_voice_file's: BL2HUN.BNS, bl2_hu_1999_07.state); a release no voice speaks under units/, by its id,
+    /// with no state (the unit tab makes its own on first start).
+    static func keptAs(_ kind: Int, _ id: Identify) -> (file: String, state: String?)? {
+        guard isRelease(kind) else { return files[kind].map { ($0, stateFiles[kind]) } }
+        guard let r = id.release(kind - release) else { return nil }
+        return r.voice >= 0 ? (r.file, r.id + ".state") : ("units/" + r.id + ".BNS", nil)
+    }
+
+    /// The unit, in words: "German Braille Lite", "Slovak Braille 'n Speak 2000", a release by the table's name, the
+    /// others by their own names.
+    static func name(of found: Int, _ id: Identify? = nil) -> String {
+        if isRelease(found) { return id?.release(found - release)?.name ?? "Braille Lite" }
         switch found {
         case slovak: return "Slovak Braille 'n Speak 2000"
         case _ where blazie.contains(found): return "\(languageName(found)) Braille Lite"
@@ -189,7 +217,8 @@ enum FirmwareImport {
             var (kind, text) = id.firmware(bytes, out: out)
             if (control == "speakout" && kind == speakout)
                 || (control == "mockingboard" && (kind == mockingboard || kind == mockingboardEarly))
-                || (control == "accent" && kind >= accentU2) {
+                || (control == "accent" && (accentU2...accentMini).contains(kind))
+                || (control == "release" && isRelease(kind)) {
                 kind = FirmwareImport.none
                 text = ""
             }
@@ -251,7 +280,7 @@ enum FirmwareImport {
             // One release per kind: the list's first (the newest) when a source holds two.
             let rank = id.known()
             func r(_ label: String) -> Int { rank.firstIndex(of: label) ?? Int.max }
-            for kind in order {
+            for kind in order + Set(firmware.map { $0.kind }.filter(isRelease)).sorted() {
                 guard let c = firmware.filter({ $0.kind == kind }).min(by: { r($0.label) < r($1.label) }) else {
                     continue
                 }

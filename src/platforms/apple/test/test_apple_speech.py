@@ -10,11 +10,16 @@
   desktop -- and a stop: nothing after it (-2, and again -2), and the next request clean.
 - Aicom's files (ssp_import): each known by its sha256 under any name, one changed byte not, and the Braille Lite's,
   the Speak-Out's and the Mockingboard's still judged as Android judges them -- the Mockingboard's file, and the
-  toolkit's disk image (MOCKINGBOARD_DISKS in paths.local) in DOS and ProDOS order, a blank disk and another disk.
+  toolkit's disk image (MOCKINGBOARD_DISKS in paths.local) in DOS and ProDOS order, a blank disk and another disk;
+  a Braille Lite 2000 release with no shipped voice (a release voice's, and one no voice speaks) as SSP_FW_RELEASE
+  plus its row (import-2 drops them).
+- The release voices (release_voices.py: Hungarian, Turkish, ... whose firmware is in the firmware folder, their
+  states made once and checked against the table): each one's requests as every voice's, and each one speaks.
 
     sh src/platforms/apple/build_apple.sh macos            first
     python src/platforms/apple/test/test_apple_speech.py
-    SSI263_APPLE_SPEECH_BREAK=ssml-1|ssml-2|speech-1|speech-2|import python ...     the controls: each must FAIL
+    SSI263_APPLE_SPEECH_BREAK=ssml-1|ssml-2|speech-1|speech-2|import|import-2 python ...   the controls: each must
+                                                                                           FAIL
 
 Options: --firmware <folder> (default $SSI263_FIRMWARE, else firmware/blazie), --aicom <folder> (default
 firmware/aicom-accent-sa).
@@ -30,6 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
 sys.path.insert(0, os.path.join(REPO, "src", "platforms", "android", "test"))
 import test_android_native as tan  # noqa: E402
+import release_voices  # noqa: E402
 
 LIB = os.path.join(REPO, "build", "apple", "slices", "macos-arm64", "libssi263core.a")
 CORE = os.path.join(REPO, "src", "platforms", "apple", "core")
@@ -84,6 +90,9 @@ PARSE = [
 ]
 
 
+SSP_FW_RELEASE = 100                    # ssp_import.h's
+
+
 def build():
     if not os.path.isfile(LIB):
         sys.exit("no %s: run sh src/platforms/apple/build_apple.sh macos first" % os.path.relpath(LIB, REPO))
@@ -124,7 +133,7 @@ def check_parse(exe, env):
     return bad
 
 
-def check_speak(exe, data, aicom, env):
+def check_speak(exe, data, aicom, env, releases=()):
     args = [exe, "--speak", data, aicom] + ([tan.MINI_DVC] if os.path.isfile(tan.MINI_DVC) else [])
     out = subprocess.run(args, capture_output=True, text=True, env=env)
     if out.returncode:
@@ -154,12 +163,18 @@ def check_speak(exe, data, aicom, env):
         if not ok:
             print("FAIL  speak  %s: off %d, short %d, long %d samples: the pauses not heard" % (v, off, short, lng))
         bad += not ok
+    # every release voice whose files are there is offered, and speaks
+    mute = [key for key, _ in releases if rows.get(key + "-phrases", (0,))[0] == 0]
+    if releases:
+        print("%-5s speak  the %d release voices each spoke%s" % ("ok" if not mute else "FAIL", len(releases),
+                                                                 ": not " + ", ".join(mute) if mute else ""))
+    bad += bool(mute)
     print("%-5s speak  %d requests on %d voices: the segments' own PCM with the pauses between, a stop that holds" % (
         "ok" if not bad else "FAIL", cases, len({k.split("-")[0] for k in rows})))
     return bad
 
 
-def check_import(exe, data, tmp, env):
+def check_import(exe, data, tmp, env, firmware=None):
     out = os.path.join(tmp, "imported.bin")
     cases = []
     for name in ("u2.BIN", "u3.BIN", "u4.BIN"):
@@ -204,12 +219,17 @@ def check_import(exe, data, tmp, env):
             cases.append(("another Mockingboard disk (disk 2)", other, -7))
     else:
         print("skip  import the toolkit's disk image: MOCKINGBOARD_DISKS (paths.local) does not have it")
+    # a release with no shipped voice: a release voice (its own row past SSP_FW_RELEASE), and one no voice speaks,
+    # kept for the unit tab the same way
+    if firmware:
+        for k, r, bns in release_voices.voices(firmware)[:1] + [u for u in [release_voices.unit_only(firmware)] if u]:
+            cases.append(("%s (%s)" % (os.path.basename(bns), r["id"]), bns, SSP_FW_RELEASE + k))
     bad = 0
     for label, path, want in cases:
         r = subprocess.run([exe, "--import", path, out], capture_output=True, text=True, env=env).stdout.strip()
         got = int(r.split()[0]) if r and r.split()[0].lstrip("-").isdigit() else None
         same = want < 0 or (os.path.isfile(out) and open(out, "rb").read() == open(path, "rb").read()
-                            if want >= 10 else True)
+                            if 10 <= want < SSP_FW_RELEASE else True)
         ok = got == want and same
         print("%-5s import %s: %s" % ("ok" if ok else "FAIL", label, r))
         bad += not ok
@@ -228,7 +248,9 @@ def main():
     tmp = tempfile.mkdtemp(prefix="ssi263-apple-speech-")
     try:
         data = tan.data_folder(a.firmware, tmp)
-        bad = check_parse(exe, env) + check_speak(exe, data, a.aicom, env) + check_import(exe, data, tmp, env)
+        releases, bad = release_voices.add(data, a.firmware)
+        bad += check_parse(exe, env) + check_speak(exe, data, a.aicom, env, releases) + \
+            check_import(exe, data, tmp, env, a.firmware)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("FAILED: %d" % bad if bad else "the Apple front end's C speaks as the voices do, with VoiceOver's pauses")

@@ -12,7 +12,13 @@ imports the firmware they own, recognised by content (SHA-256), never by name.
 
 Ten voices, each speaking one language, offered to the system only once their firmware is imported: the Braille
 Lite 2000 in English, Spanish, German and Italian, the Slovak Braille 'n Speak 2000, the Speak-Out, the Mockingboard
-(1.1 and early) and the two Accents. Languages work as in TGSpeechBox's speech extension. Each voice is offered once
+(1.1 and early) and the two Accents. Then the Braille Lite 2000's language updates: one voice per language the
+release table names a voice for (`src/csrc/blazie/bl_languages.txt`: Hungarian, Turkish, Polish and 14 more), read
+from the library (`blv_release_*`, `ssa_release_voice`), never listed in Swift. Each is offered under the system's
+own locale for its language (hu-HU; Arabic as ar-001, Norwegian as nb-NO, Portuguese as pt-PT beside Brazil's
+pt-BR). The Setup list shows each voice's file (`BL2HUN.BNS — not imported`); the languages not yet imported wait
+behind "Show all Braille Lite importable languages". A release no voice speaks yet (the betas, Japanese) is still
+imported, kept under `units/` for the Braille Lite unit tab. Languages work as in TGSpeechBox's speech extension. Each voice is offered once
 per locale it speaks: the English voices as en-US, en-GB, en-AU and en-CA, and the Spanish Braille Lite as es-ES and
 es-MX. The locale ends the voice's identifier (`com.ssi263speech.braillelite.de-de`), and VoiceOver switches language
 by choosing another voice for the next request. `<lang>` elements inside a request are not switched on. "Lock
@@ -58,10 +64,10 @@ carries no firmware at all (Android's checks, plus Aicom's files). The icon is d
     python src/platforms/apple/test/test_apple_core.py [--simulator]
     SSI263_APPLE_TEST_BREAK=1 python src/platforms/apple/test/test_apple_core.py      control: must FAIL
     python src/platforms/apple/test/test_apple_speech.py
-    SSI263_APPLE_SPEECH_BREAK=ssml-1|ssml-2|speech-1|speech-2|import python ...       controls: each must FAIL
+    SSI263_APPLE_SPEECH_BREAK=ssml-1|ssml-2|speech-1|speech-2|import|import-2 python ...   controls: each must FAIL
     sh src/platforms/apple/test/run_swift_tests.sh                                     the import, in Swift
     sh src/platforms/apple/test/test_installer.sh                  the app's import on the real firmware, as the app runs it
-    SSI263_IMPORT_BREAK=1|state|speakout|accent sh src/platforms/apple/test/run_swift_tests.sh   controls: must FAIL
+    SSI263_IMPORT_BREAK=1|state|speakout|accent|release sh src/platforms/apple/test/run_swift_tests.sh   controls
 
 `test_apple_core.py` links Android's host-side program (`test_android_native.c`) against each runnable slice's
 `libssi263core.a`, the library the apps link, and requires every case's samples and PCM hash to be the desktop
@@ -78,7 +84,11 @@ must fail.
 - **Speaking:** every voice whose files are there speaks each request byte for byte as its segments through
   `ssa_start`/`ssa_pull` directly, with the pauses' zeros between them. A stop holds, and off, short and long differ
   in length.
-- **Import:** each of Aicom's files is known by its sha256 under any name, but not with one byte changed.
+- **Import:** each of Aicom's files is known by its sha256 under any name, but not with one byte changed; a release
+  with no shipped voice (a release voice's, and one no voice speaks) comes back as `SSP_FW_RELEASE` plus its row.
+- **The release voices:** every one whose firmware is in the firmware folder (`release_voices.py`: found by content,
+  its state made once by the desktop library and kept in `build/apple/test/release-states` only while its sha256 is
+  the table's) speaks each request as every voice does.
 
 `run_swift_tests.sh` compiles the app's import (`FirmwareImport.swift`, `ZipReader.swift`) with
 `FirmwareImportTests.swift`: every case of Android's `FirmwareImportTest.kt` (the zip layouts, the add-on, update
@@ -107,4 +117,5 @@ Windows DLLs: `SSI263_ANDROID_TEST_ONLY=bl,ra,num,so,mini,import`.
 | `test/test_apple_core.py` | Each runnable slice against the desktop program, byte for byte, with its control |
 | `test/InstallerTests.swift`, `test_installer.sh` | The app's FirmwareInstaller (inspect, then the Job's commit: the Braille Lite's state made and checked, each unit heard) on the repository's firmware against the macos-arm64 slice, in a temporary folder in place of the App Group's |
 | `test/FirmwareImportTests.swift`, `run_swift_tests.sh` | The import's layouts and words with a fake native side, the zip forms and the real tools' zips; the controls |
-| `test/test_apple_speech.c`, `.py` | The Apple front end's own C: the SSML and pauses, each voice's requests against their segments' own PCM, a stop, Aicom's files; the controls |
+| `test/test_apple_speech.c`, `.py` | The Apple front end's own C: the SSML and pauses, each voice's requests against their segments' own PCM, a stop, Aicom's files, the releases; the controls |
+| `test/release_voices.py` | The release voices' files for the tests: each .BNS found by content, its state made once and checked against the table |

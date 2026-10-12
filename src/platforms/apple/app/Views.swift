@@ -37,24 +37,35 @@ struct SetupView: View {
     @State private var picking = false
     @State private var confirmRemove = false
     @State private var showLicenses = false
+    @State private var allLanguages = false
     @AppStorage(SsiShared.Key.voice, store: SsiShared.defaults()) private var previewVoice = "accentsa"
     @State private var text = "Hello there. This is the SSI-263, speaking on Apple."
 
     var body: some View {
         Form {
             Section {
-                ForEach(model.voices) { v in
+                // the release voices (the Braille Lite's many languages) only once imported, or when asked for all:
+                // nobody scrolls through thirty rows to find a file name (Tomi)
+                let languages = model.voices.filter { $0.voice.release >= 0 }
+                ForEach(model.voices.filter { $0.voice.release < 0 || $0.label != nil || allLanguages }) { v in
                     VStack(alignment: .leading) {
-                        Text(v.voice.name).font(.headline)
-                        Text(v.label ?? "Not imported").font(.subheadline)
+                        Text(v.voice.listName).font(.headline)
+                        Text(v.voice.bring + " — " + (v.label ?? "not imported")).font(.subheadline)
                     }
                     .accessibilityElement(children: .combine)
+                }
+                if languages.contains(where: { $0.label == nil }) {
+                    Button(allLanguages ? "Hide the Braille Lite languages not imported"
+                           : "Show all Braille Lite importable languages (\(languages.count))") {
+                        allLanguages.toggle()
+                    }
                 }
             } header: {
                 Text("Voices").accessibilityAddTraits(.isHeader)
             } footer: {
                 Text("This app carries no firmware. Each voice speaks once you import the firmware you own: the " +
-                     "Braille Lite 2000's, GW Micro's Speak-Out's, Aicom's for the Accent SA and Accent-mini, and " +
+                     "Braille Lite 2000's and its language updates, GW Micro's Speak-Out's, Aicom's for the Accent " +
+                     "SA and Accent-mini, and " +
                      "for the Mockingboard, your own copy of the Mockingboard Developers Toolkit disk.")
             }
 

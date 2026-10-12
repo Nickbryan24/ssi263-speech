@@ -22,6 +22,15 @@ struct NativeIdentify: FirmwareImport.Identify {
         (0..<Int(blv_firmware_count())).filter { blv_firmware_language(Int32($0)) >= 0 }
             .compactMap { blv_firmware_label(Int32($0)).map { String(cString: $0) } }
     }
+
+    func release(_ row: Int) -> FirmwareImport.Release? {
+        let k = Int32(row)
+        guard let id = blv_release_id(k), let name = blv_release_name(k), let file = blv_release_file(k) else {
+            return nil
+        }
+        return FirmwareImport.Release(id: String(cString: id), name: String(cString: name),
+                                      file: String(cString: file), voice: Int(ssa_release_voice(k)))
+    }
 }
 
 enum FirmwareInstaller {
@@ -61,7 +70,8 @@ enum FirmwareInstaller {
         }
         if plans.count == 1 { return plans[0].1 }
         var found: [FirmwareImport.Found] = []
-        for kind in FirmwareImport.order {
+        let releases = Set(plans.flatMap { $0.1.found.map { $0.kind } }.filter(FirmwareImport.isRelease)).sorted()
+        for kind in FirmwareImport.order + releases {
             if let f = plans.lazy.compactMap({ $0.1.found.first { $0.kind == kind } }).first { found.append(f) }
         }
         let notes = plans.flatMap { $0.1.notes }
@@ -85,10 +95,20 @@ enum FirmwareInstaller {
     }
 
     /// Spanish's state is 1150 million Z180 instructions, every other Blazie unit's English's 150 million (German,
-    /// Italian and Slovak run English's recipe or one as long); the rest only a check.
+    /// Italian and Slovak run English's recipe or one as long); a release voice's as Spanish's, the slow recipe's
+    /// twelve answers being as long; the rest only a check.
     private static func weight(_ kind: Int) -> Double {
-        kind == FirmwareImport.spanish ? 1150 : FirmwareImport.blazie.contains(kind) ? 150 : 15
+        kind == FirmwareImport.spanish || isReleaseVoice(kind) ? 1150 : FirmwareImport.blazie.contains(kind) ? 150 : 15
     }
+
+    /// A release voice found (Hungarian ...): its ssa_engine voice, else nil.
+    private static func releaseVoice(_ kind: Int) -> Int32? {
+        guard FirmwareImport.isRelease(kind) else { return nil }
+        let v = ssa_release_voice(Int32(kind - FirmwareImport.release))
+        return v >= 0 ? v : nil
+    }
+
+    private static func isReleaseVoice(_ kind: Int) -> Bool { releaseVoice(kind) != nil }
 
     /// The units heard once before they are taken: the Blazie units, the Speak-Out and the Mockingboards (the
     /// Accents' files are known by their sha256 alone, and the Accent SA needs all three).
@@ -143,28 +163,40 @@ enum FirmwareInstaller {
             try fm.createDirectory(at: ready, withIntermediateDirectories: true)
             defer { try? fm.removeItem(at: staging) }
             var labels: [String] = []
+            let id = NativeIdentify()
             for f in plan.found {
-                let name = FirmwareImport.name(of: f.kind)
-                let file = FirmwareImport.files[f.kind]!
+                let name = FirmwareImport.name(of: f.kind, id)
+                guard let (file, stateFile) = FirmwareImport.keptAs(f.kind, id) else {
+                    throw Failure(message: "\(name) has no place in this app.")
+                }
                 let target = ready.appendingPathComponent(file)
+                try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try? fm.removeItem(at: target)
                 try fm.moveItem(at: f.firmware, to: target)
                 let w = weight(f.kind)
-                if let stateFile = FirmwareImport.stateFiles[f.kind] {
+                if let stateFile = stateFile {
                     say("Preparing the \(name) unit")
                     let state = ready.appendingPathComponent(stateFile)
                     var err = [CChar](repeating: 0, count: 256)
                     let me = Unmanaged.passUnretained(self).toOpaque()
                     making = w
-                    // the state's recipe, from the voice (ssa_blazie_recipe: a language is neither a voice index nor a
-                    // recipe -- the Slovak unit runs the English one)
-                    let recipe = ssa_blazie_recipe(Int32(f.kind))
-                    if recipe < 0 { throw Failure(message: "The \(name) unit has no way to be prepared.") }
-                    let ok = blv_make_state(target.path, recipe, state.path, { ctx, done in
+                    let progress: blv_state_progress = { ctx, done in
                         let job = Unmanaged<Job>.fromOpaque(ctx!).takeUnretainedValue()
                         job.advance(done)
                         return job.cancelled ? 1 : 0
-                    }, me, &err, Int32(err.count)) == 1
+                    }
+                    let ok: Bool
+                    if FirmwareImport.isRelease(f.kind) {
+                        // a release voice's: its own recipe, the table's (blv_make_release_state)
+                        ok = blv_make_release_state(target.path, Int32(f.kind - FirmwareImport.release), state.path,
+                                                    progress, me, &err, Int32(err.count)) == 1
+                    } else {
+                        // the state's recipe, from the voice (ssa_blazie_recipe: a language is neither a voice index
+                        // nor a recipe -- the Slovak unit runs the English one)
+                        let recipe = ssa_blazie_recipe(Int32(f.kind))
+                        if recipe < 0 { throw Failure(message: "The \(name) unit has no way to be prepared.") }
+                        ok = blv_make_state(target.path, recipe, state.path, progress, me, &err, Int32(err.count)) == 1
+                    }
                     making = 0
                     if cancelled { throw CancellationError() }
                     if !ok { throw Failure(message: "The \(name) unit could not be prepared: \(String(cString: err)).") }
@@ -174,10 +206,11 @@ enum FirmwareInstaller {
                                       "was tested with, so it was not imported.")
                     }
                 }
-                if probed.contains(f.kind) {
+                if probed.contains(f.kind) || isReleaseVoice(f.kind) {
                     say("Checking that the \(name) unit speaks")
                     var err = [CChar](repeating: 0, count: 256)
-                    let voice = Int32(f.kind)    // the found kind is ssa_engine's voice for every probed unit
+                    // the found kind is ssa_engine's voice for every probed shipped unit; a release voice's its own
+                    let voice = releaseVoice(f.kind) ?? Int32(f.kind)
                     let samples = ssa_probe(ready.path, voice, probeText(f.kind), nil, &err, Int32(err.count))
                     if samples < 0 {
                         throw Failure(message: "The \(name) unit would not start: \(String(cString: err)).")
@@ -193,14 +226,24 @@ enum FirmwareInstaller {
                 if cancelled { throw CancellationError() }
             }
             say("Moving the firmware into place")
-            try fm.createDirectory(at: unit, withIntermediateDirectories: true)
-            for item in try fm.contentsOfDirectory(at: ready, includingPropertiesForKeys: nil) {
-                let dest = unit.appendingPathComponent(item.lastPathComponent)
-                try? fm.removeItem(at: dest)
-                try fm.moveItem(at: item, to: dest)
-            }
+            try move(ready, into: unit)
             SsiShared.repairProtection()
             return labels
+        }
+    }
+
+    /// Every file in `from` moved into `to`, a folder's files one by one (units/ keeps the releases imported before).
+    private static func move(_ from: URL, into to: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: to, withIntermediateDirectories: true)
+        for item in try fm.contentsOfDirectory(at: from, includingPropertiesForKeys: [.isDirectoryKey]) {
+            let dest = to.appendingPathComponent(item.lastPathComponent)
+            if (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                try move(item, into: dest)
+                continue
+            }
+            try? fm.removeItem(at: dest)
+            try fm.moveItem(at: item, to: dest)
         }
     }
 

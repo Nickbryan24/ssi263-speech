@@ -41,13 +41,18 @@ enum SsiShared {
     // ---- the voices -------------------------------------------------------------------------------------------------
 
     struct Voice {
-        let index: Int32                // ssa_engine.h's SSA_ENGLISH ... SSA_SLOVAK
+        let index: Int32                // ssa_engine.h's SSA_ENGLISH ... SSA_SLOVAK, then the release voices'
         let key: String                 // the system voice's identifier: com.ssi263speech.<key>.<bcp47>
         let name: String                // the app's name for it (voices.h's)
         let short: String               // the system's, before the locale: "Braille Lite 2000 (de-DE)"
         let locales: [String]           // BCP 47: the first the voice's own, the rest regional variants it is offered as
         let files: [String]             // in the unit folder (ssa_engine.c's names)
+        let bring: String               // the file a person is expected to bring, for the firmware list
+        var release: Int32 = -1         // a release voice's row in the release table (blv_release_*), else -1
         var language: String { locales[0] }
+        /// The firmware list's name: a release voice's in English, as the table names its release ("Braille Lite
+        /// 2000 (Hungarian)"), so the list reads in one language; every other voice's own.
+        var listName: String { release >= 0 ? blv_release_name(release).map { String(cString: $0) } ?? name : name }
     }
 
     /// TGSpeechBox's English and Spanish variants (its TGSBAudioUnit.languageMap): each voice is offered once per
@@ -55,29 +60,69 @@ enum SsiShared {
     private static let english = ["en-US", "en-GB", "en-AU", "en-CA"]
     private static let spanish = ["es-ES", "es-MX"]
 
-    /// Every voice the app knows, in the order the app lists them (ssa_engine.h's indexes).
-    static let voices: [Voice] = [
+    /// Every voice the app knows, in the order the app lists them (ssa_engine.h's indexes): the shipped voices, then
+    /// the release voices.
+    static let voices: [Voice] = shipped + releaseVoices()
+
+    private static let shipped: [Voice] = [
         Voice(index: 0, key: "braillelite", name: "Braille Lite 2000", short: "Braille Lite 2000", locales: english,
-              files: ["BL2ENG.BNS", "bl2_2003_warm.state"]),
+              files: ["BL2ENG.BNS", "bl2_2003_warm.state"], bring: "BL2ENG.BNS"),
         Voice(index: 1, key: "braillelite-es", name: "Braille Lite 2000 (español)", short: "Braille Lite 2000",
-              locales: spanish, files: ["BL2SPA.BNS", "bl2spa_fresh.state"]),
+              locales: spanish, files: ["BL2SPA.BNS", "bl2spa_fresh.state"], bring: "BL2SPA.BNS"),
         Voice(index: 7, key: "braillelite-de", name: "Braille Lite 2000 (Deutsch)", short: "Braille Lite 2000",
-              locales: ["de-DE"], files: ["Lite2000_de.BNS", "lite2000_de_fresh.state"]),
+              locales: ["de-DE"], files: ["Lite2000_de.BNS", "lite2000_de_fresh.state"], bring: "Lite2000.BNS"),
         Voice(index: 8, key: "braillelite-it", name: "Braille Lite 2000 (italiano)", short: "Braille Lite 2000",
-              locales: ["it-IT"], files: ["Lite2000_it.BNS", "lite2000_it_fresh.state"]),
+              locales: ["it-IT"], files: ["Lite2000_it.BNS", "lite2000_it_fresh.state"], bring: "Lite2000.BNS"),
         Voice(index: 9, key: "braillenspeak-sk", name: "Braille 'n Speak 2000 (slovenčina)",
-              short: "Braille 'n Speak 2000", locales: ["sk-SK"], files: ["BS2SLL.BNS", "bs2sll_fresh.state"]),
+              short: "Braille 'n Speak 2000", locales: ["sk-SK"], files: ["BS2SLL.BNS", "bs2sll_fresh.state"],
+              bring: "BS2SLL.BNS"),
         Voice(index: 3, key: "speakout", name: "Speak-Out", short: "Speak-Out", locales: english,
-              files: ["SPEAKOUT.HEX"]),
+              files: ["SPEAKOUT.HEX"], bring: "SPEAKOUT.HEX"),
         Voice(index: 5, key: "mockingboard", name: "Mockingboard (Sweet Micro Systems)", short: "Mockingboard",
-              locales: english, files: ["mockingboard-tts-1.1.bin"]),
+              locales: english, files: ["mockingboard-tts-1.1.bin"], bring: "the Developers Toolkit disk"),
         Voice(index: 6, key: "mockingboard-early", name: "Mockingboard, early (Sweet Micro Systems)",
-              short: "Mockingboard, early", locales: english, files: ["mockingboard-tts-early.bin"]),
+              short: "Mockingboard, early", locales: english, files: ["mockingboard-tts-early.bin"],
+              bring: "Mockingboard disk 1"),
         Voice(index: 2, key: "accentsa", name: "Accent SA", short: "Accent SA", locales: english,
-              files: ["u2.BIN", "u3.BIN", "u4.BIN"]),
+              files: ["u2.BIN", "u3.BIN", "u4.BIN"], bring: "u2.BIN, u3.BIN and u4.BIN"),
         Voice(index: 4, key: "accentmini", name: "Accent-mini", short: "Accent-mini", locales: english,
-              files: ["SPKEMS.DVC"]),
+              files: ["SPKEMS.DVC"], bring: "SPKEMS.DVC"),
     ]
+
+    /// The release voices, from the release table the library carries (bl_languages.txt; never a list kept here):
+    /// one per row that names a new voice, its files and number ssa_engine's (ssa_release_voice, ssa_voice_file).
+    private static func releaseVoices() -> [Voice] {
+        (0..<blv_firmware_count()).compactMap { k -> Voice? in
+            let index = ssa_release_voice(k)
+            guard index >= 0, let key = blv_release_voice_key(k), let name = blv_release_voice_name(k),
+                  let tag = blv_release_tag(k), let file = blv_release_file(k) else { return nil }
+            var files: [String] = []
+            var buf = [CChar](repeating: 0, count: 256)
+            while ssa_voice_file(index, Int32(files.count), &buf, Int32(buf.count)) == 1 {
+                files.append(String(cString: buf))
+            }
+            // blazie_pt_br -> braillelite-pt-br, beside the shipped braillelite-de
+            let own = String(cString: key).dropFirst("blazie_".count).replacingOccurrences(of: "_", with: "-")
+            return Voice(index: index, key: "braillelite-" + own, name: String(cString: name),
+                         short: "Braille Lite 2000", locales: [systemLocale(String(cString: tag))], files: files,
+                         bring: String(cString: file), release: k)
+        }
+    }
+
+    /// A release's language (BCP 47) as the system names its voices' languages: a region given stays (pt-BR,
+    /// ar-AE); else the language's likeliest one (hu-HU, el-GR), except where the system speaks otherwise:
+    /// Arabic is ar-001 and Norwegian nb-NO, and plain Portuguese is Portugal's (Brazil's has its own release).
+    static func systemLocale(_ tag: String) -> String {
+        if tag.contains("-") { return tag }
+        switch tag {
+        case "ar": return "ar-001"
+        case "no", "nb": return "nb-NO"
+        case "pt": return "pt-PT"
+        default:
+            let region = Locale.Language(identifier: Locale.Language(identifier: tag).maximalIdentifier).region
+            return region.map { "\(tag)-\($0.identifier)" } ?? tag
+        }
+    }
 
     /// The system voice's identifier, TGSpeechBox's form: the voice, then the locale it is offered as.
     static let identifierRoot = "com.ssi263speech."
@@ -118,7 +163,7 @@ enum SsiShared {
         #if os(iOS)
         guard let dir = unitFolder else { return }
         let fm = FileManager.default
-        let urls = [dir] + ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+        let urls = [dir] + (fm.enumerator(at: dir, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
         for url in urls {
             let now = (try? fm.attributesOfItem(atPath: url.path))?[.protectionKey] as? FileProtectionType
             if now != FileProtectionType.none {

@@ -10,7 +10,11 @@ row whose firmware is not there is skipped, and said so.  A release with no voic
 through the voices' path (blv_import_firmware), must be refused as BLV_FW_NO_VOICE and leave no file: no language is
 offered without its firmware AND its voice.  Controls (SSI263_RELEASES_TEST_BREAK): 1 answers every setup with n
 instead of the row's letter (blv_make_state_yes), so every state made must differ from its row's; voice hands the
-no-voice releases out as English (blv_firmware_break 2), so the no-voice case must fail.
+no-voice releases out as English (blv_firmware_break 2), so the no-voice case must fail; unit imports for a unit
+through the voices' path (blv_import_firmware for blv_import_release), so the unit case must fail.
+
+Every release found is imported for a unit too (blv_import_release, an emulator's import: Apple's unit tab): each
+must come back as its own row, written as a .BNS that blv_release_of finds as that row -- the no-voice releases kept.
 """
 import argparse
 import ctypes
@@ -29,8 +33,9 @@ import gen_languages  # noqa: E402
 
 WINDOWS = sys.platform == "win32"
 BREAK_MODE = os.environ.get("SSI263_RELEASES_TEST_BREAK", "")
-BREAK = BREAK_MODE not in ("", "voice")           # the states control
+BREAK = BREAK_MODE not in ("", "voice", "unit")   # the states control
 BREAK_VOICE = BREAK_MODE == "voice"               # the no-voice control (blv_firmware_break 2)
+BREAK_UNIT = BREAK_MODE == "unit"                 # the unit control (the voices' import for a unit's)
 FILE_ROM_OFFSET = 0x3000
 PROGRESS = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_double)
 VOICE = {"english": 0, "spanish": 1, "german": 2, "italian": 3, "slovak": 4, "-": -1}
@@ -55,6 +60,7 @@ def load(lib_path, chip_path):
         getattr(lib, name).argtypes = [ctypes.c_int]
     lib.blv_release_of.argtypes = [ctypes.c_char_p]
     lib.blv_import_firmware.argtypes = [ctypes.c_char_p, ctypes.c_long, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
+    lib.blv_import_release.argtypes = lib.blv_import_firmware.argtypes
     ctypes.c_int.in_dll(lib, "blv_firmware_break").value = 2 if BREAK_VOICE else 0
     lib.blv_make_release_state.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, PROGRESS,
                                            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
@@ -160,7 +166,21 @@ def main():
         if mute:
             result(not handed, "no voice offered for the %d releases without one (the emulator's only): each import "
                    "refused as not yet a voice, no file left" % len(mute), ", ".join(handed[:4]))
-        if BREAK_VOICE:
+        # for a unit, every release is kept, the no-voice ones too: each its own row, written where blv_release_of finds it
+        importer = lib.blv_import_firmware if BREAK_UNIT else lib.blv_import_release
+        wrong = []
+        for k in sorted(found):
+            data = open(found[k], "rb").read()
+            msg = ctypes.create_string_buffer(256)
+            r = importer(data, len(data), out.encode(), msg, 256)
+            back = lib.blv_release_of(out.encode()) if os.path.exists(out) else -1
+            if r != k or back != k:
+                wrong.append("%s -> %d, read back %d" % (table[k]["id"], r, back))
+            if os.path.exists(out):
+                os.remove(out)
+        result(not wrong, "blv_import_release: each of %d releases kept for a unit as its own row%s"
+               % (len(found), " (the control: the voices' import)" if BREAK_UNIT else ""), ", ".join(wrong[:4]))
+        if BREAK_VOICE or BREAK_UNIT:
             print("releases: %d FAILED" % bad if bad else "releases: every case as expected")
             sys.exit(1 if bad else 0)
     # the control remakes only the voices' releases (both recipe shapes are among them): enough to fail as named

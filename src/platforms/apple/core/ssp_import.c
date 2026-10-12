@@ -33,7 +33,7 @@ const char *ssp_aicom_file(int found)
 
 int ssp_import_firmware(const unsigned char *data, long n, const char *out, char *msg, int msglen)
 {
-    if (!ssp_import_break && n > 0 && n <= 0x40000) {   /* the largest, SPKEMS.DVC, is 128 KB */
+    if (ssp_import_break != 1 && n > 0 && n <= 0x40000) {   /* the largest, SPKEMS.DVC, is 128 KB */
         unsigned char d[32];
         char hex[65];
         blv_sha256(data, n, d);
@@ -52,5 +52,10 @@ int ssp_import_firmware(const unsigned char *data, long n, const char *out, char
                 return AICOM[i].found;
             }
     }
-    return ssa_import_firmware(data, n, out, msg, msglen);
+    int r = ssa_import_firmware(data, n, out, msg, msglen);
+    if (r == BLV_FW_UNKNOWN && ssp_import_break != 2) {   /* a release with no shipped voice, or not on the list */
+        int k = blv_import_release(data, n, out, msg, msglen);
+        return k >= 0 ? SSP_FW_RELEASE + k : k;
+    }
+    return r;
 }

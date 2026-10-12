@@ -10,12 +10,13 @@
  *     test_apple_speech --import <file> <out>   ssp_import_firmware's judgement
  *
  * SSI263_APPLE_SPEECH_BREAK puts one bug back (test_apple_speech.py's controls): ssml-1, ssml-2 (ssp_ssml_break),
- * speech-1, speech-2 (ssp_speech_break), import (ssp_import_break).
+ * speech-1, speech-2 (ssp_speech_break), import, import-2 (ssp_import_break 1, 2).
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "blazie/bl_firmware.h"
 #include "ssa_engine.h"
 #include "ssp_import.h"
 #include "ssp_speech.h"
@@ -136,7 +137,13 @@ static void spoken(ssp_speech *p, int voice, const ssp_request *r, const ssa_set
     }
 }
 
-static const char *VOICE_NAMES[SSA_VOICES] = {"en", "es", "sa", "so", "mini", "mb", "mbe", "de", "it", "sk"};
+static const char *VOICE_NAMES[SSA_RELEASE_FIRST] = {"en", "es", "sa", "so", "mini", "mb", "mbe", "de", "it", "sk"};
+
+/* a voice's short name: the release voices' by their key (blazie_hu) */
+static const char *voice_name(int v)
+{
+    return v < SSA_RELEASE_FIRST ? VOICE_NAMES[v] : blv_release_voice_key(ssa_voice_release(v));
+}
 
 /* (name, SSML, pause mode, stop after this many pulls or -1) -- in this order on one engine per side */
 static const struct { const char *name, *ssml; int mode, stop; } CASES[] = {
@@ -192,7 +199,7 @@ static int speak(const char *data, const char *aicom, const char *dvc)
         load_aicom(mine, aicom, dvc);
         load_aicom(ref, aicom, dvc);
         if (!ssa_has_voice(mine, v)) {
-            printf("skip %s\n", VOICE_NAMES[v]);
+            printf("skip %s\n", voice_name(v));
             ssp_speech_free(p);
             ssa_free(mine);
             ssa_free(ref);
@@ -205,7 +212,7 @@ static int speak(const char *data, const char *aicom, const char *dvc)
             ssp_parse(CASES[c].ssml, CASES[c].mode, &r);
             spoken(p, v, &r, &s, CASES[c].stop, &got, &after);
             reference(ref, v, &r, &s, CASES[c].stop >= 0 ? got.samples : -1, &want);
-            printf("case %s-%s %ld %016llx %ld %016llx %d %d\n", VOICE_NAMES[v], CASES[c].name, got.samples, got.h,
+            printf("case %s-%s %ld %016llx %ld %016llx %d %d\n", voice_name(v), CASES[c].name, got.samples, got.h,
                    want.samples, want.h, after, ssp_speech_errors(p));
             ssp_request_free(&r);
         }
@@ -239,6 +246,7 @@ int main(int argc, char **argv)
         else if (!strcmp(brk, "speech-1")) ssp_speech_break = 1;
         else if (!strcmp(brk, "speech-2")) ssp_speech_break = 2;
         else if (!strcmp(brk, "import")) ssp_import_break = 1;
+        else if (!strcmp(brk, "import-2")) ssp_import_break = 2;
     }
     if (argc >= 2 && !strcmp(argv[1], "--parse")) return parse();
     if (argc >= 4 && !strcmp(argv[1], "--speak")) return speak(argv[2], argv[3], argc >= 5 ? argv[4] : NULL);

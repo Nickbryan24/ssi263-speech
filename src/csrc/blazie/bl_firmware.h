@@ -39,6 +39,11 @@ BL_API long blv_find_image(const unsigned char *data, long n);
    and checks that the voice can run it.  Returns BLV_FW_ENGLISH or _SPANISH with the release's label in msg; or
    BLV_FW_NONE, _REFUSED, _UNKNOWN, _NO_VOICE, _WRITE with the reason in msg and out_bns removed. */
 BL_API int blv_import_firmware(const unsigned char *data, long n, const char *out_bns, char *msg, int msglen);
+/* The same for a unit to run (an emulator's import, which keeps what the voices refuse as BLV_FW_NO_VOICE): any
+   release on the list, the Braille 'n Speak 2000's too, written to out_bns as blv_import_firmware writes it.  Returns
+   its row (0 .. blv_firmware_count() - 1, for blv_release_*) with its label in msg; or BLV_FW_NONE, _REFUSED,
+   _UNKNOWN, _WRITE with the reason in msg and out_bns removed. */
+BL_API int blv_import_release(const unsigned char *data, long n, const char *out_bns, char *msg, int msglen);
 
 /* The list: how many releases, and each one's label ("Braille Lite English: the June 5, 2003 revision") and
    language (BLV_FW_ENGLISH / _SPANISH); NULL / -1 past the end. */
