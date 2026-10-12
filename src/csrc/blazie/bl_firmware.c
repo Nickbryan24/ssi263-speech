@@ -27,7 +27,8 @@ typedef struct {
     const char *id;                        /* bl_languages.txt's: stable once shipped */
     int model;                             /* bl_board.h BL_MODEL_* */
     const char *tag;                       /* its language, BCP 47 */
-    int language;                          /* the voice's (BLV_FW_*), or BLV_FW_NONE: the emulator's only */
+    int language;                          /* a shipped voice's (BLV_FW_*), else BLV_FW_NONE */
+    const char *voice_key;                 /* a new voice's key ("blazie_hu": voice id blazie:blazie_hu), or NULL */
     int shape;                             /* bl_state.h BLV_SHAPE_* */
     unsigned char yes;                     /* the chord that answers its setup */
     int code_page;                         /* 850, 852; 0 not yet read */
@@ -39,6 +40,7 @@ typedef struct {
     const char *sha256;                    /* the image */
     const char *state;                     /* the state made from it */
     const char *name;                      /* the unit's name in the emulators' menus */
+    const char *voice_name;                /* the voice's name, the language in its own words, or NULL */
     const char *file;                      /* the file name a person is expected to bring */
     const char *label;
 } bl_release;
@@ -229,6 +231,16 @@ BL_API const char *blv_release_id(int release)
 BL_API const char *blv_release_name(int release)
 {
     return release >= 0 && release < N_KNOWN ? KNOWN[release].name : NULL;
+}
+
+BL_API const char *blv_release_voice_key(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].voice_key : NULL;
+}
+
+BL_API const char *blv_release_voice_name(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].voice_name : NULL;
 }
 
 BL_API const char *blv_release_file(int release)

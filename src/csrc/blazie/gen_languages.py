@@ -1,8 +1,12 @@
-"""Generate bl_languages_table.h from bl_languages.txt: the Braille Lite releases bl_firmware.c knows, one row per
-firmware image (the columns are described at the top of the text file).
+"""Generate from bl_languages.txt (one row per Braille Lite firmware image; the columns are described at the top of
+the text file):
+  bl_languages_table.h    the releases bl_firmware.c knows
+  ../voices_blazie.h      the voices the releases with a voice key give (blazie:blazie_hu ...): ssv_info rows that
+                          voices.c lists after its hand-written ones, their files under blazie/bl2000/ in the firmware
+                          folder (the image as <file>, its state as <release id>.state, made by its own recipe)
 
-    python gen_languages.py           # rewrite the header
-    python gen_languages.py --check   # exit 1 if it is stale or the table is malformed (run_tests)
+    python gen_languages.py           # rewrite the headers
+    python gen_languages.py --check   # exit 1 if one is stale or the table is malformed (run_tests)
 """
 import os
 import re
@@ -11,6 +15,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "bl_languages.txt")
 OUT = os.path.join(HERE, "bl_languages_table.h")
+OUT_VOICES = os.path.join(HERE, "..", "voices_blazie.h")
+FIRST_SLOT = 9                  # voices.c's hand-written voices use slots 0..8
 
 MODELS = {"bl": "BL_MODEL_BRAILLE_LITE", "bns": "BL_MODEL_BNS2000"}
 VOICES = {"english": "BLV_FW_ENGLISH", "spanish": "BLV_FW_SPANISH", "german": "BLV_FW_GERMAN",
@@ -34,17 +40,20 @@ def rows():
         if not line or line.startswith("#"):
             continue
         f = [x.strip() for x in line.split("|")]
-        if len(f) != 17:
-            problems.append("line %d: %d columns, want 17" % (n, len(f)))
+        if len(f) != 18:
+            problems.append("line %d: %d columns, want 18" % (n, len(f)))
             continue
-        rid, model, tag, voice, shape, yes, cp, text, boot, echo, speaks, length, image, state, name, file, label = f
+        rid, model, tag, voice, shape, yes, cp, text, boot, echo, speaks, length, image, state, name, vname, file, \
+            label = f
         bad = [what for what, ok in (
             ("id", re.match(r"^[a-z0-9_]+$", rid)), ("model", model in MODELS),
-            ("tag", re.match(r"^[a-z]{2,3}(-[A-Za-z0-9]+)*$", tag)), ("voice", voice in VOICES),
+            ("tag", re.match(r"^[a-z]{2,3}(-[A-Za-z0-9]+)*$", tag)),
+            ("voice", voice in VOICES or re.match(r"^blazie_[a-z_]+$", voice)),
             ("shape", shape in SHAPES), ("yes", re.match(r"^[a-z]$", yes)), ("cp", cp in CODE_PAGES),
             ("text", text in TEXTS), ("boot", boot in BOOTS), ("echo", echo in YES_NO), ("speaks", speaks in YES_NO),
             ("length", length.isdigit()), ("image", SHA.match(image)), ("state", SHA.match(state)),
             ("name", name and '"' not in name and "\\" not in name),
+            ("vname", vname and '"' not in vname and "\\" not in vname),
             ("file", re.match(r"^[A-Za-z0-9_]+\.BNS$", file)),
             ("label", label and '"' not in label and "\\" not in label)) if not ok]
         if bad:
@@ -52,7 +61,15 @@ def rows():
             continue
         out.append(dict(id=rid, model=model, tag=tag, voice=voice, shape=shape, yes=yes, cp=cp, text=text, boot=boot,
                         echo=echo, speaks=speaks,
-                        length=int(length), image=image, state=state, name=name, file=file, label=label))
+                        length=int(length), image=image, state=state, name=name, vname=vname, file=file,
+                        label=label))
+    for r in out:                        # a new voice: named, speaking, a Braille Lite
+        if r["voice"].startswith("blazie_") and (r["vname"] == "-" or r["speaks"] != "yes" or r["model"] != "bl"):
+            problems.append("%s: voice %s wants a vname, speaks = yes and model bl" % (r["id"], r["voice"]))
+    keys = [r["voice"] for r in out if r["voice"].startswith("blazie_")]
+    for k in set(keys):                  # one release per new voice (a user's setting names the voice, not it)
+        if keys.count(k) > 1:
+            problems.append("voice %s given by %d releases" % (k, keys.count(k)))
     for key in ("id", "image", "name"):
         seen = set()
         for r in out:
@@ -63,35 +80,60 @@ def rows():
 
 
 def c_string(s):
-    """A C string literal of s (UTF-8 bytes past ASCII as escapes, split so no hex escape runs on)."""
-    parts, cur = [], ""
+    r"""A C string literal of s: UTF-8 bytes past ASCII as \xNN escapes, the string split only where a hex digit
+    follows an escape (it would run on)."""
+    out, after_escape = ["\""], False
     for b in s.encode("utf-8"):
         if b >= 0x80:
-            parts.append(cur + "\\x%02x" % b)
-            cur = ""
-        else:
-            cur += chr(b)
-    parts.append(cur)
-    return '"' + '" "'.join(p for p in parts if p) + '"' if any(parts) else '""'
+            out.append("\\x%02x" % b)
+            after_escape = True
+            continue
+        ch = chr(b)
+        if after_escape and ch in "0123456789abcdefABCDEF":
+            out.append("\" \"")
+        out.append(ch)
+        after_escape = False
+    out.append("\"")
+    return "".join(out)
 
 
 def render(table):
     lines = ["/* Generated by gen_languages.py from bl_languages.txt: do not edit. */",
              "#ifndef BL_LANGUAGES_TABLE_H", "#define BL_LANGUAGES_TABLE_H", "",
-             "/* id, model, tag, voice, shape, yes chord, code page, text encoding, boot, echo, speaks, image length, image",
-             "   sha256, state sha256, name, file, label */",
+             "/* id, model, tag, voice, voice key, shape, yes chord, code page, text encoding, boot, echo, speaks, image",
+             "   length, image sha256, state sha256, name, voice name, file, label */",
              "static const bl_release KNOWN[] = {"]
     for r in table:
-        lines.append('    {"%s", %s, "%s", %s, %s, 0x%02X,' % (
-            r["id"], MODELS[r["model"]], r["tag"], VOICES[r["voice"]], SHAPES[r["shape"]],
+        lines.append('    {"%s", %s, "%s", %s, %s, %s, 0x%02X,' % (
+            r["id"], MODELS[r["model"]], r["tag"], VOICES.get(r["voice"], "BLV_FW_NONE"),
+            '"%s"' % r["voice"] if r["voice"].startswith("blazie_") else "NULL", SHAPES[r["shape"]],
             LETTERS[ord(r["yes"]) - ord("a")]))
         lines.append('     %s, %s, %s, %s, %s, %d,' % (CODE_PAGES[r["cp"]], TEXTS[r["text"]], BOOTS[r["boot"]],
                                                      YES_NO[r["echo"]], YES_NO[r["speaks"]], r["length"]))
         lines.append('     "%s",' % r["image"])
         lines.append('     "%s",' % r["state"])
-        lines.append("     %s, \"%s\"," % (c_string(r["name"]), r["file"]))
+        lines.append("     %s, %s, \"%s\"," % (c_string(r["name"]),
+                                             "NULL" if r["vname"] == "-" else c_string(r["vname"]), r["file"]))
         lines.append("     %s}," % c_string(r["label"]))
     lines += ["};", "", "#endif", ""]
+    return "\n".join(lines)
+
+
+def render_voices(table):
+    new = [r for r in table if r["voice"].startswith("blazie_")]
+    lines = ["/* Generated by gen_languages.py from blazie/bl_languages.txt: do not edit. */",
+             "#ifndef VOICES_BLAZIE_H", "#define VOICES_BLAZIE_H", "",
+             "/* the Braille Lite voices the releases give (voices.c lists them after its own): id, name, language,",
+             "   engine, slot (each its own unit), files under blazie/bl2000/ (the image, its state) */",
+             "#define SSV_BLAZIE_RELEASE_VOICES %d" % len(new),
+             "#define SSV_BLAZIE_RELEASE_ROWS \\"]
+    for i, r in enumerate(new):
+        lines.append('    {"blazie:%s", \\' % r["voice"])
+        lines.append('     %s, \\' % c_string(r["vname"]))
+        lines.append('     "%s", SSV_BLAZIE, %d, \\' % (r["tag"], FIRST_SLOT + i))
+        lines.append('     {"blazie/bl2000/%s", "blazie/bl2000/%s.state", NULL}},%s' % (
+            r["file"], r["id"], " \\" if i + 1 < len(new) else ""))
+    lines += ["", "#endif", ""]
     return "\n".join(lines)
 
 
@@ -101,17 +143,24 @@ def main():
         print("bl_languages.txt: " + p)
     if problems:
         sys.exit(1)
-    text = render(table)
-    old = open(OUT, encoding="utf-8").read() if os.path.isfile(OUT) else None
+    stale = 0
+    for out, text in ((OUT, render(table)), (OUT_VOICES, render_voices(table))):
+        old = open(out, encoding="utf-8").read() if os.path.isfile(out) else None
+        name = os.path.basename(out)
+        if "--check" in sys.argv:
+            if old != text:
+                print("%s is stale: run python src/csrc/blazie/gen_languages.py" % name)
+                stale = 1
+            else:
+                print("%s matches bl_languages.txt" % name)
+            continue
+        with open(out, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        print("wrote %s" % os.path.normpath(out))
+    if stale:
+        sys.exit(1)
     if "--check" in sys.argv:
-        if old != text:
-            print("bl_languages_table.h is stale: run python src/csrc/blazie/gen_languages.py")
-            sys.exit(1)
-        print("bl_languages_table.h matches bl_languages.txt (%d releases)" % len(table))
-        return
-    with open(OUT, "w", encoding="utf-8", newline="\n") as f:
-        f.write(text)
-    print("wrote %s (%d releases)" % (OUT, len(table)))
+        print("%d releases, %d voices" % (len(table), sum(r["voice"].startswith("blazie_") for r in table)))
 
 
 if __name__ == "__main__":

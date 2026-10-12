@@ -125,7 +125,7 @@ def main():
                 lib.blv_release_file(k), lib.blv_release_text(k), lib.blv_release_slow_boot(k), lib.blv_release_echo(k),
                 lib.blv_release_speaks(k))
                for k in range(lib.blv_firmware_count())]
-        want = [(r["id"].encode(), r["name"].encode(), r["tag"].encode(), r["label"].encode(), VOICE[r["voice"]],
+        want = [(r["id"].encode(), r["name"].encode(), r["tag"].encode(), r["label"].encode(), VOICE.get(r["voice"], -1),
                  MODEL[r["model"]], int(r["cp"]) if r["cp"] != "-" else 0, r["file"].encode(), TEXT_ID[r["text"]],
                  int(r["boot"] == "slow"), int(r["echo"] == "yes"), int(r["speaks"] == "yes")) for r in table]
         result(got == want, "the library's list = bl_languages.txt (%d releases: id, name, language, label, voice, "
@@ -146,7 +146,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="ssi263-releases-test-")
     if not BREAK:
         # no voice without its firmware AND its voice: a no-voice release brought to a voice importer is refused
-        mute = [k for k in sorted(found) if table[k]["voice"] == "-"]
+        mute = [k for k in sorted(found) if VOICE.get(table[k]["voice"], -1) == -1]   # no shipped voice (yet: the phones)
         handed = []
         out = os.path.join(tmp, "imported.BNS")
         for k in mute:
@@ -165,7 +165,7 @@ def main():
             sys.exit(1 if bad else 0)
     # the control remakes only the voices' releases (both recipe shapes are among them): enough to fail as named
     jobs = [(k, SHAPE[table[k]["shape"]], found[k], os.path.join(tmp, "%s.state" % table[k]["id"]))
-            for k in sorted(found) if not BREAK or table[k]["voice"] != "-"]
+            for k in sorted(found) if not BREAK or VOICE.get(table[k]["voice"], -1) >= 0]
     # half the cores: the suite runs timing-sensitive checks alongside (key latency, the open channel)
     with ProcessPoolExecutor(max_workers=max(1, min(len(jobs), (os.cpu_count() or 2) // 2)), initializer=load,
                              initargs=(a.lib, a.chip)) as ex:

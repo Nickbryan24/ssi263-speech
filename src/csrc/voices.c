@@ -9,6 +9,8 @@
 #include "blazie/bl_cp850.h"
 #include "blazie/bl_cp852.h"
 #include "blazie/bl_voice.h"
+#include "blazie/bl_firmware.h"            /* blv_release_of, blv_release_text: a release's own encoding */
+#include "voices_blazie.h"
 #include "blazie/bl_numbers.h"
 #include "accentsa/as_voice.h"
 #ifdef SSV_HAVE_SPEAKOUT
@@ -44,6 +46,9 @@ static const ssv_info VOICES[] = {
      {"blazie/italian/Lite2000.BNS", "blazie/italian/lite2000_it_fresh.state", NULL}},
     {"blazie:blazie_sk", "Braille 'n Speak 2000 (sloven\xc4\x8dina)", "sk", SSV_BLAZIE, 8,
      {"blazie/bns2000/BS2SLL.BNS", "blazie/bns2000/bs2sll_fresh.state", NULL}},
+    /* 0.8: the Braille Lite 2000 in 17 more languages (Blazie's updates, an anonymous donation), one voice per
+       language, from the release table (blazie/bl_languages.txt, generated: voices_blazie.h) */
+    SSV_BLAZIE_RELEASE_ROWS
 };
 #define NVOICES ((int)(sizeof VOICES / sizeof VOICES[0]))
 
@@ -129,8 +134,13 @@ static int bl_no_echo(const char *lang) { return !strcmp(lang, "it") || !strcmp(
 static void *eng_bl_create(const ssv_info *info, const ssv_source *src, const ssv_boot *b, char *err, int errlen)
 {
     bl_voice *v;
+    int release, encoding;
     if (!src->path[0] || !src->path[1]) { snprintf(err, errlen, "the Braille Lite's files: no path"); return NULL; }
-    v = blv_create(src->path[0], src->path[1], bl_encoding(info->lang),
+    /* the text encoding the firmware's own release names (bl_languages.txt), else by the language as before -- the
+       shipped voices' rows name the same ones */
+    release = blv_release_of(src->path[0]);
+    encoding = release >= 0 ? blv_release_text(release) : bl_encoding(info->lang);
+    v = blv_create(src->path[0], src->path[1], encoding,
                    (double)b->sample_rate, b->inflection != 0, b->whine, err, errlen);
     if (v && bl_no_echo(info->lang))
         bh_set_int(blv_host(v), "no_echo", 1);
@@ -395,7 +405,7 @@ SSV_API int ssv_render(ssv_voice *v, const short **pcm, int *done) { return v->e
 SSV_API void ssv_cancel(ssv_voice *v) { v->e->cancel(v->u); }
 
 /* ---- a bank ---------------------------------------------------------------------------------------------------------- */
-#define SLOTS 12
+#define SLOTS (9 + SSV_BLAZIE_RELEASE_VOICES)     /* the table's slots 0..8, then one per release voice */
 
 struct ssv_bank {
     char *fwdir;

@@ -35,6 +35,7 @@ RATE = 22050
 TEXT = b"Hello. One two three."
 TEXTS = {"7bit": 0, "850": 1, "852": 2, "857": 3, "860": 4, "866": 5, "-": 0}
 SHAPE = {"english": 0, "slow": 1}
+SHIPPED = {"english", "spanish", "german", "italian", "slovak"}   # the shipped voices: their own tests
 PROGRESS = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_double)
 lib = None
 
@@ -94,9 +95,9 @@ def main():
     found = test_releases.find_images(a.firmware, table)
     tmp = tempfile.mkdtemp(prefix="ssi263-release-voices-")
     jobs = [(k, found[k], os.path.join(tmp, "%s.state" % table[k]["id"]), TEXTS[table[k]["text"]])
-            for k in sorted(found) if table[k]["voice"] == "-" and table[k]["model"] == "bl"]
+            for k in sorted(found) if table[k]["voice"] not in SHIPPED and table[k]["model"] == "bl"]
     for k, r in enumerate(table):
-        if r["voice"] == "-" and r["model"] == "bl" and k not in found:
+        if r["voice"] not in SHIPPED and r["model"] == "bl" and k not in found:
             print("skip %s: its firmware is not in the firmware folder" % r["id"])
     bad = 0
     with ProcessPoolExecutor(max_workers=max(1, min(len(jobs), (os.cpu_count() or 2) // 2)), initializer=load,

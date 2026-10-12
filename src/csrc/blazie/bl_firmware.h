@@ -65,6 +65,10 @@ BL_API const char *blv_release_name(int release);
    boot keys later and further apart (a slower firmware drops early keys); 1 when the unit echoes ^F at a line's end
    (0: the voice judges by the chip, bh_set_int "no_echo"); 1 when the voice path speaks it -- NULL / -1 past the
    end.  blv_create reads the boot keys and the echo from the firmware's own release. */
+/* A new voice's key ("blazie_hu": the voice id blazie:blazie_hu, per language) and name ("Braille Lite 2000 (magyar)"),
+   NULL for a release that gives none (the shipped voices keep their own: voices.c). */
+BL_API const char *blv_release_voice_key(int release);
+BL_API const char *blv_release_voice_name(int release);
 BL_API const char *blv_release_file(int release);
 BL_API int blv_release_text(int release);
 BL_API int blv_release_slow_boot(int release);
