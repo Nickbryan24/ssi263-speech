@@ -176,6 +176,10 @@ if os.environ.get("COMPLETE_FUZZ_050"):
 said = []            # (text, cancelled after?)
 spoke_time = []      # when each was spoken (monotonic), for the latency line only
 WAIT_S = float(os.environ.get("COMPLETE_FUZZ_WAIT_S", "20"))
+# after a failure only: how long the report watches for the late index (never a pass); not under a control, whose
+# failure is the point
+_CONTROLS = ("STALE", "FORGE_DONE", "NO_INDEX", "NO_DONE", "HANG", "KILL_WORKER", "EARLY_DONE", "050")
+LATE_WATCH_S = 0.0 if any(os.environ.get("COMPLETE_FUZZ_" + c) for c in _CONTROLS) else 30.0
 STALE = os.environ.get("COMPLETE_FUZZ_STALE") in ("1", "natural")
 FORGE = os.environ.get("COMPLETE_FUZZ_STALE") == "1" or os.environ.get("COMPLETE_FUZZ_FORGE_DONE") == "1"
 NO_INDEX_FROM = breaks_from("COMPLETE_FUZZ_NO_INDEX")
@@ -250,10 +254,57 @@ def late(k, n):
 checked = bad = 0
 
 
-def harness_error(where, e):
-    """The run cannot say whether utterances finish: an error with its reason, never a pass or a verdict."""
+def driver_state():
+    """What the driver and its unit are doing (Astra, Reply 204: enough to tell slow from stuck)."""
+    u = getattr(d, "_unit", None) or getattr(d, "_box", None)
+    chip = getattr(u, "chip", None)
+    parts = ["queue %s" % d._queue.qsize(), "cancel flag %s" % d._cancelFlag.is_set(),
+             "loads %d (the last tagged #%s)" % (len(loads), loads[-1][0] if loads else "-")]
+    if chip is not None:
+        parts.append("chip time %.3f s" % chip.time)
+    for name in ("sent_f", "echo_f", "last_speech", "preparing"):
+        if hasattr(u, name):
+            parts.append("%s %s" % (name, getattr(u, name)))
+    parts.append("notifications %d" % len(notified))
+    return ", ".join(parts)
+
+
+def thread_stacks():
+    """Every thread's stack, innermost last: where the worker is when the wait gives up."""
+    import traceback
+    names = {t.ident: t.name for t in threading.enumerate()}
+    out = []
+    for ident, frame in sys._current_frames().items():
+        if ident == threading.get_ident():
+            continue
+        out.append("thread %s:" % names.get(ident, ident))
+        out += ["      " + ln.rstrip() for ln in traceback.format_stack(frame)[-8:]]
+    return out
+
+
+def harness_error(where, e, tok=None):
+    """The run cannot say whether utterances finish: an error with its reason, never a pass or a verdict.  Before
+    exiting it reports where every thread is and the driver's state, then watches a further LATE_WATCH_S: whether
+    the utterance's own index still arrives, and whether the unit is still moving (slow) or not (stuck).  The
+    verdict stays an error whatever the watch sees (Astra, Reply 204: a longer wait only informs)."""
     print("%s: CompletionError: %s" % (where, e))
     print("    " + "\n    ".join(trace[-10:]))
+    print("    at the timeout: " + driver_state())
+    print("    " + "\n    ".join(thread_stacks()))
+    if tok is not None:
+        t0, n0 = time.monotonic(), len(loads)
+        u = getattr(d, "_unit", None) or getattr(d, "_box", None)
+        c0 = getattr(getattr(u, "chip", None), "time", None)
+        while time.monotonic() - t0 < LATE_WATCH_S and ("index", tok) not in notified[spoke_at[tok]:]:
+            time.sleep(0.05)
+        got = ("index", tok) in notified[spoke_at[tok]:]
+        c1 = getattr(getattr(u, "chip", None), "time", None)
+        print("    watched %.1f s more: index %d %s; %d more loads; chip time %s" % (
+            time.monotonic() - t0, tok, "ARRIVED" if got else "still missing", len(loads) - n0,
+            "%.3f -> %.3f s" % (c0, c1) if c0 is not None else "-"))
+        print("    then: " + driver_state())
+        if not got:
+            print("    " + "\n    ".join(thread_stacks()))
     print("complete_fuzz: COMPLETION NOT IDENTIFIED at %s (%s); %d utterances checked before it"
           % (where, str(e).split(":")[0], checked), flush=True)
     os._exit(2)          # the worker may be stuck for good: do not wait for it
@@ -267,7 +318,7 @@ for text in TEXTS:
     try:
         ref[text], ref_n[k] = complete(k)
     except CompletionError as e:
-        harness_error("reference #%d %r" % (k, text), e)
+        harness_error("reference #%d %r" % (k, text), e, OWNED_BASE + k)
     if not ref[text]:
         harness_error("reference #%d %r" % (k, text), "NO PHONEMES at its completion")
 for k, text in enumerate(TEXTS):      # each one's tag ended when the next was sent; the last one's ends now
@@ -294,7 +345,7 @@ for step in range(STEPS):
         try:
             at_done, n = complete(k)
         except CompletionError as e:
-            harness_error("step %d, #%d %r" % (step, k, said[k][0]), e)
+            harness_error("step %d, #%d %r" % (step, k, said[k][0]), e, OWNED_BASE + k)
         latency.append(time.monotonic() - spoke_time[k])
         text, cancelled = said[k]
         if not cancelled:
