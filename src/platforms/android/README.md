@@ -235,6 +235,7 @@ shipped in the APK. The Setup page's "Licenses and source" shows them all and po
     ./gradlew testDebugUnitTest -Pssi263ImportBreak=state                 # control: the state cases must FAIL
     ./gradlew testDebugUnitTest -Pssi263ImportBreak=speakout              # control: the Speak-Out cases must FAIL
     ./gradlew testDebugUnitTest -Pssi263ImportBreak=mockingboard          # control: the Mockingboard cases must FAIL
+    ./gradlew testDebugUnitTest -Pssi263ImportBreak=release               # control: the release voices' cases must FAIL
 
 `test_import_native.py` makes every fixture at test time from the files in the firmware folder (`--firmware`, default
 `$SSI263_FIRMWARE`, else `firmware/blazie`, with `spanish/`, `tns/` and `once2000/` -- ONCE's September 2000

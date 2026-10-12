@@ -23,20 +23,29 @@ class SsiTtsService : TextToSpeechService() {
             Log.e(TAG, "warm-up failed", e) } }, "ssi263-warmup").start()
     }
 
-    // SsiLanguages: English with the Accents built in; Spanish, German, Italian and Slovak once their Blazie unit's
-    // firmware is imported -- until then supported but its data missing, so nothing offers them.
+    // SsiLanguages: English with the Accents built in; every other Blazie language (Spanish, German, Italian, Slovak,
+    // and the release voices': Hungarian, Turkish, ...) once its unit's firmware is imported -- until then supported
+    // but its data missing, so nothing offers them.
     private fun availability(lang: String?, country: String?): Int =
         SsiLanguages.availability(lang, country, SsiEngine.voices(this), SsiEngine.KNOWN)
 
     override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int =
         availability(lang, country)
 
-    // The chosen voice's language (it can speak: voiceFor falls back to one that can), as TGSpeechBox gives its
-    // current one.
-    override fun onGetLanguage(): Array<String> =
-        SsiLanguages.language(SsiEngine.voiceFor(this, SsiSettings.snapshot(this).voice))
+    // The language last loaded (onLoadLanguage, onLoadVoice), as TGSpeechBox keeps its current one: the voice for it
+    // while it can speak; until one is loaded, the chosen voice's (voiceFor falls back to one that can).
+    @Volatile private var loaded: String? = null
 
-    override fun onLoadLanguage(lang: String?, country: String?, variant: String?): Int = availability(lang, country)
+    override fun onGetLanguage(): Array<String> =
+        SsiLanguages.language(loaded?.let { SsiEngine.voiceByName(this, it) }
+            ?: SsiEngine.voiceFor(this, SsiSettings.snapshot(this).voice))
+
+    override fun onLoadLanguage(lang: String?, country: String?, variant: String?): Int {
+        val r = availability(lang, country)
+        if (r >= 0) SsiEngine.voiceForLanguage(this, lang, SsiSettings.snapshot(this).voice, country)
+            ?.let { loaded = it.name }
+        return r
+    }
 
     override fun onGetVoices(): MutableList<Voice> = SsiEngine.voices(this).map {
         Voice(it.name, it.locale, Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, emptySet())
@@ -45,13 +54,14 @@ class SsiTtsService : TextToSpeechService() {
     override fun onIsValidVoiceName(name: String?): Int =
         if (SsiEngine.voiceByName(this, name) != null) TextToSpeech.SUCCESS else TextToSpeech.ERROR
 
-    override fun onLoadVoice(name: String?): Int = onIsValidVoiceName(name)
+    override fun onLoadVoice(name: String?): Int =
+        onIsValidVoiceName(name).also { if (it == TextToSpeech.SUCCESS) loaded = name }
 
     override fun onGetDefaultVoiceNameFor(lang: String?, country: String?, variant: String?): String? {
         if (lang != null && availability(lang, country) < 0) return null
         val chosen = SsiSettings.snapshot(this).voice
-        return (if (lang == null) SsiEngine.voiceFor(this, chosen) else SsiEngine.voiceForLanguage(this, lang, chosen))
-            ?.name
+        return (if (lang == null) SsiEngine.voiceFor(this, chosen)
+                else SsiEngine.voiceForLanguage(this, lang, chosen, country))?.name
     }
 
     override fun onStop() {
@@ -67,11 +77,13 @@ class SsiTtsService : TextToSpeechService() {
         if (!SsiEngine.open(this)) { callback.error(TextToSpeech.ERROR_NOT_INSTALLED_YET); return }
         val s = SsiSettings.snapshot(this)
 
-        // A request in Spanish, German, Italian or Slovak gets that language's unit when it is here (the chosen voice
-        // when it is one of them).  Otherwise the voice chosen in the settings wins unless the user turned that off:
+        // A request in a Blazie language other than English (Spanish, German, ..., Hungarian, Brazil's Portuguese)
+        // gets that language's unit when it is here -- its country's first (SsiLanguages.voiceFor), the chosen voice
+        // when it is one of them.  Otherwise the voice chosen in the settings wins unless the user turned that off:
         // a screen reader asks for a default once and sends it every time.
         val requested = SsiEngine.voiceByName(this, request.voiceName)
-        val voice = SsiLanguages.ownLanguageVoice(request.language, s.voice, SsiEngine.voices(this)) ?: when {
+        val voice = SsiLanguages.ownLanguageVoice(request.language, s.voice, SsiEngine.voices(this), request.country)
+            ?: when {
             s.overrideVoice -> SsiEngine.voiceFor(this, s.voice)
             else -> requested ?: SsiEngine.voiceFor(this, s.voice)
         }

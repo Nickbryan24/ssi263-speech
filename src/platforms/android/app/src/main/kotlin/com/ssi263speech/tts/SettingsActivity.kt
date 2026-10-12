@@ -43,6 +43,9 @@ class SettingsActivity : Activity() {
     private var pages: List<View> = emptyList()
     private var voiceButton: Button? = null
     private lateinit var firmwareStatus: TextView
+    private lateinit var firmwareList: LinearLayout
+    private lateinit var showAllButton: Button
+    private var showAllLanguages = false
     private lateinit var importStatus: TextView
     private lateinit var removeButton: Button
     private var importDialog: AlertDialog? = null
@@ -200,7 +203,8 @@ class SettingsActivity : Activity() {
             "you hear until you import a Braille Lite."))
         root.addView(ui.body(
             "\nTo add: the Blazie Braille Lite 2000 in speech-box mode, its own firmware on an emulated Z180, " +
-            "in English, Spanish, German and Italian; the Blazie Braille 'n Speak 2000 the same way, in Slovak; and " +
+            "in English, Spanish, German and Italian, and with its language updates in many more (the list below); " +
+            "the Blazie Braille 'n Speak 2000 the same way, in Slovak; and " +
             "the GW Micro Speak-Out, its own firmware on an emulated V40, in English. Each language is offered to " +
             "TalkBack and the system once its unit is imported."))
 
@@ -211,7 +215,9 @@ class SettingsActivity : Activity() {
             "apart by what is in the file. " +
             "For the Braille Lite, choose the Braille Lite 2000's update program (such as blt2000.exe), the " +
             "BL2ENG.BNS (English), BL2SPA.BNS (Spanish) or Lite2000.BNS (German or Italian) inside it, a zip " +
-            "holding them, or the NVDA add-on (.nvda-addon), which carries them all; for the Slovak Braille 'n " +
+            "holding them, or the NVDA add-on (.nvda-addon), which carries them all; for its other languages, " +
+            "the language update's file (BL2HUN.BNS for Hungarian, and the others the list below names); for the " +
+            "Slovak Braille 'n " +
             "Speak 2000, its BS2SLL.BNS. This phone then prepares the unit once, as the add-on's was prepared: a " +
             "few seconds for English, German, Italian and Slovak, about a minute for Spanish. For the Speak-Out, " +
             "choose GW Micro's " +
@@ -222,6 +228,11 @@ class SettingsActivity : Activity() {
             "in a moment too. The files stay in this app's protected storage."))
         firmwareStatus = ui.body("")
         root.addView(firmwareStatus)
+        // each voice, the file a person brings for it and whether it is here; the language updates only once
+        // imported, or when asked for: nobody scrolls through thirty rows to find a file name (Tomi)
+        firmwareList = ui.column().also { root.addView(it) }
+        showAllButton = Button(this).apply { setOnClickListener { showAllLanguages = !showAllLanguages; refreshStatus() } }
+        root.addView(showAllButton)
         root.addView(Button(this).apply { text = "Import firmware…"; setOnClickListener { pickFile() } })
         removeButton = Button(this).apply { text = "Remove firmware…"; setOnClickListener { removeFirmware(true) } }
         root.addView(removeButton)
@@ -273,15 +284,42 @@ class SettingsActivity : Activity() {
 
     private fun refreshStatus() {
         val voices = SsiEngine.voices(this)
-        val labels = FirmwareImport.IMPORTED.mapNotNull { SsiData.label(this, it) }
+        val labels = FirmwareImport.imported().mapNotNull { SsiData.label(this, it) }
+        // the shipped voices' imports named; the language updates' counted, the list under Show all naming them
+        val shipped = FirmwareImport.IMPORTED.mapNotNull { SsiData.label(this, it) }
+        val languages = labels.size - shipped.size
         firmwareStatus.text = if (labels.isEmpty()) "No firmware imported."
-            else labels.joinToString("\n") { "$it, imported." }
+            else (shipped.map { "$it, imported." } + (if (languages > 0) listOf("$languages Braille Lite " +
+                (if (languages == 1) "language" else "languages") + " imported (Show all names them).") else emptyList()))
+                .joinToString("\n")
         removeButton.isEnabled = labels.isNotEmpty()
+        refreshFirmwareList()
         val current = SsiEngine.voiceFor(this, SsiSettings.snapshot(this).voice)
         status.text = if (voices.isEmpty()) "No voice can speak: this copy of the app is missing the Accent SA."
             else "Voices: " + voices.joinToString(", ") { it.label } + ". Speaking with: ${current.label}."
         speakButton.isEnabled = voices.isNotEmpty()
         voiceButton?.text = "Voice: " + current.label
+    }
+
+    /** The firmware list: every importable voice, the file a person brings for it and whether it is here, one line
+     * each; the language updates' (FirmwareImport.releases) behind the button, imported or not -- seventeen more
+     * lines are a wall to read past (Tomi). */
+    private fun refreshFirmwareList() {
+        firmwareList.removeAllViews()
+        val releases = FirmwareImport.releases
+        for (voice in FirmwareImport.imported()) {
+            val release = FirmwareImport.release(voice)
+            val label = SsiData.label(this, voice)
+            if (release != null && !showAllLanguages) continue
+            val bring = FirmwareImport.bring(voice) ?: continue
+            val name = release?.name ?: FirmwareImport.unitName(voice)
+            firmwareList.addView(ui.body("$name: $bring — " +
+                (label?.let { "imported ($it)" } ?: if (SsiData.has(this, voice)) "built into this app" else "not imported")))
+        }
+        val here = releases.count { SsiData.label(this, it.voice) != null }
+        showAllButton.visibility = if (releases.isNotEmpty()) View.VISIBLE else View.GONE
+        showAllButton.text = if (showAllLanguages) "Hide the Braille Lite languages"
+            else "Show all Braille Lite importable languages (${releases.size}, $here imported)"
     }
 
     // ---- the firmware import (FirmwareImport.kt, SsiImport.kt), as outspoken's zip import ------------------------

@@ -55,6 +55,14 @@ int ssa_import_mockingboard(const unsigned char *data, long n, const char *out, 
    _REFUSED, _WRITE, _UNKNOWN; SSA_HEX_OTHER; SSA_FW_MB_BUILD, SSA_FW_MB_DISK), the reason in msg. */
 int ssa_import_firmware(const unsigned char *data, long n, const char *out, char *msg, int msglen);
 
+/* The phone's import (the JNI bridge's nativeImportFirmware): ssa_import_firmware, and for a Braille Lite 2000 release
+   it does not take (BLV_FW_UNKNOWN: no shipped voice, or not on the list) the release table's (bl_firmware.h
+   blv_import_release): a row naming a release voice is that voice -- ssa_engine.h's ssa_release_voice, from
+   SSA_RELEASE_FIRST: Hungarian, Turkish, ... -- written to out as a .BNS, its label in msg; a row no voice speaks yet
+   (the emulator's alone) stays BLV_FW_UNKNOWN, out removed.  Apple's ssp_import_firmware does the same with its own
+   codes (SSP_FW_RELEASE + the row). */
+int ssa_import_voice(const unsigned char *data, long n, const char *out, char *msg, int msglen);
+
 /* A Blazie release's language (bl_firmware.h's BLV_FW_*, which is not a voice index: German's 2 would be the Accent
    SA's) as the app's voice, SSA_ENGLISH ... SSA_SLOVAK; -1 for none.  And back: the state recipe a Blazie voice's
    unit is made with (blv_firmware_recipe of its language, for blv_make_state: the Slovak unit's is the English
@@ -72,7 +80,8 @@ int ssa_blazie_recipe(int voice);
    Mockingboard file's size as that one -- its "one byte changed" cases must then fail.  2 never tries a disk image,
    so the .dsk cases must fail.  3 returns a Blazie release's raw firmware language (bl_firmware.h) instead of the
    app's voice, as before 0.8's table -- German's 2 is the Accent SA's index -- so the German, Italian and Slovak
-   imports must fail. */
+   imports must fail.  4: ssa_import_voice never tries the release table, so the release voices' imports (Hungarian
+   ...) must fail. */
 extern int ssa_import_break;
 
 #ifdef __cplusplus

@@ -32,7 +32,7 @@
  *                                           <pitch> <volume> <numbers> <pitch offset> <blocks before a cancel>
  *                                           <text, hex>" per case
  *     test_android_native --import <file> <out>
- *                                           the import's judgement (ssa_import_firmware, as nativeImportFirmware):
+ *                                           the import's judgement (ssa_import_voice, as nativeImportFirmware):
  *                                           "import <code> <message>"
  *
  * test_android_native.py compares the hashes with bl_voice driven directly, the way the speech-dispatcher module
@@ -41,8 +41,8 @@
  * mapping (ssa_map.h), so the "fast" cases must differ; accent-pitch, accent-glide, accent-reuse and accent-step are
  * ssa_engine.h's ssa_accent_break 1, 2, 3 and 4; speakout-pitch, speakout-settings, run-ahead, numbers,
  * mockingboard-pitch, mockingboard-numbers, mockingboard-import-ignored, mockingboard-builtin-ignored and
- * mockingboard-variant its ssa_voice_break 1 to 9; import-hash, import-dsk and import-lang ssa_import.h's
- * ssa_import_break 1, 2 and 3.
+ * mockingboard-variant its ssa_voice_break 1 to 9; import-hash, import-dsk, import-lang and import-release
+ * ssa_import.h's ssa_import_break 1, 2, 3 and 4.
  *
  * Built by the desktop compiler (test_android_native.py) and by build_android.sh --test (static, for a device).
  */
@@ -714,7 +714,7 @@ static int import(const char *file, const char *out)
         n = data ? fread(data, 1, (size_t)len, f) : 0;
         fclose(f);
     }
-    r = ssa_import_firmware(data, (long)n, out, msg, sizeof msg);
+    r = ssa_import_voice(data, (long)n, out, msg, sizeof msg);
     printf("import %d %s\n", r, msg);
     free(data);
     return 0;
@@ -741,7 +741,7 @@ int main(int argc, char **argv)
                     : !strcmp(brk, "mockingboard-import-ignored") ? 7 : !strcmp(brk, "mockingboard-builtin-ignored") ? 8
                     : !strcmp(brk, "mockingboard-variant") ? 9 : !strcmp(brk, "line-lift") ? 10 : 0;
     ssa_import_break = !brk ? 0 : !strcmp(brk, "import-hash") ? 1 : !strcmp(brk, "import-dsk") ? 2
-                     : !strcmp(brk, "import-lang") ? 3 : 0;
+                     : !strcmp(brk, "import-lang") ? 3 : !strcmp(brk, "import-release") ? 4 : 0;
     if (argc >= 2 && !strcmp(argv[1], "--texts")) return texts();
     if (argc >= 6 && !strcmp(argv[1], "--level"))
         return level(argv[2], argv[3], atoi(argv[4]), atoi(argv[5]), argc >= 7 ? argv[6] : NULL);
@@ -853,6 +853,27 @@ int main(int argc, char **argv)
             snprintf(name, sizeof name, "%s-probe", LANGS[k].name);
             printf("%s %ld %016llx\n", name, n, h);
         }
+    }
+
+    /* the release voices (Hungarian, Turkish, ...: the release table's), each when its two files are here under its
+       own names (ssa_voice_file): the import's check (ssa_probe, SsiImport.kt's "Hello.") speaks, on a unit of its
+       own; "rel-<voice>-probe <samples> <hash>", then how many were here */
+    if (block("rel")) {
+        int v, here = 0;
+        for (v = SSA_RELEASE_FIRST; v < SSA_VOICES; v++) {
+            unsigned long long h;
+            long n;
+            int has;
+            e = ssa_new(argv[1]);
+            has = e && ssa_has_voice(e, v);
+            ssa_free(e);
+            if (!has) continue;
+            here++;
+            n = ssa_probe(argv[1], v, "Hello.", &h, err, sizeof err);
+            if (n <= 0) { fprintf(stderr, "release voice %d probe: %ld %s\n", v, n, err); return 1; }
+            printf("rel-%d-probe %ld %016llx\n", v, n, h);
+        }
+        printf("rel-voices-here %d 0\n", here);
     }
 
     /* the number words ("Read numbers as words", the driver's default: on), each case on a fresh unit -- so on and

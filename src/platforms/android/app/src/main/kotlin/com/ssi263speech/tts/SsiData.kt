@@ -18,8 +18,10 @@ object SsiData {
     private const val STAMP = ".bundled"
     const val LABEL = ".label"              // beside each .BNS: what was imported, in words
 
-    /** The files each imported voice needs, by SsiNative's voice index. */
-    val FILES = FirmwareImport.FILES
+    init { loadNativeIfThere() }           // the release voices (FirmwareImport.releases) come with the library
+
+    /** The files an imported voice needs, by SsiNative's voice index: FirmwareImport's, the release voices' too. */
+    fun files(voice: Int): List<String>? = FirmwareImport.files(voice)
 
     fun protectedContext(ctx: Context): Context =
         if (ctx.isDeviceProtectedStorage) ctx else ctx.createDeviceProtectedStorageContext()
@@ -40,12 +42,12 @@ object SsiData {
     /** The voice's files were imported: all of them are here. */
     fun imported(ctx: Context, voice: Int): Boolean {
         stageBundled(ctx)
-        val files = FILES[voice] ?: return false
+        val files = files(voice) ?: return false
         return files.all { File(dir(ctx), it).isFile }
     }
 
     /** Firmware has been imported: a Braille Lite voice, the Speak-Out or a Mockingboard. */
-    fun any(ctx: Context): Boolean = FirmwareImport.IMPORTED.any { imported(ctx, it) }
+    fun any(ctx: Context): Boolean = FirmwareImport.imported().any { imported(ctx, it) }
 
     // ---- the Mockingboards' files: Sweet Micro Systems', carried by the GitHub APK (Tomi, 2026-10-10) ----------------
 
@@ -57,7 +59,7 @@ object SsiData {
     fun mockingboard(ctx: Context, voice: Int): ByteArray? = synchronized(mb) {
         mb.getOrPut(voice) {
             try {
-                val name = FILES[voice]?.get(0)
+                val name = files(voice)?.get(0)
                 if (voice !in FirmwareImport.BUILT_IN || name == null || !SsiNative.nativeVoiceBuilt(voice)) null
                 else ctx.assets.open("$SWEET_MICRO/$name").use { it.readBytes() }.takeIf { it.isNotEmpty() }
             } catch (e: Exception) { null }           // not in this APK: import only, nothing wrong
@@ -114,7 +116,7 @@ object SsiData {
     /** What was imported for the voice, in words; null when nothing was. */
     fun label(ctx: Context, voice: Int): String? {
         if (!imported(ctx, voice)) return null
-        val files = FILES[voice] ?: return null
+        val files = files(voice) ?: return null
         return try { File(dir(ctx), files[0] + LABEL).readText() }
             catch (e: Exception) { "${FirmwareImport.unitName(voice)} (built into this app)" }
     }

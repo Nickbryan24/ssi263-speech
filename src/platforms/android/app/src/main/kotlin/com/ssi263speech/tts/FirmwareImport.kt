@@ -54,10 +54,46 @@ object FirmwareImport {
     /** The voices the APK also carries a copy of (assets/sweet-micro): an import replaces it. */
     val BUILT_IN = setOf(MOCKINGBOARD, MOCKINGBOARD_EARLY)
 
+    /** A release voice: a Braille Lite 2000 language update the release table names a voice for (bl_languages.txt:
+     * Hungarian, Turkish, ...), its index ssa_engine.h's from SSA_RELEASE_FIRST.  `id` names its state, `file` is the
+     * file a person brings (the firmware list's), `name` the release in English ("Braille Lite 2000 (Hungarian)"),
+     * `voiceName` the voice's in its own language ("Braille Lite 2000 (magyar)"), `tag` its BCP 47 language. */
+    class Release(val voice: Int, val id: String, val file: String, val name: String, val voiceName: String,
+                  val tag: String) {
+        val files get() = listOf(file, "$id.state")
+        /** The language in English, from the name: "Hungarian", "Arabic, UAE", "French" (the BL2FRE release's). */
+        val language get() = name.substringAfter('(').substringBeforeLast(')').replace(Regex(", BL2[A-Z0-9]+$"), "")
+    }
+
+    /** The release voices, from the library's release table -- never a list kept here: set by SsiNative when the
+     * library loads (nativeReleaseVoices), by the JVM tests to a list of their own. */
+    @Volatile var releases: List<Release> = emptyList()
+
+    fun release(voice: Int): Release? = releases.firstOrNull { it.voice == voice }
+
+    /** The files an imported voice needs ([FILES], a release voice's .BNS and state); null for a voice with none. */
+    fun files(voice: Int): List<String>? = FILES[voice] ?: release(voice)?.files
+
+    /** The file a person brings for each imported voice, for the firmware list (the content, not the name, is what
+     * the import goes by); a release voice's is the table's. */
+    private val BRING = mapOf(ENGLISH to "BL2ENG.BNS", SPANISH to "BL2SPA.BNS", GERMAN to "Lite2000.BNS (German)",
+                              ITALIAN to "Lite2000.BNS (Italian)", SLOVAK to "BS2SLL.BNS", SPEAKOUT to "SPEAKOUT.HEX",
+                              MOCKINGBOARD to "the Mockingboard Developers Toolkit disk",
+                              MOCKINGBOARD_EARLY to "Mockingboard disk 1")
+
+    fun bring(voice: Int): String? = release(voice)?.file ?: BRING[voice]
+
+    /** Every imported voice, in the order an import takes them: [IMPORTED], then the release voices. */
+    fun imported(): List<Int> = if (CONTROL == "release") IMPORTED else IMPORTED + releases.map { it.voice }
+
+    /** A Blazie unit, a state made from its firmware: [BLAZIE] and the release voices. */
+    fun isBlazie(voice: Int) = voice in BLAZIE || release(voice) != null
+
     /** The JVM tests' controls (`gradlew testDebugUnitTest -Pssi263ImportBreak=<value>`; never set on a phone):
      * `1` looks at a zip's top only -- no folder down, no add-on layout -- so the layout tests must fail; `state` stops
      * knowing a state file, so the state tests must fail; `speakout` drops what the native side says is the
-     * Speak-Out's, so the Speak-Out tests must fail; `mockingboard` the same for the Mockingboard's. */
+     * Speak-Out's, so the Speak-Out tests must fail; `mockingboard` the same for the Mockingboard's; `release` leaves
+     * the release voices out of the import, so their tests must fail. */
     private val CONTROL = System.getProperty("ssi263.import.break") ?: ""
 
     const val STATE_SIZE = 786432           // battery-backed RAM + file flash: every state bl_save_state writes
@@ -73,7 +109,9 @@ object FirmwareImport {
         "containing them, with this tool."
     const val WHAT_TO_CHOOSE = "Choose the Braille Lite 2000's firmware: its update program (such as blt2000.exe), " +
         "the BL2ENG.BNS (English), BL2SPA.BNS (Spanish) or Lite2000.BNS (German, Italian) inside it, a zip holding " +
-        "them at its top or one folder down, or the NVDA add-on (.nvda-addon), which carries them all. Or the Slovak " +
+        "them at its top or one folder down, or the NVDA add-on (.nvda-addon), which carries them all. Or a Braille " +
+        "Lite 2000 language update, such as BL2HUN.BNS (Hungarian) or BL2TUR.BNS (Turkish): the Setup page lists " +
+        "them all, under Show all Braille Lite importable languages. Or the Slovak " +
         "Braille 'n Speak 2000's: BS2SLL.BNS. Or the Speak-Out's: GW Micro's SPEAKOUT.HEX, or the speakout.zip " +
         "holding it. Or the Mockingboard's: mockingboard-tts-1.1.bin, Sweet Micro Systems' text-to-speech, made " +
         "from the Mockingboard Developers Toolkit disk, or that disk's image itself (.dsk, .do or .po); for the " +
@@ -93,14 +131,14 @@ object FirmwareImport {
         fun known(): List<String>
     }
 
-    fun languageName(language: Int) = when (language) {
+    fun languageName(language: Int) = release(language)?.language ?: when (language) {
         SPANISH -> "Spanish"; GERMAN -> "German"; ITALIAN -> "Italian"; SLOVAK -> "Slovak"
         SPEAKOUT -> "Speak-Out"; MOCKINGBOARD -> "Mockingboard"
         MOCKINGBOARD_EARLY -> "early Mockingboard"; else -> "English" }
 
-    /** The unit's name in words: "German Braille Lite", "Slovak Braille 'n Speak 2000"; the Speak-Out and the
-     * Mockingboards by their own. */
-    fun unitName(language: Int) = when (language) {
+    /** The unit's name in words: "German Braille Lite", "Slovak Braille 'n Speak 2000", a release voice's as the
+     * table names it ("Braille Lite 2000 (Hungarian)"); the Speak-Out and the Mockingboards by their own. */
+    fun unitName(language: Int) = release(language)?.name ?: when (language) {
         !in BLAZIE -> languageName(language)
         SLOVAK -> "Slovak Braille 'n Speak 2000"
         else -> "${languageName(language)} Braille Lite" }
@@ -184,12 +222,7 @@ object FirmwareImport {
                         val path = e.name.replace('\\', '/').trimStart('/')
                         val parts = path.split('/').filter { it.isNotEmpty() }
                         if (parts.isEmpty() || parts.contains("__MACOSX")) continue
-                        // the Blazie add-on's synthDrivers/_ssi263_blazie/, and the unified 0.8 add-on's
-                        // synthDrivers/_ssi263_unified/_ssi263_blazie/ (every Blazie unit's files, flat)
-                        val addon = parts[0].equals("synthDrivers", true) &&
-                            ((parts.size == 3 && parts[1].equals("_ssi263_blazie", true)) ||
-                             (parts.size == 4 && parts[1].equals("_ssi263_unified", true) &&
-                              parts[2].equals("_ssi263_blazie", true)))
+                        val addon = addonFile(parts)
                         val tooDeep = if (CONTROL == "1") parts.size > 1 else parts.size > 2 && !addon
                         if (tooDeep) {
                             if (parts.last().lowercase().let { it.endsWith(".bns") || it.endsWith(".exe") ||
@@ -215,7 +248,7 @@ object FirmwareImport {
             val found = ArrayList<Found>()
             // One release per language: the list's first (the newest) when a source holds two.
             val rank = id.known()
-            for (language in IMPORTED) {
+            for (language in imported()) {
                 val c = firmware.filter { it.language == language }.minByOrNull { rank.indexOf(it.label) } ?: continue
                 found.add(Found(language, c.from, c.file, c.label))
             }
@@ -231,7 +264,9 @@ object FirmwareImport {
             for (from in unknown) notes.add("$from is Braille Lite 2000 firmware of a release this app does not " +
                 "know; it is left out.")
             for ((from, why) in otherHex + withReason) notes.add("$from is $why; it is left out.")
-            if (states.isNotEmpty()) notes.add("${states.joinToString(", ")} ${if (states.size == 1) "is a state " +
+            if (states.size > 3) notes.add("${states.size} state files (${states[0]} and others) are not firmware, " +
+                "and are not used: this phone prepares each unit's state itself from its firmware.")
+            else if (states.isNotEmpty()) notes.add("${states.joinToString(", ")} ${if (states.size == 1) "is a state " +
                 "file" else "are state files"}, not firmware, and ${if (states.size == 1) "is" else "are"} not " +
                 "used: this phone prepares the unit's state itself from the firmware.")
             if (found.isNotEmpty()) return Plan(found, null, notes)
@@ -263,6 +298,20 @@ object FirmwareImport {
             refusal.append(" ").append(WHAT_TO_CHOOSE)
             return Plan(emptyList(), refusal.toString())
         }
+    }
+
+    /** The NVDA add-ons' engine folders that hold firmware a phone imports (the Accents' are built into the app). */
+    private val ENGINES = setOf("_ssi263_blazie", "_ssi263_speakout", "_ssi263_mockingboard")
+
+    /** A file where an NVDA add-on keeps its units' firmware: synthDrivers/<engine>/ (the 0.7 add-ons) or
+     * synthDrivers/_ssi263_unified/<engine>/ (the 0.8 add-on, every unit in one), each unit's files flat, and the
+     * Blazie engine's bl2000/ (the language updates: Hungarian, Turkish, ...) -- so one add-on brings them all. */
+    private fun addonFile(parts: List<String>): Boolean {
+        if (CONTROL == "1" || parts.size < 3 || !parts[0].equals("synthDrivers", true)) return false
+        val e = if (parts[1].equals("_ssi263_unified", true)) 2 else 1
+        if (parts.size <= e || ENGINES.none { it.equals(parts[e], true) }) return false
+        return parts.size == e + 2 ||
+            (parts.size == e + 3 && parts[e].equals("_ssi263_blazie", true) && parts[e + 1].equals("bl2000", true))
     }
 
     private fun readUpTo(zip: ZipInputStream, cap: Int): ByteArray? {

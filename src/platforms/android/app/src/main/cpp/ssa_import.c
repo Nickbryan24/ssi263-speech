@@ -201,6 +201,23 @@ int ssa_blazie_recipe(int voice)
     return -1;
 }
 
+int ssa_import_voice(const unsigned char *data, long n, const char *out, char *msg, int msglen)
+{
+    int r = ssa_import_firmware(data, n, out, msg, msglen), k, v;
+    if (r != BLV_FW_UNKNOWN || ssa_import_break == 4)
+        return r;                      /* the control: the release table's voices never tried */
+    k = blv_import_release(data, n, out, msg, msglen);
+    if (k < 0)
+        return k;
+    v = ssa_release_voice(k);
+    if (v < 0) {                       /* a release no voice speaks yet: the emulator's alone */
+        if (out) remove(out);
+        snprintf(msg, (size_t)msglen, "%s: the emulator's, not yet a voice", blv_firmware_label(k));
+        return BLV_FW_UNKNOWN;
+    }
+    return v;
+}
+
 int ssa_import_firmware(const unsigned char *data, long n, const char *out, char *msg, int msglen)
 {
     char disk[256];

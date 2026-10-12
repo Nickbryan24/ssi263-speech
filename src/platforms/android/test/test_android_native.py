@@ -18,6 +18,11 @@ ssa_map.c and ssa_import.c, on the same chip, boards, hosts and voices), every c
   unit's code page (850; the Slovak unit's 852) and, for the Italian and Slovak units, the host's no_echo, as
   voices.c makes them.  Their import: each .BNS taken as its voice (7, 8, 9: the app's indexes, not bl_firmware.h's
   languages), written as it came; ssa_blazie_recipe gives each voice its state recipe (the C program's own check).
+- The release voices (bl_languages.txt's rows with a voice key: Hungarian, Turkish, ...; their cases run for each
+  language update in the firmware folder's bl2000/ with its state): each boots under its own file names and speaks
+  the import's probe.  Their import: each .BNS taken as its voice (ssa_engine.h's from SSA_RELEASE_FIRST, in the
+  table's order), written as it came; a release the emulator alone runs (Japanese) refused as one this app does not
+  know, no file left.
 - The GW Micro Speak-Out (imported; its cases run when firmware/gw-micro-speakout/SPEAKOUT.HEX is there): against
   so_voice driven directly (test_android_native --so-direct: sov_set, sov_speak, sov_render, sov_cancel on one kept
   unit, the settings computed here: the request's rate on the slider, the slider's pitch as the setting and the
@@ -75,9 +80,12 @@ ssa_map.c and ssa_import.c, on the same chip, boards, hosts and voices), every c
                              import-hash          ssa_import_break: any well-formed Intel HEX taken as the Speak-Out,
                                                   any file of a Mockingboard file's size as that one
                              import-dsk           ssa_import_break 2: a disk image never tried (the .dsk cases fail)
+                             import-release       ssa_import_break 4: the release table never tried (the release
+                                                  voices' imports fail)
 
 SSI263_ANDROID_TEST_ONLY=<blocks>, a comma list of bl (the Braille Lite in lockstep, its Spanish unit and the probe),
 ra (run ahead), lift (the line-start lift), num (the number words), lang (0.8's German, Italian and Slovak units),
+rel (the release voices),
 accent (the Accent SA and its text), so (the Speak-Out), mini (the
 Accent-mini), mb (the Mockingboard), import (the Speak-Out's and the Mockingboard's import): only those blocks, on
 both sides -- for the controls, so each runs what
@@ -150,6 +158,11 @@ LANGS = [("de", "Guten Tag. Grüß Gott, es kostet 1.234 Euro.", "Hallo."),
          ("sk", "Dobrý deň. Čo sa deje? Stojí to 1.234 eur.", "Ahoj.")]
 # ssa_import_firmware's codes for the Blazie releases: the app's voices (ssa_engine.h), not bl_firmware.h's languages
 BLAZIE_VOICE = {"en": 0, "es": 1, "de": 7, "it": 8, "sk": 9}
+# the release voices: bl_languages.txt's rows with a voice key, in its order, from ssa_engine.h's SSA_RELEASE_FIRST
+sys.path.insert(0, os.path.join(REPO, "src", "csrc", "blazie"))
+import gen_languages  # noqa: E402
+RELEASE_FIRST = 10
+RELEASE_ROWS = [r for r in gen_languages.rows()[0] if r["voice"].startswith("blazie_")]
 AICOM = os.path.join(REPO, "firmware", "aicom-accent-sa")
 SPEAKOUT_HEX = os.path.join(REPO, "firmware", "gw-micro-speakout", "SPEAKOUT.HEX")
 MINI_DVC = os.path.join(REPO, "firmware", "aicom-accent-mini", "SPKEMS.DVC")
@@ -948,7 +961,31 @@ def data_folder(firmware, tmp):
         if all(os.path.isfile(f) for f in src):
             for f, name in zip(src, FILES[lang]):
                 shutil.copy2(f, os.path.join(tmp, name))
+    for row in RELEASE_ROWS:                                 # the release voices, under their own names
+        src = [os.path.join(firmware, "bl2000", f) for f in release_files(row)]
+        if all(os.path.isfile(f) for f in src):
+            for f in src:
+                shutil.copy2(f, tmp)
     return tmp
+
+
+def release_files(row):
+    """A release voice's files in the app's folder (ssa_voice_file): the file a person brings, its state by its id."""
+    return row["file"], row["id"] + ".state"
+
+
+def release_heard(label, data, got):
+    """Every release voice whose files are here booted and spoke the import's probe (ssa_probe), none missed."""
+    here = [RELEASE_FIRST + i for i, row in enumerate(RELEASE_ROWS)
+            if all(os.path.isfile(os.path.join(data, f)) for f in release_files(row))]
+    if not here:
+        print("skip  the release voices: no bl2000/ language updates with their states in the firmware folder")
+        return 0
+    spoke = [v for v in here if (got.get("rel-%d-probe" % v) or (0,))[0] > 0]
+    ok = spoke == here and (got.get("rel-voices-here") or (0,))[0] == len(here)
+    print("%-5s %-8s the release voices: %d of %d here spoke the import's probe" % ("ok" if ok else "FAIL", label,
+                                                                                  len(spoke), len(here)))
+    return not ok
 
 
 def lang_skips(data):
@@ -1030,21 +1067,40 @@ def blazie_import_cases(exe, data, firmware):
             open(out, "rb").read() == blob
         print("%-5s import   %s (%s): %s" % ("ok" if ok else "FAIL", fw, lang, m.group(0) if m else r.stdout + r.stderr))
         bad += not ok
-    # a release the table lists for the emulator only (bl_languages.txt, no voice): to the phone's voices a release it
-    # does not know (UNKNOWN, -4, the apps' own wording), no file left -- never offered, never named
-    mute = os.path.join(firmware, "bl2000", "BL2HUN.BNS")
+    # the release voices (bl_languages.txt's rows with a voice key: Hungarian, Turkish, ...): each language update's
+    # .BNS taken as its voice, ssa_engine.h's from SSA_RELEASE_FIRST in the table's order, and written as it came
+    out = os.path.join(data, "import.out")
+    seen = 0
+    for i, row in enumerate(RELEASE_ROWS):
+        path = os.path.join(firmware, "bl2000", row["file"])
+        if not os.path.isfile(path):
+            continue
+        seen += 1
+        if os.path.exists(out):
+            os.remove(out)
+        r = subprocess.run([exe, "--import", path, out], capture_output=True, text=True)
+        m = re.match(r"^import (-?\d+) (.*)$", r.stdout.strip())
+        ok = bool(m) and int(m.group(1)) == RELEASE_FIRST + i and os.path.isfile(out) and \
+            open(out, "rb").read() == open(path, "rb").read()
+        print("%-5s import   bl2000/%s (%s, voice %d): %s" % ("ok" if ok else "FAIL", row["file"], row["voice"],
+                                                          RELEASE_FIRST + i, m.group(0) if m else r.stdout + r.stderr))
+        bad += not ok
+    if not seen:
+        print("skip  the release voices' imports: no bl2000/ language updates in the firmware folder")
+    # a release the table lists for the emulator only (no voice: Japanese): to the phone's voices a release it does
+    # not know (UNKNOWN, -4, the apps' own wording), no file left -- never offered, never named
+    mute = os.path.join(firmware, "bl2000", "BL2JPN.BNS")
     if os.path.isfile(mute):
-        out = os.path.join(data, "import.out")
         if os.path.exists(out):
             os.remove(out)
         r = subprocess.run([exe, "--import", mute, out], capture_output=True, text=True)
         m = re.match(r"^import (-?\d+) (.*)$", r.stdout.strip())
         ok = bool(m) and int(m.group(1)) == -4 and not os.path.exists(out)
-        print("%-5s import   bl2000/BL2HUN.BNS (the emulator's only): %s" % ("ok" if ok else "FAIL",
+        print("%-5s import   bl2000/BL2JPN.BNS (the emulator's only): %s" % ("ok" if ok else "FAIL",
                                                                       m.group(0) if m else r.stdout + r.stderr))
         bad += not ok
     else:
-        print("skip  import of a release the emulator's only: no bl2000/BL2HUN.BNS in the firmware folder")
+        print("skip  import of a release the emulator's only: no bl2000/BL2JPN.BNS in the firmware folder")
     for f in ("import.in", "import.out"):
         if os.path.exists(os.path.join(data, f)):
             os.remove(os.path.join(data, f))
@@ -1130,6 +1186,8 @@ def main():
                 bad += mini_capitals(label, got)
             if mb and block("mb"):
                 bad += mb_heard(label, got, got.get("_out", ""))
+            if block("rel"):
+                bad += release_heard(label, data, got)
             return bad
         bad = 0
         if want:

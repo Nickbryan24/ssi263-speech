@@ -15,8 +15,10 @@ import java.util.Locale
 object SsiEngine {
     data class VoiceInfo(val index: Int, val name: String, val label: String, val locale: Locale)
 
+    init { loadNativeIfThere() }           // the release voices (FirmwareImport.releases) come with the library
+
     // The names are kept for good: TalkBack stores the one it was given.
-    private val ALL = listOf(
+    private val SHIPPED = listOf(
         VoiceInfo(SsiNative.ACCENT_SA, "en-US-accentsa", "Aicom Accent SA (English)", Locale("en", "US")),
         VoiceInfo(SsiNative.ACCENT_MINI, "en-US-accentmini", "Aicom Accent-mini (English)", Locale("en", "US")),
         VoiceInfo(SsiNative.ENGLISH, "en-US-braillelite", "Braille Lite 2000 (English)", Locale("en", "US")),
@@ -29,6 +31,16 @@ object SsiEngine {
         VoiceInfo(SsiNative.GERMAN, "de-DE-braillelite", "Braille Lite 2000 (Deutsch)", Locale("de", "DE")),
         VoiceInfo(SsiNative.ITALIAN, "it-IT-braillelite", "Braille Lite 2000 (italiano)", Locale("it", "IT")),
         VoiceInfo(SsiNative.SLOVAK, "sk-SK-braillenspeak", "Braille 'n Speak 2000 (slovenčina)", Locale("sk", "SK")))
+
+    /** Every voice: the shipped ones, then the release voices -- the library's table, in its order, each named by its
+     * locale ("hu-HU-braillelite", "pt-BR-braillelite", "ar-braillelite") and listed by its language in English
+     * ("Braille Lite 2000 (Hungarian)"): its own name in its own script ("русский") is lost on whichever voice reads
+     * the list -- the English Braille Lite said "Braille Lite radio button" (Tomi). */
+    private val ALL: List<VoiceInfo>
+        get() = SHIPPED + FirmwareImport.releases.map { r ->
+            val locale = SsiLanguages.locale(r.tag)
+            VoiceInfo(r.voice, SsiLanguages.voiceTag(locale) + "-braillelite", "Braille Lite 2000 (${r.language})", locale)
+        }
 
     /** Every voice this app has, whether or not it can speak now (SsiLanguages: a language whose firmware is not here
      * is missing data, not unsupported). */
@@ -87,8 +99,8 @@ object SsiEngine {
 
     /** For a request in that language: the chosen voice when it speaks it, else the first voice that does; null when
      * none can (SsiLanguages.voiceFor). */
-    fun voiceForLanguage(ctx: Context, lang: String?, index: Int): VoiceInfo? =
-        SsiLanguages.voiceFor(lang, index, voices(ctx))
+    fun voiceForLanguage(ctx: Context, lang: String?, index: Int, country: String? = null): VoiceInfo? =
+        SsiLanguages.voiceFor(lang, index, voices(ctx), country)
 
     /** Own the engine for one utterance: every native call but a stop happens inside. */
     fun <T> withEngine(block: () -> T): T = synchronized(lock) { block() }

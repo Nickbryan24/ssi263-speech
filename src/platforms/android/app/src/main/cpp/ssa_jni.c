@@ -211,9 +211,10 @@ static unsigned char *bytes_of(JNIEnv *env, jbyteArray a, jsize *n)
     return p;
 }
 
-/* ssa_import.h's ssa_import_firmware, the firmware in these bytes by content: SSA_ENGLISH 0, _SPANISH 1, _GERMAN 7,
+/* ssa_import.h's ssa_import_voice, the firmware in these bytes by content: SSA_ENGLISH 0, _SPANISH 1, _GERMAN 7,
    _ITALIAN 8 or _SLOVAK 9 (a Blazie release on the list, its language as the app's voice, written to `out` as a
-   .BNS), SSA_HEX_SPEAKOUT 3 (the known SPEAKOUT.HEX,
+   .BNS), a release voice from SSA_RELEASE_FIRST 10 (Hungarian ...: the release table's, the same way),
+   SSA_HEX_SPEAKOUT 3 (the known SPEAKOUT.HEX,
    written to `out`) or SSA_FW_MOCKINGBOARD 5 / _EARLY 6 (a known Mockingboard file, from itself or a disk image,
    written to `out`), the label in
    nativeImportError; else negative (_NONE, _REFUSED, _WRITE, _UNKNOWN; SSA_HEX_OTHER -5: an Intel HEX file but not
@@ -229,7 +230,7 @@ JNIEXPORT jint JNICALL FN(nativeImportFirmware)(JNIEnv *env, jclass cls, jbyteAr
     data = bytes_of(env, jdata, &n);
     if (!data) { strcpy(g_import_error, "out of memory"); return BLV_FW_WRITE; }
     out = (*env)->GetStringUTFChars(env, jout, NULL);
-    r = out ? ssa_import_firmware(data, (long)n, out, g_import_error, sizeof g_import_error) : BLV_FW_WRITE;
+    r = out ? ssa_import_voice(data, (long)n, out, g_import_error, sizeof g_import_error) : BLV_FW_WRITE;
     if (out) (*env)->ReleaseStringUTFChars(env, jout, out);
     free(data);
     return r;
@@ -250,6 +251,9 @@ JNIEXPORT jboolean JNICALL FN(nativeStateCheck)(JNIEnv *env, jclass cls, jstring
     return r ? JNI_TRUE : JNI_FALSE;
 }
 
+/* A release a phone's voice speaks: a shipped voice's language, or a release voice's row. */
+static int has_voice(int k) { return blv_firmware_language(k) >= 0 || ssa_release_voice(k) >= 0; }
+
 /* The list of releases the import accepts, by label (bl_firmware.c's KNOWN): only those with a voice -- the
    emulator's own releases are never offered or named to the phone's voices. */
 JNIEXPORT jobjectArray JNICALL FN(nativeKnownFirmware)(JNIEnv *env, jclass cls)
@@ -258,11 +262,34 @@ JNIEXPORT jobjectArray JNICALL FN(nativeKnownFirmware)(JNIEnv *env, jclass cls)
     jobjectArray out;
     (void)cls;
     for (k = 0; k < blv_firmware_count(); k++)
-        n += blv_firmware_language(k) >= 0;
+        n += has_voice(k);
     out = (*env)->NewObjectArray(env, n, (*env)->FindClass(env, "java/lang/String"), NULL);
     for (k = 0; out && k < blv_firmware_count(); k++)
-        if (blv_firmware_language(k) >= 0)
+        if (has_voice(k))
             (*env)->SetObjectArrayElement(env, out, i++, (*env)->NewStringUTF(env, blv_firmware_label(k)));
+    return out;
+}
+
+/* The release voices (ssa_engine.h's, from SSA_RELEASE_FIRST, in their order), the one list the app's are made from
+   (SsiNative.releases): per voice "<index>\t<id>\t<file>\t<name>\t<voice name>\t<tag>" -- the release's id (its
+   state is <id>.state), the file a person brings, its name in English, the voice's in its own language, its BCP 47
+   tag (bl_languages.txt). */
+JNIEXPORT jobjectArray JNICALL FN(nativeReleaseVoices)(JNIEnv *env, jclass cls)
+{
+    int v, n = 0, i = 0;
+    char row[512];
+    jobjectArray out;
+    (void)cls;
+    for (v = SSA_RELEASE_FIRST; v < SSA_VOICES; v++)
+        n += ssa_voice_release(v) >= 0;
+    out = (*env)->NewObjectArray(env, n, (*env)->FindClass(env, "java/lang/String"), NULL);
+    for (v = SSA_RELEASE_FIRST; out && v < SSA_VOICES; v++) {
+        int k = ssa_voice_release(v);
+        if (k < 0) continue;
+        snprintf(row, sizeof row, "%d\t%s\t%s\t%s\t%s\t%s", v, blv_release_id(k), blv_release_file(k),
+                 blv_release_name(k), blv_release_voice_name(k), blv_release_tag(k));
+        (*env)->SetObjectArrayElement(env, out, i++, (*env)->NewStringUTF(env, row));
+    }
     return out;
 }
 
@@ -274,23 +301,26 @@ static int state_progress(void *ctx, double done)
 }
 
 /* blv_make_state for a Blazie voice's unit (SSA_ENGLISH ... SSA_SLOVAK), with its language's recipe
-   (ssa_blazie_recipe): 1, or 0 with the reason in nativeImportError.  Long (seconds; Spanish most of a minute): call
-   it off the main thread and read nativeStateProgress meanwhile; nativeStateCancel abandons it. */
+   (ssa_blazie_recipe), or blv_make_release_state for a release voice's (its row's recipe): 1, or 0 with the reason in
+   nativeImportError.  Long (seconds; Spanish most of a minute): call it off the main thread and read
+   nativeStateProgress meanwhile; nativeStateCancel abandons it. */
 JNIEXPORT jint JNICALL FN(nativeMakeState)(JNIEnv *env, jclass cls, jstring jfw, jint voice, jstring jout)
 {
     const char *fw, *out;
-    int r = 0, recipe = ssa_blazie_recipe(voice);
+    int r = 0, recipe = ssa_blazie_recipe(voice), release = ssa_voice_release(voice);
     (void)cls;
     g_import_error[0] = 0;
     g_state_cancel = 0;
     g_state_done = 0;
-    if (recipe < 0) {
+    if (recipe < 0 && release < 0) {
         snprintf(g_import_error, sizeof g_import_error, "voice %d has no state to make", voice);
         return 0;
     }
     fw = (*env)->GetStringUTFChars(env, jfw, NULL);
     out = (*env)->GetStringUTFChars(env, jout, NULL);
-    if (fw && out)
+    if (fw && out && release >= 0)
+        r = blv_make_release_state(fw, release, out, state_progress, NULL, g_import_error, sizeof g_import_error);
+    else if (fw && out)
         r = blv_make_state(fw, recipe, out, state_progress, NULL, g_import_error, sizeof g_import_error);
     if (fw) (*env)->ReleaseStringUTFChars(env, jfw, fw);
     if (out) (*env)->ReleaseStringUTFChars(env, jout, out);

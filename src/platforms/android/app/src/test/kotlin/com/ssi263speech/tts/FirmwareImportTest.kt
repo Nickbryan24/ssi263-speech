@@ -53,6 +53,14 @@ class FirmwareImportTest {
     private fun state() = ByteArray(FirmwareImport.STATE_SIZE) { (it * 13).toByte() }
 
     private companion object {
+        // two release voices, as the library's table gives them (the app reads them from SsiNative)
+        const val HUNGARIAN = 10
+        const val TURKISH = 11
+        val RELEASES = listOf(
+            FirmwareImport.Release(HUNGARIAN, "bl2_hu_1999_07", "BL2HUN.BNS", "Braille Lite 2000 (Hungarian)",
+                                   "Braille Lite 2000 (magyar)", "hu"),
+            FirmwareImport.Release(TURKISH, "bl2_tr_1998_12", "BL2TUR.BNS", "Braille Lite 2000 (Turkish)",
+                                   "Braille Lite 2000 (Türkçe)", "tr"))
         val MOCKINGBOARD_FILE = "SWEETMICRO".toByteArray() + ByteArray(2000) { (it * 5).toByte() }
         val EARLY_FILE = "SWEETEARLY".toByteArray() + ByteArray(1900) { (it * 3).toByte() }
         const val EARLY_LABEL = "Mockingboard, early: Sweet Micro Systems' text-to-speech of Mockingboard disk 1"
@@ -60,7 +68,8 @@ class FirmwareImportTest {
 
     private object Fake : FirmwareImport.Identify {
         val labels = listOf("English June 2003", "English September 2000", "Spanish September 2000",
-                            "German September 2000", "Italian September 2000", "Slovak Braille 'n Speak 2000")
+                            "German September 2000", "Italian September 2000", "Slovak Braille 'n Speak 2000",
+                            "Braille Lite Hungarian (BL2HUN.BNS)", "Braille Lite Turkish (BL2TUR.BNS)")
 
         override fun firmware(data: ByteArray, out: File): Pair<Int, String> {
             if (data.isNotEmpty() && data[0] == ':'.code.toByte()) {
@@ -100,6 +109,8 @@ class FirmwareImportTest {
                 'G' -> FirmwareImport.GERMAN to labels[3]
                 'I' -> FirmwareImport.ITALIAN to labels[4]
                 'K' -> FirmwareImport.SLOVAK to labels[5]
+                'H' -> HUNGARIAN to labels[6]
+                'R' -> TURKISH to labels[7]
                 'U' -> return FirmwareImport.UNKNOWN to "not a release this app knows"
                 else -> return FirmwareImport.REFUSED to "not a release this voice can run"
             }
@@ -118,8 +129,10 @@ class FirmwareImportTest {
         return out.toByteArray()
     }
 
-    private fun inspect(name: String, data: ByteArray) =
-        FirmwareImport.inspect(name, data, temp.newFolder(), Fake)
+    private fun inspect(name: String, data: ByteArray): FirmwareImport.Plan {
+        FirmwareImport.releases = RELEASES
+        return FirmwareImport.inspect(name, data, temp.newFolder(), Fake)
+    }
 
     private fun languages(plan: FirmwareImport.Plan) = plan.found.map { it.language }
 
@@ -224,7 +237,8 @@ class FirmwareImportTest {
             "BL2GER.BNS is Braille Lite 2000 firmware, but not a release this app knows, so it cannot be imported"))
         assertTrue(plan.refusal!!, plan.refusal!!.contains(
             "The releases this app knows: English June 2003; English September 2000; Spanish September 2000; " +
-            "German September 2000; Italian September 2000; Slovak Braille 'n Speak 2000."))
+            "German September 2000; Italian September 2000; Slovak Braille 'n Speak 2000; " +
+            "Braille Lite Hungarian (BL2HUN.BNS); Braille Lite Turkish (BL2TUR.BNS)."))
     }
 
     @Test fun anUnknownReleaseInAZipIsRefused() {
@@ -488,6 +502,68 @@ class FirmwareImportTest {
         assertEquals("Italian Braille Lite", FirmwareImport.unitName(FirmwareImport.ITALIAN))
         assertEquals("Slovak Braille 'n Speak 2000", FirmwareImport.unitName(FirmwareImport.SLOVAK))
         assertEquals("Speak-Out", FirmwareImport.unitName(FirmwareImport.SPEAKOUT))
+    }
+
+    // ---- the release voices (Hungarian, Turkish, ...: the library's release table) ---------------------------------
+
+    @Test fun aLanguageUpdateIsImportedAsItsVoice() {
+        val plan = inspect("BL2HUN.BNS", bns('H'))
+        assertNull(plan.refusal)
+        assertEquals(listOf(HUNGARIAN), languages(plan))
+        assertEquals("Braille Lite Hungarian (BL2HUN.BNS)", plan.found[0].label)
+    }
+
+    @Test fun releaseVoicesComeAfterTheShippedOnesFromOneZip() {
+        val plan = inspect("langs.zip", zip("BL2TUR.BNS" to bns('R'), "BL2ENG.BNS" to bns('E'),
+                                            "BL2HUN.BNS" to bns('H')))
+        assertNull(plan.refusal)
+        assertEquals(listOf(FirmwareImport.ENGLISH, HUNGARIAN, TURKISH), languages(plan))
+    }
+
+    @Test fun theUnifiedAddOnBringsEveryVoiceAtOnce() {
+        // the 0.8 add-on: every engine's folder, the Blazie engine's language updates in bl2000/, and states that are
+        // never taken (Tomi: someone who wants all the voices can have them in one import)
+        val u = "synthDrivers/_ssi263_unified/"
+        val d = u + "_ssi263_blazie/"
+        val states = (1..20).map { d + "bl2000/state$it.state" to state() }.toTypedArray()
+        val plan = inspect("ssi263-speech-0.8.0.nvda-addon", zip("manifest.ini" to "name = ssi263".toByteArray(),
+            d + "BL2ENG.BNS" to bns('E'), d + "bl2_2003_warm.state" to state(), d + "Lite2000_de.BNS" to bns('G'),
+            d + "bl2000/BL2HUN.BNS" to bns('H'), d + "bl2000/BL2TUR.BNS" to bns('R'),
+            u + "_ssi263_speakout/SPEAKOUT.HEX" to hex(true),
+            u + "_ssi263_mockingboard/mockingboard-tts-1.1.bin" to mockingboard(),
+            u + "_ssi263_mockingboard/mockingboard-tts-early.bin" to EARLY_FILE,
+            u + "_ssi263_accent/accent-sa/u2.BIN" to ByteArray(4000), *states))
+        assertNull(plan.refusal)
+        assertEquals(listOf(FirmwareImport.ENGLISH, FirmwareImport.GERMAN, FirmwareImport.SPEAKOUT,
+            FirmwareImport.MOCKINGBOARD, FirmwareImport.MOCKINGBOARD_EARLY, HUNGARIAN, TURKISH), languages(plan))
+        assertEquals("${d}bl2000/BL2HUN.BNS", plan.found.first { it.language == HUNGARIAN }.from)
+        assertTrue(plan.notes.toString(), plan.notes.single().startsWith("21 state files ("))
+        // the standalone Blazie add-on's bl2000/ too
+        val b = "synthDrivers/_ssi263_blazie/"
+        assertEquals(listOf(FirmwareImport.ENGLISH, HUNGARIAN), languages(inspect("blazie.nvda-addon",
+            zip(b + "BL2ENG.BNS" to bns('E'), b + "bl2000/BL2HUN.BNS" to bns('H')))))
+        // ... and nowhere else that deep
+        val deep = inspect("other.zip", zip("synthDrivers/_ssi263_blazie/other/BL2HUN.BNS" to bns('H')))
+        assertTrue(deep.found.isEmpty())
+    }
+
+    @Test fun aReleaseVoiceHasItsFilesAndNames() {
+        FirmwareImport.releases = RELEASES
+        assertEquals(listOf("BL2HUN.BNS", "bl2_hu_1999_07.state"), FirmwareImport.files(HUNGARIAN))
+        assertEquals("Braille Lite 2000 (Hungarian)", FirmwareImport.unitName(HUNGARIAN))
+        assertEquals("Hungarian", FirmwareImport.languageName(HUNGARIAN))
+        assertTrue(FirmwareImport.isBlazie(TURKISH))
+        // the firmware list names the file to bring: the table's for a release voice, the known one for the others
+        assertEquals("BL2HUN.BNS", FirmwareImport.bring(HUNGARIAN))
+        for (v in FirmwareImport.IMPORTED) assertTrue("voice $v", FirmwareImport.bring(v) != null)
+        assertFalse(TURKISH in FirmwareImport.NO_STATE)
+        val shipped = FirmwareImport.FILES.values.flatten()
+        assertTrue("a release voice's files are its own", RELEASES.flatMap { it.files }.none { it in shipped })
+        // the BL2FRE release's name says which of the French releases it is; its language is French
+        assertEquals("French", FirmwareImport.Release(20, "bl2_fr_fre_1999_07", "BL2FRE.BNS",
+            "Braille Lite 2000 (French, BL2FRE)", "Braille Lite 2000 (français)", "fr").language)
+        assertEquals("Arabic, UAE", FirmwareImport.Release(21, "bl2_ar_ae_1998_12", "BL2UAE.BNS",
+            "Braille Lite 2000 (Arabic, UAE)", "Braille Lite 2000 (العربية، الإمارات)", "ar-AE").language)
     }
 
     @Test fun theWordsNameEveryUnit() {

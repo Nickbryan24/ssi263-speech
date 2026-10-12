@@ -7,9 +7,25 @@ import android.speech.tts.TextToSpeech
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SsiLanguagesTest {
+    private companion object {
+        // release voices as the library's table gives them (the app reads them from SsiNative): the tags with and
+        // without a region that the system's languages must find
+        val RELEASES = listOf(
+            FirmwareImport.Release(10, "bl2_ar_1998_12", "BL2ARB.BNS", "Braille Lite 2000 (Arabic)", "Braille Lite 2000 (العربية)", "ar"),
+            FirmwareImport.Release(11, "bl2_ar_ae_1998_12", "BL2UAE.BNS", "Braille Lite 2000 (Arabic, UAE)", "Braille Lite 2000 (العربية، الإمارات)", "ar-AE"),
+            FirmwareImport.Release(12, "bl2_pt_br_1998_12", "BL2BPG.BNS", "Braille Lite 2000 (Brazilian Portuguese)", "Braille Lite 2000 (português do Brasil)", "pt-BR"),
+            FirmwareImport.Release(13, "bl2_pt_1998_12", "BL2POR.BNS", "Braille Lite 2000 (Portuguese)", "Braille Lite 2000 (português)", "pt"),
+            FirmwareImport.Release(14, "bl2_he_1999_07", "BL2HEB.BNS", "Braille Lite 2000 (Hebrew)", "Braille Lite 2000 (עברית)", "he"),
+            FirmwareImport.Release(15, "bl2_hu_1999_07", "BL2HUN.BNS", "Braille Lite 2000 (Hungarian)", "Braille Lite 2000 (magyar)", "hu"),
+            FirmwareImport.Release(16, "bl2_no_1999_07", "BL2NRW.BNS", "Braille Lite 2000 (Norwegian)", "Braille Lite 2000 (norsk)", "no"))
+    }
+
+    init { FirmwareImport.releases = RELEASES }
+
     private val known = SsiEngine.KNOWN
 
     /** The voices that can speak with nothing imported (the Accents, the Mockingboards' built-in copies) plus these. */
@@ -76,8 +92,55 @@ class SsiLanguagesTest {
     }
 
     @Test fun everyVoiceIsListedOnceWithAnIndexBelowVoices() {
-        assertEquals(SsiNative.VOICES, known.size)
-        assertEquals((0 until SsiNative.VOICES).toSet(), known.map { it.index }.toSet())
+        assertEquals(SsiNative.RELEASE_FIRST + RELEASES.size, known.size)
+        assertEquals((0 until known.size).toSet(), known.map { it.index }.toSet())
+        assertTrue(known.all { it.index < SsiNative.VOICES })
         assertEquals(known.size, known.map { it.name }.toSet().size)
+    }
+
+    // ---- the release voices (the library's table) --------------------------------------------------------------
+
+    @Test fun aReleaseVoiceIsNamedByItsLocale() {
+        fun of(index: Int) = known.first { it.index == index }
+        assertEquals("hu-HU-braillelite", of(15).name)
+        // listed in English: a name in its own script is lost on the voice that reads the list (Tomi: Russian)
+        assertEquals("Braille Lite 2000 (Hungarian)", of(15).label)
+        assertEquals("Braille Lite 2000 (Arabic, UAE)", of(11).label)
+        assertTrue(known.filter { it.index >= SsiNative.RELEASE_FIRST }.all { v -> v.label.all { it.code < 128 } })
+        assertEquals("pt-BR-braillelite", of(12).name)
+        assertEquals("pt-PT-braillelite", of(13).name)
+        assertEquals("ar-braillelite", of(10).name)
+        assertEquals("ar-AE-braillelite", of(11).name)
+        assertEquals("nb-NO-braillelite", of(16).name)
+        assertArrayEquals(arrayOf("hun", "HUN", ""), SsiLanguages.language(of(15)))
+    }
+
+    @Test fun aRequestsCountryPicksItsRelease() {
+        val v = with(10, 11, 12, 13, 14, 15, 16)
+        // Portugal's and Brazil's Portuguese, whichever the chosen voice is
+        assertEquals(12, SsiLanguages.ownLanguageVoice("por", SsiNative.ENGLISH, v, "BRA")?.index)
+        assertEquals(12, SsiLanguages.ownLanguageVoice("pt", 13, v, "BR")?.index)
+        assertEquals(13, SsiLanguages.ownLanguageVoice("pt", 12, v, "PT")?.index)
+        assertEquals(13, SsiLanguages.ownLanguageVoice("por", SsiNative.ENGLISH, v, "PRT")?.index)
+        // a country neither has: the chosen one when it speaks Portuguese, else the first
+        assertEquals(12, SsiLanguages.ownLanguageVoice("pt", 12, v, "AGO")?.index)
+        assertEquals(12, SsiLanguages.ownLanguageVoice("pt", SsiNative.ENGLISH, v, "")?.index)
+        // the UAE's Arabic for the UAE, the other everywhere else
+        assertEquals(11, SsiLanguages.ownLanguageVoice("ara", SsiNative.ENGLISH, v, "ARE")?.index)
+        assertEquals(10, SsiLanguages.ownLanguageVoice("ar", SsiNative.ENGLISH, v, "SA")?.index)
+        assertEquals(TextToSpeech.LANG_COUNTRY_AVAILABLE, avail("ara", "ARE", v))
+        assertEquals(TextToSpeech.LANG_AVAILABLE, avail("ara", "EGY", v))
+    }
+
+    @Test fun norwegianAndHebrewByEveryCode() {
+        val v = with(14, 16)
+        for (lang in listOf("no", "nb", "nor", "nob", "nb-NO", "no_NO"))
+            assertEquals(lang, 16, SsiLanguages.ownLanguageVoice(lang, SsiNative.ENGLISH, v, "NO")?.index)
+        assertEquals(TextToSpeech.LANG_COUNTRY_AVAILABLE, avail("nor", "NOR", v))
+        for (lang in listOf("he", "iw", "heb"))
+            assertEquals(lang, 14, SsiLanguages.ownLanguageVoice(lang, SsiNative.ENGLISH, v, "IL")?.index)
+        // and missing data, not unsupported, until each is imported
+        assertEquals(TextToSpeech.LANG_MISSING_DATA, avail("hun", "HUN", with()))
+        assertEquals(TextToSpeech.LANG_MISSING_DATA, avail("no", "NO", with()))
     }
 }

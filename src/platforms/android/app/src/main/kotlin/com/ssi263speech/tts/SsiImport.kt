@@ -93,7 +93,8 @@ object SsiImport {
         private val total: Double = plan.found.sumOf { weight(it.language).toDouble() }.coerceAtLeast(1.0)
 
         /** English's state is 150 million instructions, Spanish's 1150 million, German's, Italian's and Slovak's
-         * English's runs (150 million); the Speak-Out and the Mockingboard have no state to make, only their check. */
+         * English's runs (150 million), the release voices' too (the table's english shape); the Speak-Out and the
+         * Mockingboard have no state to make, only their check. */
         private fun weight(language: Int) = when (language) {
             FirmwareImport.SPANISH -> 1150; in FirmwareImport.NO_STATE -> 15; else -> 150 }
 
@@ -118,7 +119,7 @@ object SsiImport {
             try {
                 for (f in plan.found) {
                     val name = unitName(f.language)
-                    val files = FirmwareImport.FILES.getValue(f.language)
+                    val files = FirmwareImport.files(f.language) ?: throw IOException("no files for voice ${f.language}")
                     val firmware = File(ready, files[0])
                     if (!f.firmware.renameTo(firmware)) f.firmware.copyTo(firmware, overwrite = true)
                     val w = weight(f.language).toDouble()

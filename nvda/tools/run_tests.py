@@ -1122,6 +1122,12 @@ if os.path.isfile(ANDROID_TEST):
     # the number words' reference (bl.dll has none): ssi263speech.dll, src/csrc/build_ssi263speech.py
     ANDROID_NUM = os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(HERE)), "build", "win",
                                               "x64" if sys.maxsize > 2 ** 32 else "x86", "ssi263speech.dll"))
+    # the release voices' language updates in the firmware folder (bl2000/, as test_android_native.py finds them)
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "src", "csrc", "blazie"))
+    import gen_languages  # noqa: E402
+    ANDROID_RELEASES = sum(os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(HERE)), "firmware", "blazie",
+                                                       "bl2000", r["file"]))
+                           for r in gen_languages.rows()[0] if r["voice"].startswith("blazie_"))
     # ... and the Mockingboard (imported, 0.8) as mb_voice driven directly, with its import by sha256 and two controls
     CHECKS.append(check("Android engine: native part as bl.dll, the NVDA Accent driver, so_voice, am_voice and mb_voice",
                         [PY, ANDROID_TEST]))
@@ -1148,6 +1154,10 @@ if os.path.isfile(ANDROID_TEST):
             ("line-lift", "Braille Lite: the line-start lift dropped",
              [r"^FAIL +desktop +lift-on differs from lift-off", r"^ok +desktop +default ",
               r"^FAILED: 1 case\(s\) differ$"])) + ((
+            ("import-release", "Blazie import: the release table never tried",
+             [r"^FAIL +import +bl2000/BL2HUN\.BNS \(blazie_hu, voice \d+\): import -4 ",
+              r"^ok +import +BL2ENG\.BNS \(en\): import 0 ", r"^ok +import +bl2000/BL2JPN\.BNS \(the emulator's only\)",
+              r"^FAILED: %d case\(s\) differ$" % ANDROID_RELEASES]),) if ANDROID_RELEASES else ()) + ((
             ("numbers", "Braille Lite: number words dropped",
              [r"^FAIL +desktop +num-en +got ", r"^FAIL +desktop +num-es +got ", r"^ok +desktop +num-en-off ",
               r"^FAIL +desktop +num-en differs from num-en-off", r"^FAILED: 4 case\(s\) differ$"]),) if ANDROID_NUM
@@ -1191,7 +1201,8 @@ if os.path.isfile(ANDROID_TEST):
         only = {"1": "bl,accent", "accent-pitch": "accent,mini", "run-ahead": "bl,ra", "line-lift": "bl,lift",
                 "numbers": "num",
                 "speakout-pitch": "so", "speakout-settings": "so", "import-hash": "import", "import-dsk": "import",
-                "import-lang": "import"}.get(brk, "mb" if brk.startswith("mockingboard-") else "accent")
+                "import-lang": "import", "import-release": "import"}.get(
+                    brk, "mb" if brk.startswith("mockingboard-") else "accent")
         CHECKS.append(check("Android engine CONTROL (%s, must fail)" % what, [PY, ANDROID_TEST],
                             env={"SSI263_ANDROID_TEST_BREAK": brk, "SSI263_ANDROID_TEST_ONLY": only}, expect_fail=True,
                             fail_marks=marks))

@@ -9,9 +9,17 @@ package com.ssi263speech.tts
 object SsiNative {
     init {
         System.loadLibrary("ssi263speech")
+        // the release voices, from the library's release table: the one list the app's are made from
+        FirmwareImport.releases = nativeReleaseVoices().map { row ->
+            val c = row.split('\t')
+            FirmwareImport.Release(c[0].toInt(), c[1], c[2], c[3], c[4], c[5])
+        }
     }
 
-    const val ENGLISH = 0                   // the Braille Lite, English (imported)
+    /** Loads the library (and with it the release voices), if nothing has yet. */
+    fun load() {}
+
+    const val ENGLISH = 0                  // the Braille Lite, English (imported)
     const val SPANISH = 1                   // the Braille Lite, Spanish (imported)
     const val ACCENT_SA = 2                 // the Aicom Accent SA (built in)
     const val SPEAKOUT = 3                  // the GW Micro Speak-Out (imported)
@@ -21,7 +29,8 @@ object SsiNative {
     const val GERMAN = 7                    // the Braille Lite, German (imported; 0.8)
     const val ITALIAN = 8                   // the Braille Lite, Italian (imported)
     const val SLOVAK = 9                    // the Braille 'n Speak 2000, Slovak (imported)
-    const val VOICES = 10                   // ssa_engine.h's SSA_VOICES: every index is below it
+    const val RELEASE_FIRST = 10            // ssa_engine.h's SSA_RELEASE_FIRST: the release voices (Hungarian ...) on
+    const val VOICES = 27                   // ssa_engine.h's SSA_VOICES: every index is below it (10 + 17 release voices)
 
     /** Open the engine on the folder holding the unit's files (once per process; later calls keep it). */
     external fun nativeOpen(dataDir: String): Boolean
@@ -96,8 +105,11 @@ object SsiNative {
      * disk image but not the toolkit's -- the reason in [nativeImportError]. */
     external fun nativeImportFirmware(data: ByteArray, out: String): Int
 
-    /** The releases on the list, by label. */
+    /** The releases on the list, by label: those a voice speaks, the release voices' among them. */
     external fun nativeKnownFirmware(): Array<String>
+
+    /** The release voices (ssa_jni.c's): per voice "<index>\t<id>\t<file>\t<name>\t<voice name>\t<tag>". */
+    external fun nativeReleaseVoices(): Array<String>
 
     /** The state at `state` is the one [nativeMakeState] makes from the release at `bns`. */
     external fun nativeStateCheck(bns: String, state: String): Boolean
@@ -118,4 +130,13 @@ object SsiNative {
     external fun nativeProbe(dir: String, voice: Int, utf8: ByteArray): Long
 
     external fun nativeImportError(): String
+}
+
+/** SsiNative.load, from the objects the JVM tests use too (SsiEngine, SsiData): there, with no library, nothing is
+ * loaded and the tests give FirmwareImport.releases their own list.  On a phone a library that fails to load is logged
+ * here and fails again at the first call that needs it.  Outside the object: touching it is what loads the library. */
+fun loadNativeIfThere() {
+    try { SsiNative.load() } catch (e: Throwable) {
+        try { android.util.Log.w("SsiNative", "no native library: ${e.message}") } catch (t: Throwable) {}
+    }
 }

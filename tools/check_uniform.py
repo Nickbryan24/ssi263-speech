@@ -451,7 +451,20 @@ def android(voices, p):
         vid = ids[consts[const]] if consts[const] < len(ids) else None
         if vid in built:
             p.voices[vid] = name
-    p.source = "SsiEngine.kt + SsiNative.kt + ssa_engine.c + build_android.sh's engines"
+    # the release voices: SsiEngine.kt lists them from FirmwareImport.releases, which SsiNative fills from the JNI's
+    # nativeReleaseVoices -- ssa_jni.c's walk of SSA_RELEASE_FIRST .. SSA_VOICES -- never by hand
+    jni_c = read(os.path.join(ANDROID, "cpp", "ssa_jni.c"))
+    from_table = ("FirmwareImport.releases.map" in engine_kt and "nativeReleaseVoices()" in native_kt
+                  and re.search(r"FN\(nativeReleaseVoices\).*?for \(v = SSA_RELEASE_FIRST;[^;]*v < SSA_VOICES;",
+                                jni_c, re.S))
+    if from_table and size == "RELEASE_FIRST":
+        if consts.get("VOICES") != defines.get("VOICES"):
+            p.errors.append("SsiNative.VOICES is %s, ssa_engine.h's SSA_VOICES is %s" % (consts.get("VOICES"),
+                                                                                         defines.get("VOICES")))
+        for k, vid in enumerate(ids[defines["RELEASE_FIRST"]:]):
+            if vid in built:
+                p.voices[vid] = "release voice %d" % (defines["RELEASE_FIRST"] + k)
+    p.source = "SsiEngine.kt + SsiNative.kt + ssa_engine.c + ssa_jni.c's release voices + build_android.sh's engines"
     settings = read(os.path.join(kt, "SettingsActivity.kt"))
     jni = read(os.path.join(ANDROID, "cpp", "ssa_jni.c"))
     cases = switch_cases(engine_c, "settings_for")
