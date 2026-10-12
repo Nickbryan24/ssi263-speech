@@ -1579,6 +1579,17 @@ CHECKS.append(check("idle channel table (bl_idle_table.h = blazie_idle.py)",
                      "--check"]))
 CHECKS.append(check("cp850 table", [PY, os.path.join(os.path.dirname(os.path.dirname(HERE)), "src", "csrc", "blazie",
                                                      "gen_cp850.py"), "--check"]))
+# the Braille Lite release table (bl_languages.txt -> bl_languages_table.h): the header current, the library's list the
+# text file's, and each release whose firmware is here making its listed state by its row's recipe; the control
+# answers every setup with n, so every state must differ
+BL_SRC = os.path.join(os.path.dirname(os.path.dirname(HERE)), "src", "csrc", "blazie")
+CHECKS.append(check("release table (bl_languages_table.h = bl_languages.txt)",
+                    [PY, os.path.join(BL_SRC, "gen_languages.py"), "--check"]))
+if os.path.isfile(os.path.join(os.path.dirname(HERE), "dist", "blazie-lib", "x64", "bl.dll")):
+    CHECKS.append(check("releases: each one's state by its row's recipe", [PY, os.path.join(BL_SRC, "test_releases.py")]))
+    CHECKS.append(check("releases CONTROL (every setup answered n, must fail)",
+                        [PY, os.path.join(BL_SRC, "test_releases.py")], env={"SSI263_RELEASES_TEST_BREAK": "1"},
+                        expect_fail=True, fail_marks=[r"^FAIL bl2_en_2003_06: its state", r"^releases: \d+ FAILED$"]))
 # the hard G (0.7.6, params hold_release; Astra, Replies 146-150): watched in the chip's own state at every output sample,
 # Python and C, on scripted firmware-like sessions and the live Braille Lite -- an HVC after K/KV opens half a frame before
 # its end into an open phoneme, on its own stored voice with no noise, and stays shut before D, PA, a pause or a late

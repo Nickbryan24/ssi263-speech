@@ -67,6 +67,13 @@ else
     echo "skip  reference: the z180emu development build (LEGACY=1 ./build_linux.sh)"
 fi
 check "chip defaults" python3 src/csrc/gen_chip_defaults.py --check
+# the Braille Lite release table: the header current; the library's list the text file's, each release whose firmware
+# is here making its listed state by its row's recipe -- the same bytes as on Windows; the control answers n
+check "release table" python3 src/csrc/blazie/gen_languages.py --check
+check "releases: each one's state by its row's recipe" python3 src/csrc/blazie/test_releases.py --lib "$LIB" \
+    --firmware "$DATA"
+control "releases CONTROL (every setup answered n, must fail)" "^releases: [0-9]+ FAILED$" \
+    -- env SSI263_RELEASES_TEST_BREAK=1 python3 src/csrc/blazie/test_releases.py --lib "$LIB" --firmware "$DATA"
 # issue #8: the Accent SA's text done only when said (as_voice's settle between clauses), on the module's own engine
 # objects (libsd_voices_ref.so: libssi263speech.so has no Accent SA); its control is the settle off (0.7.5's done)
 # and must name the dialog's early texts

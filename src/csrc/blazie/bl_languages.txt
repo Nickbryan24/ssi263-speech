@@ -1,0 +1,39 @@
+# The Braille Lite releases the voices and the emulator know: one row per firmware image, keyed by its sha256 (the
+# .BNS from 3000h, `length` bytes).  gen_languages.py turns it into bl_languages_table.h, which bl_firmware.c reads
+# (its list: blv_import_firmware, blv_state_check, blv_release_*); `python gen_languages.py --check` fails when the
+# header is stale (run_tests).  A release is listed only once it was booted through its recipe and its state hashed;
+# the row's every column is what the unit itself showed, never a guess.  The list is what the apps can RECOGNISE, never
+# what they offer: a voice or an emulator unit is offered only for a release the user imported (or whose firmware is in
+# the firmware folder).  Within one voice the newest release comes first: the importers keep the first when a user
+# brings two.
+#
+# Columns, separated by |:
+#   id      the release's own name, stable once shipped (a state file or a voice may carry it)
+#   model   bl = Braille Lite 2000, bns = Braille 'n Speak 2000 (bl_model)
+#   tag     its language (BCP 47)
+#   voice   the voice's language (bl_firmware.h BLV_FW_*: english, spanish, german, italian, slovak), or - when
+#           the release is the emulator's only (blv_import_firmware then refuses it for a voice)
+#   shape   its state recipe (bl_state.h BLV_SHAPE_*): english = three power-ons, the answers early;
+#           slow = one long power-on, twelve answers 80 million instructions apart
+#   yes     the letter that answers the setup's questions, as the unit asks for it (a-z, computer braille)
+#   cp      the unit's DOS code page for its text and file names (850, 852), as read from what it says for its own
+#           accented letters; - when not yet read
+#   length  the image's length in bytes
+#   image   sha256 of the image
+#   state   sha256 of the state blv_make_release_state makes from it (MAME's Z180: the same bytes on every platform)
+#   label   what the import says it found
+#
+# The June 5, 2003 English: "FS june2003" -- blt2000.exe (a zip behind its code) and its BL2ENG.BNS; the NVDA add-on's.
+# The September 20, 2000 English: ONCE's "braillehablado" disk, blite2000/BL2ENG.BNS: the English recipe fits it (its
+#   prompts during the recipe are June 2003's but for one power-on sentence).
+# The September 20, 2000 Spanish ("versión del 20 de Septiembre de 2000 ver. a"): ONCE's disk, blite2000/BL2SPA.BNS;
+#   the Spanish unit's reset (bl2spa_fresh.state).
+# 0.8: Blazie's September 2000 update disk, German and Italian (an anonymous donation): each heard -- "zwei tausend
+#   bereit", "due mila pronto" -- and speaking its own language through the voice.  The Slovak Braille 'n Speak 2000
+#   (the Slovak community's BS2SLL.BNS).
+bl2_en_2003_06 | bl  | en | english | english | y | 850 | 262074 | ff8f30ec67397638c9a28c9738e7550b3c886ce42f647c462e06ded6e1576d51 | cca5a7c359e184f01077fed81c23f5fe68573416f53e03a2f4432d4749db013b | Braille Lite English: the June 5, 2003 revision
+bl2_en_2000_09 | bl  | en | english | english | y | 850 | 262067 | c840112f81f7337255cff290c58ed2d74d6f29f6fa056daf6a36db149a87cd4b | bcc74d1e3c53074a91a1405c660b69a6a660e4407f7d88881f8aaebc94377b01 | Braille Lite English: ONCE's September 20, 2000 revision
+bl2_es_2000_09 | bl  | es | spanish | slow    | s | 850 | 261746 | eedd606e3644c22bd24d5bebd6ebd79286e5f0e6bdb6f638f8f6955ab2be4ed7 | d69dd10541b413b0cf160f76894168aadc7648ed826f1cba395f58d0b67e888d | Braille Lite Spanish: ONCE's September 20, 2000 revision
+bl2_de_2000_09 | bl  | de | german  | english | j | 850 | 261984 | 9594b476b26f1e796c12094b1f42c430de01f7e38d9dc91a43a60416b4e9758d | db9b9b165337f9b6cb58a14e177e65c1a0de8706a8da719852fdf6681d38ce64 | Braille Lite German: the September 20, 2000 revision
+bl2_it_2000_09 | bl  | it | italian | english | s | 850 | 261906 | 40bf2ad973687a6db6c99889f88f94cac159a02b782b06b00dfac11d70ce9678 | 737b6f224c1be189b9f798e594118be6ef1654e263f11c7b115695291a20fa8e | Braille Lite Italian: the September 20, 2000 revision
+bns2_sk        | bns | sk | slovak  | english | y | 852 | 261962 | 445203a81a8282dfaf139bf98c160d3e11b1f0489f29a37bd82d0242f9b5f796 | 6818720dc50c5f7df9a81a46f26667b74c74994de8de908442ec173a6ac27020 | Braille 'n Speak 2000 Slovak

@@ -13,6 +13,7 @@
 #define BL_FIRMWARE_H
 
 #include "bl_host.h"
+#include "bl_state.h"                      /* blv_state_progress */
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,7 @@ extern "C" {
 #define BLV_FW_REFUSED (-2)        /* an image, but not one the voice can run (the sites are missing: another unit) */
 #define BLV_FW_WRITE (-3)          /* out_bns could not be written */
 #define BLV_FW_UNKNOWN (-4)        /* a Braille Lite 2000 image the voice could start, but not a release on the list */
+#define BLV_FW_NO_VOICE (-5)       /* a release on the list the emulator runs, but no voice speaks it yet */
 
 /* The offset of the first ROM image in data, or -1. */
 BL_API long blv_find_image(const unsigned char *data, long n);
@@ -34,7 +36,7 @@ BL_API long blv_find_image(const unsigned char *data, long n);
 /* Finds the image in data (a .BNS, an update program, any file), and when it is a release on the list writes it to
    out_bns as a .BNS -- a .BNS with the image at 3000h exactly as it came, anything else behind 3000h zero bytes --
    and checks that the voice can run it.  Returns BLV_FW_ENGLISH or _SPANISH with the release's label in msg; or
-   BLV_FW_NONE, _REFUSED, _UNKNOWN, _WRITE with the reason in msg and out_bns removed. */
+   BLV_FW_NONE, _REFUSED, _UNKNOWN, _NO_VOICE, _WRITE with the reason in msg and out_bns removed. */
 BL_API int blv_import_firmware(const unsigned char *data, long n, const char *out_bns, char *msg, int msglen);
 
 /* The list: how many releases, and each one's label ("Braille Lite English: the June 5, 2003 revision") and
@@ -49,6 +51,18 @@ BL_API int blv_firmware_recipe(int language);
 /* 1 when the state at state_path is the one blv_make_state makes from the .BNS at bns_path (a release on the list,
    as blv_import_firmware wrote it), else 0. */
 BL_API int blv_state_check(const char *bns_path, const char *state_path);
+
+/* The list by release (bl_languages.txt, one row per firmware image; 0 .. blv_firmware_count() - 1), for the voices
+   and the emulator alike: the release a .BNS holds (its image from 3000h) or -1; its stable id ("bl2_de_2000_09"),
+   language (BCP 47), model (bl_board.h BL_MODEL_*) and DOS code page (850, 852; 0 not yet read) -- NULL / -1 past the
+   end; and its state, made by its own recipe (the shape and the answer its row names), as blv_make_state. */
+BL_API int blv_release_of(const char *bns_path);
+BL_API const char *blv_release_id(int release);
+BL_API const char *blv_release_tag(int release);
+BL_API int blv_release_model(int release);
+BL_API int blv_release_code_page(int release);
+BL_API int blv_make_release_state(const char *firmware, int release, const char *out_path,
+                                  blv_state_progress progress, void *ctx, char *err, int errlen);
 
 /* sha256 of n bytes into out[32]; exported for the tests. */
 BL_API void blv_sha256(const unsigned char *data, long n, unsigned char *out);

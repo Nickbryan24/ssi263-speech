@@ -11,52 +11,31 @@
 
 BL_API int blv_firmware_break = 0;
 
-/* The list: every Braille Lite 2000 release the import accepts, by the sha256 of its image (the .BNS from 3000h,
-   `length` bytes), with the sha256 of the state blv_make_state makes from it (bl_state.c, the language's recipe).
-   Each was found on Tomi's disks, booted through its recipe and made to speak (test_import_native.py makes the state
-   and checks it against the hash here, then speaks with it) before it was listed.  Every other image on those disks
-   is another unit's: the Type 'n Speak, the Braille Lite 18 and 40 and the older Braille 'n Speaks are refused by
-   bl_create's sites; the Braille 'n Speak 2000, which bl_create runs (bl_model: the emulator's), by its model.
-     June 5, 2003 English: "FS june2003" -- blt2000.exe (a zip behind its code) and its BL2ENG.BNS; the NVDA add-on's.
-     September 20, 2000 English: ONCE's "braillehablado" disk, blite2000/BL2ENG.BNS.  The English recipe fits it: its
-       prompts during the recipe are June 2003's but for one power-on sentence, the keys land on the same prompts,
-       and it speaks the Android test's cases as June 2003 does to within a few samples.
-     September 20, 2000 Spanish ("versión del 20 de Septiembre de 2000 ver. a"): ONCE's disk, blite2000/BL2SPA.BNS;
-       the Spanish unit's reset (bl2spa_fresh.state).
-   The state hashes are MAME-made (0.7, all-MAME: Tomi): blv_make_state on MAME's Z180, the same bytes on Windows x64,
+/* The list: every Braille Lite release the import accepts and the emulator knows, by the sha256 of its image (the
+   .BNS from 3000h, `length` bytes), with the sha256 of the state its recipe makes from it.  bl_languages.txt holds
+   the rows, where each release came from and what each column means; gen_languages.py writes them here.  Each was
+   booted through its recipe before it was listed (test_import_native.py makes each state and checks it against the
+   hash, then speaks with it).  Every other image on Tomi's disks is another unit's: the Type 'n Speak, the Braille
+   Lite 18 and 40 and the older Braille 'n Speaks are refused by bl_create's sites; the Braille 'n Speak 2000, which
+   bl_create runs (bl_model: the emulator's), by its model unless its row names a voice.
+   The state hashes are MAME-made (0.7, all-MAME: Tomi): the recipe on MAME's Z180, the same bytes on Windows x64,
    Linux x86_64 and aarch64 and the phone.  z180emu made other bytes (its SLP slice accounting moves the recipe's
    timing), so the desktop's shipped bl2_2003_warm.state / bl2spa_fresh.state, made on z180emu, are not these; they
    still run on MAME and stay the desktop goldens' inputs. */
-static const struct {
-    int language;
+typedef struct {
+    const char *id;                        /* bl_languages.txt's: stable once shipped */
+    int model;                             /* bl_board.h BL_MODEL_* */
+    const char *tag;                       /* its language, BCP 47 */
+    int language;                          /* the voice's (BLV_FW_*), or BLV_FW_NONE: the emulator's only */
+    int shape;                             /* bl_state.h BLV_SHAPE_* */
+    unsigned char yes;                     /* the chord that answers its setup */
+    int code_page;                         /* 850, 852; 0 not yet read */
     long length;
     const char *sha256;                    /* the image */
     const char *state;                     /* the state made from it */
     const char *label;
-} KNOWN[] = {
-    {BLV_FW_ENGLISH, 262074, "ff8f30ec67397638c9a28c9738e7550b3c886ce42f647c462e06ded6e1576d51",
-     "cca5a7c359e184f01077fed81c23f5fe68573416f53e03a2f4432d4749db013b",
-     "Braille Lite English: the June 5, 2003 revision"},
-    {BLV_FW_ENGLISH, 262067, "c840112f81f7337255cff290c58ed2d74d6f29f6fa056daf6a36db149a87cd4b",
-     "bcc74d1e3c53074a91a1405c660b69a6a660e4407f7d88881f8aaebc94377b01",
-     "Braille Lite English: ONCE's September 20, 2000 revision"},
-    {BLV_FW_SPANISH, 261746, "eedd606e3644c22bd24d5bebd6ebd79286e5f0e6bdb6f638f8f6955ab2be4ed7",
-     "d69dd10541b413b0cf160f76894168aadc7648ed826f1cba395f58d0b67e888d",
-     "Braille Lite Spanish: ONCE's September 20, 2000 revision"},
-    /* 0.8: Blazie's September 20, 2000 update disk, German and Italian (an anonymous donation): each booted with its
-       own recipe (the English one, its yes in the unit's language: bl_state.c) and heard -- "zwei tausend bereit",
-       "due mila pronto" -- and speaking its own language through the voice (code page 850).  The Slovak Braille 'n
-       Speak 2000 (the Slovak community's BS2SLL.BNS): the English recipe, code page 852. */
-    {BLV_FW_GERMAN, 261984, "9594b476b26f1e796c12094b1f42c430de01f7e38d9dc91a43a60416b4e9758d",
-     "db9b9b165337f9b6cb58a14e177e65c1a0de8706a8da719852fdf6681d38ce64",
-     "Braille Lite German: the September 20, 2000 revision"},
-    {BLV_FW_ITALIAN, 261906, "40bf2ad973687a6db6c99889f88f94cac159a02b782b06b00dfac11d70ce9678",
-     "737b6f224c1be189b9f798e594118be6ef1654e263f11c7b115695291a20fa8e",
-     "Braille Lite Italian: the September 20, 2000 revision"},
-    {BLV_FW_SLOVAK, 261962, "445203a81a8282dfaf139bf98c160d3e11b1f0489f29a37bd82d0242f9b5f796",
-     "6818720dc50c5f7df9a81a46f26667b74c74994de8de908442ec173a6ac27020",
-     "Braille 'n Speak 2000 Slovak"},
-};
+} bl_release;
+#include "bl_languages_table.h"
 #define N_KNOWN ((int)(sizeof KNOWN / sizeof *KNOWN))
 
 /* ---- sha256 (FIPS 180-4) -------------------------------------------------------------------------------------- */
@@ -188,7 +167,7 @@ BL_API int blv_import_firmware(const unsigned char *data, long n, const char *ou
        Braille 'n Speak 2000's, which the board runs (the emulator's), only the Slovak release is a voice (0.8) */
     u = bl_create(out_bns, NULL, 20.0, NULL, NULL, 0, msg, msglen);
     if (!u || (bl_model(u) != BL_MODEL_BRAILLE_LITE
-               && !(bl_model(u) == BL_MODEL_BNS2000 && k >= 0 && KNOWN[k].language == BLV_FW_SLOVAK))) {
+               && !(bl_model(u) == BL_MODEL_BNS2000 && k >= 0 && KNOWN[k].language != BLV_FW_NONE))) {
         bl_destroy(u);
         remove(out_bns);
         snprintf(msg, msglen, "Braille Lite firmware, but not a release this voice can run");
@@ -205,6 +184,12 @@ BL_API int blv_import_firmware(const unsigned char *data, long n, const char *ou
         remove(out_bns);
         snprintf(msg, msglen, "Braille Lite 2000 firmware, but not a release this app knows");
         return BLV_FW_UNKNOWN;
+    }
+    if (KNOWN[k].language == BLV_FW_NONE) {
+        /* the emulator runs it, but no voice speaks its language yet */
+        remove(out_bns);
+        snprintf(msg, msglen, "%s: the emulator's, not yet a voice", KNOWN[k].label);
+        return BLV_FW_NO_VOICE;
     }
     snprintf(msg, msglen, "%s", KNOWN[k].label);
     return KNOWN[k].language;
@@ -223,6 +208,37 @@ BL_API const char *blv_firmware_label(int release)
 BL_API int blv_firmware_language(int release)
 {
     return release >= 0 && release < N_KNOWN ? KNOWN[release].language : -1;
+}
+
+BL_API const char *blv_release_id(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].id : NULL;
+}
+
+BL_API const char *blv_release_tag(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].tag : NULL;
+}
+
+BL_API int blv_release_model(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].model : -1;
+}
+
+BL_API int blv_release_code_page(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].code_page : -1;
+}
+
+BL_API int blv_make_release_state(const char *firmware, int release, const char *out_path,
+                                  blv_state_progress progress, void *ctx, char *err, int errlen)
+{
+    if (release < 0 || release >= N_KNOWN) {
+        snprintf(err, errlen, "no release %d on the list", release);
+        return 0;
+    }
+    return blv_make_state_yes(firmware, KNOWN[release].shape, KNOWN[release].yes, out_path, progress, ctx, err,
+                              errlen);
 }
 
 BL_API int blv_firmware_recipe(int language)
@@ -262,4 +278,13 @@ BL_API int blv_state_check(const char *bns_path, const char *state_path)
     free(bns);
     free(state);
     return ok;
+}
+
+BL_API int blv_release_of(const char *bns_path)
+{
+    long n = 0;
+    unsigned char *bns = read_file(bns_path, FILE_ROM_OFFSET + ROM_SIZE, &n);
+    int k = bns && n > FILE_ROM_OFFSET ? release_of(bns + FILE_ROM_OFFSET, n - FILE_ROM_OFFSET) : -1;
+    free(bns);
+    return k;
 }
