@@ -125,6 +125,11 @@ slice() {
     for f in emu_unit emu_catalog tns_setup chords; do
         cc $EMU -c -o "$O/$f.o" "$APP/$f.c"
     done
+    # and the unit's files: a saved state's file system, files from the device loaded into its flash (as the Windows
+    # and GTK shells' "Load programs and files into flash")
+    for f in bl_files bl_files_state bl_files_xfer fat_img; do
+        cc $EMU -I$SRC/blazie -c -o "$O/$f.o" "$SRC/blazie/$f.c"
+    done
     # Android's front end, unchanged (the engine and the import with the voices' flags, as build_android.sh), and the
     # Apple front end's own C
     cc $FRONT -c -o "$O/ssa_map.o" "$CPP/ssa_map.c"

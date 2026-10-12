@@ -55,10 +55,12 @@ enum SsiShared {
         var listName: String { release >= 0 ? blv_release_name(release).map { String(cString: $0) } ?? name : name }
     }
 
-    /// TGSpeechBox's English and Spanish variants (its TGSBAudioUnit.languageMap): each voice is offered once per
-    /// locale, so it appears under the reader's own dialect and VoiceOver switches to it as it does to any voice.
-    private static let english = ["en-US", "en-GB", "en-AU", "en-CA"]
-    private static let spanish = ["es-ES", "es-MX"]
+    /// One locale per voice, as Android offers them: the units have no dialect firmware (the English ones are
+    /// American, the Spanish Braille Lite Spain's -- it reads numbers Spain's way), so no regional copies (Tomi;
+    /// 0.8's first builds offered TGSpeechBox's en-GB, en-AU, en-CA and es-MX too).  An identifier of those still
+    /// names its voice (voice(identifier:)).
+    private static let english = ["en-US"]
+    private static let spanish = ["es-ES"]
 
     /// Every voice the app knows, in the order the app lists them (ssa_engine.h's indexes): the shipped voices, then
     /// the release voices.

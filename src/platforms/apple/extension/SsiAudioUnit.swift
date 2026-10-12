@@ -161,7 +161,7 @@ public final class SsiAudioUnit: AVSpeechSynthesisProviderAudioUnit {
         get {
             SsiShared.repairProtection()
             let container = SsiShared.unitFolder != nil
-            // TGSpeechBox's model: each voice once per locale it is offered as ("Speak-Out (en-GB)"), its one
+            // TGSpeechBox's model: each voice once per locale it is offered as ("Speak-Out (en-US)"), its one
             // language in both lists, the locale at the end of its identifier; VoiceOver switches languages by
             // choosing another voice for the next request.  A voice is offered only once its firmware is imported.
             return SsiShared.voices.filter { !container || SsiShared.installed($0) }.flatMap { v in

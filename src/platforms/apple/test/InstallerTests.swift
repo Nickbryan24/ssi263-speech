@@ -118,6 +118,46 @@ for key in ["bl2_hu_1999_07", "bl-en"] {
     }
 }
 
+// Files into a unit's flash (UnitFiles, the tab's "Load programs and files into flash"), on its saved memory as the
+// tab leaves it switched off: a text file added; the same name again found there (so the first was written into the
+// saved state) and nothing changed; replaced when asked; the old memory kept beside it; the unit starting from it.
+if let e = entries.first(where: { $0.key == "bl-en" }), let saved = UnitCatalog.savedPath(e) {
+    do {
+        try FileManager.default.createDirectory(at: saved.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var err = [CChar](repeating: 0, count: 300)
+        guard let u = emu_create(e.unit.kind, UnitCatalog.firmware(e), try UnitCatalog.prepare(e), 22050, 0, &err,
+                                 Int32(err.count)), emu_save(u, saved.path) == 1 else {
+            throw UnitCatalog.Failure(message: "the unit could not be saved: " + String(cString: err))
+        }
+        emu_destroy(u)
+        let text = UnitFiles.File(name: "hello.txt", data: Data("Hello from the Mac.\n".utf8), modified: Date())
+        let program = UnitFiles.File(name: "GAME.BNS", data: Data([0x18, 0x00, 0x41, 0x00, 0x7e]), modified: Date())
+        let cp = e.unit.codepage
+        let first = UnitFiles.load([text, program], into: saved.path, codepage: cp, replace: false)
+        unitCase("files into the \(e.name)'s flash", first == .loaded(added: 2, replaced: 0), "\(first)")
+        let again = UnitFiles.load([text], into: saved.path, codepage: cp, replace: false)
+        var isExists = false
+        if case .exists(let names) = again { isExists = names.count == 1 }
+        unitCase("the same name again: asked, nothing changed", isExists, "\(again)")
+        let replaced = UnitFiles.load([text], into: saved.path, codepage: cp, replace: true)
+        unitCase("replaced when asked", replaced == .loaded(added: 0, replaced: 1), "\(replaced)")
+        unitCase("the memory as it was kept beside it",
+                 FileManager.default.fileExists(atPath: saved.path + ".before-import"), saved.lastPathComponent)
+        guard let v = emu_create(e.unit.kind, UnitCatalog.firmware(e), saved.path, 22050, 0, &err, Int32(err.count))
+        else { throw UnitCatalog.Failure(message: String(cString: err)) }
+        var pcm = [Int16](repeating: 0, count: 22050)
+        var loud = 0
+        for _ in 0..<8 where loud == 0 {
+            emu_render(v, &pcm, Int32(pcm.count))
+            loud = pcm.reduce(0) { max($0, abs(Int($1))) }
+        }
+        emu_destroy(v)
+        unitCase("the unit starts with its new files", loud > 1000, "peak \(loud)")
+    } catch {
+        unitCase("files into the \(e.name)'s flash", false, error.localizedDescription)
+    }
+}
+
 try? FileManager.default.removeItem(at: root)
 print(failures == 0 ? "the import installs every unit, and the unit tab runs them" : "FAILED: \(failures)")
 exit(failures == 0 ? 0 : 1)

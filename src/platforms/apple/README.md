@@ -19,9 +19,9 @@ own locale for its language (hu-HU; Arabic as ar-001, Norwegian as nb-NO, Portug
 pt-BR), and named in English ("Braille Lite 2000 (Russian)", the table's `vname`). The Setup list shows each
 voice's file (`BL2HUN.BNS — not imported`); the languages wait behind "Show all Braille Lite importable languages (17,
 N imported)", imported or not. One import takes them all from the NVDA add-on too (`_ssi263_blazie/bl2000/`). A release no voice speaks yet (the betas, Japanese) is still
-imported, kept under `units/` for the Braille Lite unit tab. Languages work as in TGSpeechBox's speech extension. Each voice is offered once
-per locale it speaks: the English voices as en-US, en-GB, en-AU and en-CA, and the Spanish Braille Lite as es-ES and
-es-MX. The locale ends the voice's identifier (`com.ssi263speech.braillelite.de-de`), and VoiceOver switches language
+imported, kept under `units/` for the Braille Lite unit tab. Languages work as in TGSpeechBox's speech extension, with Android's one locale
+per voice: the units have no dialect firmware, so the English voices are en-US only and the Spanish Braille Lite es-ES
+only (0.8's first builds also offered en-GB, en-AU, en-CA and es-MX copies; their identifiers still name the voice). The locale ends the voice's identifier (`com.ssi263speech.braillelite.de-de`), and VoiceOver switches language
 by choosing another voice for the next request. `<lang>` elements inside a request are not switched on. "Lock
 language" (Voice settings) speaks every request with the voice chosen in the app, whatever the request names, for
 readers that always ask for the system's language.
@@ -50,6 +50,14 @@ audio engine, its keys pushed as they go down and up through `chords.c`, as the 
 the Windows and GTK pattern: one read-only element holding the display as Unicode braille, keeping the keyboard (F D
 S J K L, the space bar, ; and A the bars, by the keys' places), Alt+Shift+Right and Left the display's bars held.
 Whether VoiceOver sends the field to braille alone, and whether its keys reach the unit, are for the testers.
+
+One unit runs at a time: while it runs the unit choice is dimmed and "Switch off" is the only way to another.
+"Load programs and files into flash" is the Windows and GTK shells' (`UnitFiles.swift`, on `bl_files_xfer.h`'s
+`blx_add_cp`): the unit switched off and saved, the files (.bns, .bas, .txt, .brl, .brf, or any) added to its flash
+startup folder in one batch, names it has already replaced only when the person says so, the memory as it was kept as
+`<state>.before-import`, the unit switched on again. The Sound section has the GTK shell's idle channel (as the unit,
+hiss, whine, silent), how long the channel stays open (off, until the unit clicks off, always), the pop and click, and
+the 10 Hz tick (`emu_set_idle`), with its defaults.
 
 ## The native core: SSI263Core
 
@@ -142,7 +150,8 @@ Windows DLLs: `SSI263_ANDROID_TEST_ONLY=bl,ra,num,so,mini,import`.
 | `app/UnitRunner.swift` | One unit running: `emu_create`, its sound through AVAudioEngine (`emu_render`), keys through `chords.c`, the bars, the display, the save |
 | `app/UnitKeys.swift` | The unit's keyboard by the keys' places: macOS key codes, iOS HID usages |
 | `app/BrailleField.swift` | The braille field: the display as Unicode braille for the screen reader, the keyboard kept, never edited |
-| `app/UnitModel.swift`, `app/UnitView.swift` | The tab's state (the chosen unit, start and stop, volume, quick response) and its screen |
+| `app/UnitFiles.swift` | Files from the device into a saved unit's flash (`blx_add_cp`), all or nothing, the state before kept |
+| `app/UnitModel.swift`, `app/UnitView.swift` | The tab's state (the chosen unit, start and stop, loading files, volume, quick response, the idle channel) and its screen |
 | `testflight.py` | TestFlight: fresh archives for both platforms, checked (build numbers, icon, privacy manifests, no firmware), then uploaded as checked |
 | `test/check_archive_no_firmware.py` | An archive, app or .ipa carries no firmware: Android's checks (Blazie images, Intel HEX, states, disk images, the Speak-Out's and the Mockingboards' files, names) and Aicom's files by sha256; its controls |
 | `app/PrivacyInfo.xcprivacy`, `extension/PrivacyInfo.xcprivacy` | No tracking, no data collected; UserDefaults only for the App Group's settings the app and its extension share (1C8F.1), and file attributes (FileManager.attributesOfItem: the firmware's file protection) in the app's own containers (C617.1). Plain plists, Apple's own layout and no comments: build 1's commented ones were refused as invalid (ITMS-91056) |

@@ -27,17 +27,25 @@ final class UnitRunner {
     private var source: AVAudioSourceNode?
     private(set) var running: UnitCatalog.Entry?
 
+    /// The Braille Lite's idle channel, as the GTK shell's Settings menu sets it (emu_set_idle): sound 0 silent, 1
+    /// hiss, 2 whine, 3 as the unit (hiss at even volumes, whine at odd); keepOpen 0 off, 1 until the unit clicks off,
+    /// 2 always; the pop when the channel opens and the click when it clicks off; the 10 Hz tick of the open channel.
+    struct Idle: Equatable {
+        var sound: Int32 = 3, keepOpen: Int32 = 1, popClick = true, tick = true
+    }
+
     deinit { stop() }
 
     /// Starts the unit (the one running is saved and stopped first).  Throws with the reason in words.
-    func start(_ e: UnitCatalog.Entry, volume: Int, quick: Bool) throws {
+    func start(_ e: UnitCatalog.Entry, volume: Int, quick: Bool, idle: Idle) throws {
         stop()
         let state = try UnitCatalog.prepare(e)
         var err = [CChar](repeating: 0, count: 300)
-        guard let u = emu_create(e.unit.kind, UnitCatalog.firmware(e), state, UnitRunner.rate, 0, &err,
+        guard let u = emu_create(e.unit.kind, UnitCatalog.firmware(e), state, UnitRunner.rate, idle.sound, &err,
                                  Int32(err.count)) else {
             throw UnitCatalog.Failure(message: "The \(e.name) would not start: \(String(cString: err)).")
         }
+        set(u, idle)
         emu_set_volume(u, Int32(volume))
         emu_set_quick(u, quick ? 1 : 0)
         core.lock.lock()
@@ -82,6 +90,18 @@ final class UnitRunner {
     }
 
     func setVolume(_ v: Int) { withUnit { emu_set_volume($0, Int32(v)) } }
+    func setIdle(_ idle: Idle) { withUnit { set($0, idle) } }
+
+    private func set(_ u: OpaquePointer, _ idle: Idle) {
+        _ = emu_set_idle(u, idle.sound, idle.keepOpen, idle.popClick ? 1 : 0, idle.tick ? 1 : 0)
+    }
+
+    /// The unit is erasing or writing its file flash now (switching it off would lose the write).
+    var writingFlash: Bool {
+        var busy: Int32 = 0
+        withUnit { busy = emu_flash($0, nil) }
+        return busy != 0
+    }
     func setQuick(_ on: Bool) { withUnit { emu_set_quick($0, on ? 1 : 0) } }
 
     /// A key of the unit's keyboard (a chords.h bit: a dot, the space bar, an advance bar) went down or up.

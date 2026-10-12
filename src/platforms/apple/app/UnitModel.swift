@@ -17,6 +17,20 @@ final class UnitModel: ObservableObject {
     @AppStorage("unit_last") var chosen = ""                // the app's own settings, not the App Group's
     @AppStorage("unit_volume") var volume = 100 { didSet { runner.setVolume(volume) } }
     @AppStorage("unit_quick") var quick = false { didSet { runner.setQuick(quick) } }
+    // the idle channel, the GTK shell's defaults: as the unit, open until it clicks off, the pop and click, the tick
+    @AppStorage("unit_idle") var idleSound = 3 { didSet { runner.setIdle(idle) } }
+    @AppStorage("unit_keep_open") var keepOpen = 1 { didSet { runner.setIdle(idle) } }
+    @AppStorage("unit_pop_click") var popClick = true { didSet { runner.setIdle(idle) } }
+    @AppStorage("unit_tick") var tick = true { didSet { runner.setIdle(idle) } }
+    @Published var replacing: [String] = []                // names the unit has already, while asking to replace
+    @Published var asking = false
+    @Published var report: String?                          // a load's outcome, shown until the next
+
+    private var waiting: [UnitFiles.File] = []              // the files of the load being asked about
+
+    private var idle: UnitRunner.Idle {
+        UnitRunner.Idle(sound: Int32(idleSound), keepOpen: Int32(keepOpen), popClick: popClick, tick: tick)
+    }
 
     private let runner = UnitRunner()
     private var timer: Timer?
@@ -50,7 +64,7 @@ final class UnitModel: ObservableObject {
                 defer { self.busy = false }
                 do {
                     _ = try prepared.get()
-                    try self.runner.start(e, volume: self.volume, quick: self.quick)
+                    try self.runner.start(e, volume: self.volume, quick: self.quick, idle: self.idle)
                     self.running = e.key
                     self.say("The \(e.name) is running. The braille field has the keyboard.")
                     self.watch()
@@ -70,6 +84,77 @@ final class UnitModel: ObservableObject {
         cells = ""
         timer?.invalidate()
         say("The \(name) is switched off; its memory is kept.")
+    }
+
+    // ---- files into the unit's flash (UnitFiles) ---------------------------------------------------------------
+
+    /// The files chosen in the picker: read now (they are the picker's to lend), then loaded.
+    func load(_ urls: [URL]) {
+        var files: [UnitFiles.File] = []
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else {
+                say("Could not read \(url.lastPathComponent). Nothing was loaded.")
+                return
+            }
+            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            files.append(UnitFiles.File(name: url.lastPathComponent, data: data, modified: date ?? Date()))
+        }
+        load(files, replace: false)
+    }
+
+    /// The person's answer to "replace them?".
+    func replace(_ yes: Bool) {
+        let files = waiting
+        waiting = []
+        replacing = []
+        if yes { load(files, replace: true) } else { say("Nothing was loaded. The unit's files are as they were.") }
+    }
+
+    /// The unit switched off (saved), the files into its saved memory, the unit switched on again -- the GTK shell's
+    /// order.  Not while it writes its flash: that would be lost.
+    private func load(_ files: [UnitFiles.File], replace: Bool) {
+        guard let e = runner.running, !busy, let state = UnitCatalog.savedPath(e) else { return }
+        if runner.writingFlash {
+            say("The unit is writing its flash memory. Load the files when it has finished (when it is quiet).")
+            return
+        }
+        guard runner.save() else {
+            say("Could not save the unit's memory; nothing was changed.")
+            return
+        }
+        busy = true
+        runner.stop()
+        let codepage = e.unit.codepage
+        Task.detached {
+            let outcome = UnitFiles.load(files, into: state.path, codepage: codepage, replace: replace)
+            await MainActor.run {
+                defer { self.busy = false }
+                do {
+                    try self.runner.start(e, volume: self.volume, quick: self.quick, idle: self.idle)
+                } catch {
+                    self.running = nil
+                    self.cells = ""
+                    self.say(error.localizedDescription)
+                    return
+                }
+                switch outcome {
+                case .exists(let names):
+                    self.waiting = files
+                    self.replacing = names
+                    self.asking = true
+                case .failed(let why):
+                    self.say("Nothing was loaded: \(why) The unit was restarted with its files as they were.")
+                case .loaded(let added, let replaced):
+                    let n = files.count
+                    self.report = "Loaded \(n) file\(n == 1 ? "" : "s") into flash: \(added) added, \(replaced) " +
+                        "replaced. The unit was restarted. Run a program with o-chord x, its name, then e-chord; " +
+                        "open a document with o-chord f o, its name, then e-chord."
+                    self.say(self.report!)
+                }
+            }
+        }
     }
 
     /// The unit's memory saved, as when it is left (the app going to the background).
