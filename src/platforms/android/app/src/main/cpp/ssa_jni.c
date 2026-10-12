@@ -250,14 +250,19 @@ JNIEXPORT jboolean JNICALL FN(nativeStateCheck)(JNIEnv *env, jclass cls, jstring
     return r ? JNI_TRUE : JNI_FALSE;
 }
 
-/* The list of releases the import accepts, by label (bl_firmware.c's KNOWN). */
+/* The list of releases the import accepts, by label (bl_firmware.c's KNOWN): only those with a voice -- the
+   emulator's own releases are never offered or named to the phone's voices. */
 JNIEXPORT jobjectArray JNICALL FN(nativeKnownFirmware)(JNIEnv *env, jclass cls)
 {
-    int n = blv_firmware_count(), k;
-    jobjectArray out = (*env)->NewObjectArray(env, n, (*env)->FindClass(env, "java/lang/String"), NULL);
+    int n = 0, k, i = 0;
+    jobjectArray out;
     (void)cls;
-    for (k = 0; out && k < n; k++)
-        (*env)->SetObjectArrayElement(env, out, k, (*env)->NewStringUTF(env, blv_firmware_label(k)));
+    for (k = 0; k < blv_firmware_count(); k++)
+        n += blv_firmware_language(k) >= 0;
+    out = (*env)->NewObjectArray(env, n, (*env)->FindClass(env, "java/lang/String"), NULL);
+    for (k = 0; out && k < blv_firmware_count(); k++)
+        if (blv_firmware_language(k) >= 0)
+            (*env)->SetObjectArrayElement(env, out, i++, (*env)->NewStringUTF(env, blv_firmware_label(k)));
     return out;
 }
 

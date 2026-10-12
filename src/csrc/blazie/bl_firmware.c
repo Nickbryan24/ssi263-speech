@@ -185,6 +185,10 @@ BL_API int blv_import_firmware(const unsigned char *data, long n, const char *ou
         snprintf(msg, msglen, "Braille Lite 2000 firmware, but not a release this app knows");
         return BLV_FW_UNKNOWN;
     }
+    if (KNOWN[k].language == BLV_FW_NONE && blv_firmware_break == 2) {   /* the control: handed out as English */
+        snprintf(msg, msglen, "%s (the control: taken as English)", KNOWN[k].label);
+        return BLV_FW_ENGLISH;
+    }
     if (KNOWN[k].language == BLV_FW_NONE) {
         /* the emulator runs it, but no voice speaks its language yet */
         remove(out_bns);

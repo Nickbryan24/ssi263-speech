@@ -1009,7 +1009,7 @@ def lift_heard(label, got):
     return not ok
 
 
-def blazie_import_cases(exe, data):
+def blazie_import_cases(exe, data, firmware):
     """Each Blazie unit's .BNS, as ssa_import_firmware judges it: taken as the app's voice (7, 8, 9 for 0.8's units:
     not bl_firmware.h's languages 2, 3, 4, which are the Accent SA's, the Speak-Out's and the Accent-mini's indexes)
     and written as it came."""
@@ -1030,6 +1030,21 @@ def blazie_import_cases(exe, data):
             open(out, "rb").read() == blob
         print("%-5s import   %s (%s): %s" % ("ok" if ok else "FAIL", fw, lang, m.group(0) if m else r.stdout + r.stderr))
         bad += not ok
+    # a release the table lists for the emulator only (bl_languages.txt, no voice): to the phone's voices a release it
+    # does not know (UNKNOWN, -4, the apps' own wording), no file left -- never offered, never named
+    mute = os.path.join(firmware, "bl2000", "BL2HUN.BNS")
+    if os.path.isfile(mute):
+        out = os.path.join(data, "import.out")
+        if os.path.exists(out):
+            os.remove(out)
+        r = subprocess.run([exe, "--import", mute, out], capture_output=True, text=True)
+        m = re.match(r"^import (-?\d+) (.*)$", r.stdout.strip())
+        ok = bool(m) and int(m.group(1)) == -4 and not os.path.exists(out)
+        print("%-5s import   bl2000/BL2HUN.BNS (the emulator's only): %s" % ("ok" if ok else "FAIL",
+                                                                      m.group(0) if m else r.stdout + r.stderr))
+        bad += not ok
+    else:
+        print("skip  import of a release the emulator's only: no bl2000/BL2HUN.BNS in the firmware folder")
     for f in ("import.in", "import.out"):
         if os.path.exists(os.path.join(data, f)):
             os.remove(os.path.join(data, f))
@@ -1122,7 +1137,7 @@ def main():
         if block("accent"):
             bad += compare_texts(run_texts(exe), text_want)
         if block("import"):
-            bad += blazie_import_cases(exe, data)
+            bad += blazie_import_cases(exe, data, a.firmware)
         if speakout and block("import"):
             bad += import_cases(exe, data)
         if (mb or any(mb_disks())) and block("import"):

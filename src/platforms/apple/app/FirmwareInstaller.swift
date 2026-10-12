@@ -17,8 +17,10 @@ struct NativeIdentify: FirmwareImport.Identify {
         return (Int(r), String(cString: msg))
     }
 
+    // only the releases with a voice: the emulator's own are never offered or named to the voices
     func known() -> [String] {
-        (0..<Int(blv_firmware_count())).compactMap { blv_firmware_label(Int32($0)).map { String(cString: $0) } }
+        (0..<Int(blv_firmware_count())).filter { blv_firmware_language(Int32($0)) >= 0 }
+            .compactMap { blv_firmware_label(Int32($0)).map { String(cString: $0) } }
     }
 }
 

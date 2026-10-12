@@ -28,7 +28,8 @@ extern "C" {
 #define BLV_FW_REFUSED (-2)        /* an image, but not one the voice can run (the sites are missing: another unit) */
 #define BLV_FW_WRITE (-3)          /* out_bns could not be written */
 #define BLV_FW_UNKNOWN (-4)        /* a Braille Lite 2000 image the voice could start, but not a release on the list */
-#define BLV_FW_NO_VOICE (-5)       /* a release on the list the emulator runs, but no voice speaks it yet */
+#define BLV_FW_NO_VOICE (-8)       /* a release on the list the emulator runs, but no voice speaks it yet (-5 to -7 are
+                                      the phones' own: ssa_import.h) */
 
 /* The offset of the first ROM image in data, or -1. */
 BL_API long blv_find_image(const unsigned char *data, long n);
@@ -67,8 +68,9 @@ BL_API int blv_make_release_state(const char *firmware, int release, const char 
 /* sha256 of n bytes into out[32]; exported for the tests. */
 BL_API void blv_sha256(const unsigned char *data, long n, unsigned char *out);
 
-/* The test's control (test_import_native.py sets it; an app never does): nonzero drops the list, so an image the
-   voice can start that is not on it is taken as English -- the unknown-release case must then fail. */
+/* The tests' controls (an app never sets it): 1 drops the list, so an image the voice can start that is not on it
+   is taken as English -- test_import_native.py's unknown-release case must then fail; 2 hands a release with no voice
+   (the emulator's only) out as English -- test_releases.py's no-voice case must then fail. */
 BL_API extern int blv_firmware_break;
 
 #ifdef __cplusplus

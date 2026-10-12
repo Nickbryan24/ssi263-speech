@@ -1590,6 +1590,9 @@ if os.path.isfile(os.path.join(os.path.dirname(HERE), "dist", "blazie-lib", "x64
     CHECKS.append(check("releases CONTROL (every setup answered n, must fail)",
                         [PY, os.path.join(BL_SRC, "test_releases.py")], env={"SSI263_RELEASES_TEST_BREAK": "1"},
                         expect_fail=True, fail_marks=[r"^FAIL bl2_en_2003_06: its state", r"^releases: \d+ FAILED$"]))
+    CHECKS.append(check("releases CONTROL (a release with no voice handed out as English, must fail)",
+                        [PY, os.path.join(BL_SRC, "test_releases.py")], env={"SSI263_RELEASES_TEST_BREAK": "voice"},
+                        expect_fail=True, fail_marks=[r"^FAIL no voice offered", r"^releases: 1 FAILED$"]))
 # the hard G (0.7.6, params hold_release; Astra, Replies 146-150): watched in the chip's own state at every output sample,
 # Python and C, on scripted firmware-like sessions and the live Braille Lite -- an HVC after K/KV opens half a frame before
 # its end into an open phoneme, on its own stored voice with no noise, and stays shut before D, PA, a pause or a late

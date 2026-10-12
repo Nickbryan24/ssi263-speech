@@ -74,6 +74,8 @@ check "releases: each one's state by its row's recipe" python3 src/csrc/blazie/t
     --firmware "$DATA"
 control "releases CONTROL (every setup answered n, must fail)" "^releases: [0-9]+ FAILED$" \
     -- env SSI263_RELEASES_TEST_BREAK=1 python3 src/csrc/blazie/test_releases.py --lib "$LIB" --firmware "$DATA"
+control "releases CONTROL (a release with no voice handed out as English, must fail)" "^releases: 1 FAILED$" \
+    -- env SSI263_RELEASES_TEST_BREAK=voice python3 src/csrc/blazie/test_releases.py --lib "$LIB" --firmware "$DATA"
 # issue #8: the Accent SA's text done only when said (as_voice's settle between clauses), on the module's own engine
 # objects (libsd_voices_ref.so: libssi263speech.so has no Accent SA); its control is the settle off (0.7.5's done)
 # and must name the dialog's early texts

@@ -6,8 +6,11 @@ row's).  The states are made in parallel, one process each.
     python test_releases.py [--firmware DIR] [--lib PATH] [--chip PATH]
 
 --firmware (default $SSI263_FIRMWARE, else firmware/blazie) is searched with its subfolders for each row's image; a
-row whose firmware is not there is skipped, and said so.  The control (SSI263_RELEASES_TEST_BREAK=1) answers every
-setup with n instead of the row's letter (blv_make_state_yes): every state made must then differ from its row's.
+row whose firmware is not there is skipped, and said so.  A release with no voice (the emulator's only), imported
+through the voices' path (blv_import_firmware), must be refused as BLV_FW_NO_VOICE and leave no file: no language is
+offered without its firmware AND its voice.  Controls (SSI263_RELEASES_TEST_BREAK): 1 answers every setup with n
+instead of the row's letter (blv_make_state_yes), so every state made must differ from its row's; voice hands the
+no-voice releases out as English (blv_firmware_break 2), so the no-voice case must fail.
 """
 import argparse
 import ctypes
@@ -25,13 +28,16 @@ sys.path.insert(0, os.path.join(REPO, "src", "platforms", "android", "test"))
 import gen_languages  # noqa: E402
 
 WINDOWS = sys.platform == "win32"
-BREAK = bool(os.environ.get("SSI263_RELEASES_TEST_BREAK"))
+BREAK_MODE = os.environ.get("SSI263_RELEASES_TEST_BREAK", "")
+BREAK = BREAK_MODE not in ("", "voice")           # the states control
+BREAK_VOICE = BREAK_MODE == "voice"               # the no-voice control (blv_firmware_break 2)
 FILE_ROM_OFFSET = 0x3000
 PROGRESS = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_double)
 VOICE = {"english": 0, "spanish": 1, "german": 2, "italian": 3, "slovak": 4, "-": -1}
 MODEL = {"bl": 0, "bns": 1}
 SHAPE = {"english": 0, "slow": 1}
 N_CHORD = 0x1D                                   # n in computer braille
+NO_VOICE = -8                                    # bl_firmware.h BLV_FW_NO_VOICE
 
 lib = None
 
@@ -46,6 +52,8 @@ def load(lib_path, chip_path):
     for name in ("blv_firmware_language", "blv_release_model", "blv_release_code_page"):
         getattr(lib, name).argtypes = [ctypes.c_int]
     lib.blv_release_of.argtypes = [ctypes.c_char_p]
+    lib.blv_import_firmware.argtypes = [ctypes.c_char_p, ctypes.c_long, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
+    ctypes.c_int.in_dll(lib, "blv_firmware_break").value = 2 if BREAK_VOICE else 0
     lib.blv_make_release_state.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, PROGRESS,
                                            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
     lib.blv_make_state_yes.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_ubyte, ctypes.c_char_p, PROGRESS,
@@ -131,8 +139,28 @@ def main():
         result(not wrong, "blv_release_of: each of %d .BNS files found as its own release" % len(found),
                ", ".join(wrong))
     tmp = tempfile.mkdtemp(prefix="ssi263-releases-test-")
+    if not BREAK:
+        # no voice without its firmware AND its voice: a no-voice release brought to a voice importer is refused
+        mute = [k for k in sorted(found) if table[k]["voice"] == "-"]
+        handed = []
+        out = os.path.join(tmp, "imported.BNS")
+        for k in mute:
+            data = open(found[k], "rb").read()
+            msg = ctypes.create_string_buffer(256)
+            r = lib.blv_import_firmware(data, len(data), out.encode(), msg, 256)
+            if r != NO_VOICE or os.path.exists(out):
+                handed.append("%s -> %d" % (table[k]["id"], r))
+            if os.path.exists(out):
+                os.remove(out)
+        if mute:
+            result(not handed, "no voice offered for the %d releases without one (the emulator's only): each import "
+                   "refused as not yet a voice, no file left" % len(mute), ", ".join(handed[:4]))
+        if BREAK_VOICE:
+            print("releases: %d FAILED" % bad if bad else "releases: every case as expected")
+            sys.exit(1 if bad else 0)
+    # the control remakes only the voices' releases (both recipe shapes are among them): enough to fail as named
     jobs = [(k, SHAPE[table[k]["shape"]], found[k], os.path.join(tmp, "%s.state" % table[k]["id"]))
-            for k in sorted(found)]
+            for k in sorted(found) if not BREAK or table[k]["voice"] != "-"]
     with ProcessPoolExecutor(max_workers=min(len(jobs), os.cpu_count() or 1) or 1, initializer=load,
                              initargs=(a.lib, a.chip)) as ex:
         for k, ok, got in ex.map(make, jobs):

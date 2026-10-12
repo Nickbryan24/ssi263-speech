@@ -216,6 +216,8 @@ int ssa_import_firmware(const unsigned char *data, long n, const char *out, char
         }
         return s;
     }
+    if (r == BLV_FW_NO_VOICE)          /* the emulator's only: to the phone's voices, a release it does not know */
+        return BLV_FW_UNKNOWN;
     if (r == BLV_FW_NONE)
         r = ssa_import_mockingboard(data, n, out, msg, msglen);
     if (r == BLV_FW_NONE)

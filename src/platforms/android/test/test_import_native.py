@@ -108,8 +108,9 @@ def check_sha256(lib):
 
 
 def check_list(lib):
+    # the voices' releases, first and in this order; then the emulator's only (bl_languages.txt, no voice: -1)
     got = [(lib.blv_firmware_label(k).decode(), lib.blv_firmware_language(k)) for k in range(lib.blv_firmware_count())]
-    want = list(zip(LABELS, LANGUAGES))
+    want = list(zip(LABELS, LANGUAGES)) + [(label, NONE) for label, _ in got[len(LABELS):]]
     result(got == want, "the list: %d releases, labelled" % len(want), "" if got == want else "got %s" % got)
     result(lib.blv_firmware_label(len(want)) is None and lib.blv_firmware_language(-1) == -1, "past the list: none")
     got = {lang: lib.blv_firmware_recipe(lang) for lang in RECIPES}
