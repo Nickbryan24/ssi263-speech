@@ -63,6 +63,10 @@ struct ssi263 {
     section sec[5];
     section shaper;
     int shaper_on;
+    section nsec[4];                  /* noise_path "own" (v0.17): the noise's F2..F5, */
+    section nshaper;                  /* its shaper, */
+    int nshaper_on;
+    double nw2, nw5, ng2, ng5;        /* its (F2, F5) weights and per-path levels */
     double hp_x1, hp_y1;
     double out_pos, out_acc, pend_v, pend_rem;
     int os;
@@ -270,6 +274,8 @@ static void set_fixed_sections(ssi263 *c)
 {
     set_theta(&c->sec[3], 2 * M_PI * c->p.f4_ratio, c->p.bw_ratio[3]);
     set_theta(&c->sec[4], 2 * M_PI * c->p.f5_ratio, c->p.bw_ratio[4]);
+    set_theta(&c->nsec[2], 2 * M_PI * c->p.noise_path_f4_ratio, c->p.noise_path_bw45[0]);
+    set_theta(&c->nsec[3], 2 * M_PI * c->p.noise_path_f5_ratio, c->p.noise_path_bw45[1]);
 }
 
 /* the 4-bit code a counter value latches to */
@@ -301,11 +307,16 @@ static void latch_all(ssi263 *c, int force)
         }
     }
     if (changed) {
-        double b2;
+        double b2, th2, th3;
         set_theta(&c->sec[0], theta(c, 0, c->latch[F1]), c->p.bw_ratio[0]);
         b2 = c->p.bw_ratio[1] * (1.0 + c->p.nas_f2_bw_gain * c->latch[NAS]);
-        set_theta(&c->sec[1], theta(c, 1, c->latch[F2]), b2);
-        set_theta(&c->sec[2], theta(c, 2, c->latch[F3]), c->p.bw_ratio[2]);
+        th2 = theta(c, 1, c->latch[F2]);
+        set_theta(&c->sec[1], th2, b2);
+        th3 = theta(c, 2, c->latch[F3]);
+        set_theta(&c->sec[2], th3, c->p.bw_ratio[2]);
+        /* the noise path's F2 and F3: the same tuning and damping as the voice's */
+        set_theta(&c->nsec[0], th2, b2);
+        set_theta(&c->nsec[1], th3, c->p.bw_ratio[2]);
     }
 }
 
@@ -317,7 +328,7 @@ static void load_phoneme(ssi263 *c)
     int held = c->p.release_lookahead != 0.0 && c->p.late_release_burst != 0.0
                && c->releases && !c->released && c->clo <= 0.5;
     int prev_fa = c->target[FA];
-    double pw2 = c->w2, pw5 = c->w5;
+    double pw2 = c->w2, pw5 = c->w5, pnw2 = c->nw2, pnw5 = c->nw5;
     /* nothing sounding as this phoneme loads (as chip.py, params: closure_onto_silence) */
     c->onto_silence = c->amp_cur < 0.5
                       || (c->latch[VA] == 0 && c->latch[FA] == 0 && c->g2 + c->g5 < 0.5);
@@ -339,14 +350,20 @@ static void load_phoneme(ssi263 *c)
     if (c->p.noise_route_b02 != 0.0) {
         c->w2 = c->p.noise_route_b02_w[e[8] ? 1 : 0][0];
         c->w5 = c->p.noise_route_b02_w[e[8] ? 1 : 0][1];
+        c->nw2 = c->p.noise_path_route_b02_w[e[8] ? 1 : 0][0];
+        c->nw5 = c->p.noise_path_route_b02_w[e[8] ? 1 : 0][1];
     }
     if (held && !c->closing) {
         /* the stop was held to its end: it releases here, its own noise the burst */
-        double b2 = prev_fa * pw2, b5 = prev_fa * pw5;
+        double b2 = prev_fa * pw2, b5 = prev_fa * pw5, nb2 = prev_fa * pnw2, nb5 = prev_fa * pnw5;
         if (b2 > c->g2)
             c->g2 = b2;                                  /* max(g2, prev_fa * pw2) */
         if (b5 > c->g5)
             c->g5 = b5;
+        if (nb2 > c->ng2)
+            c->ng2 = nb2;
+        if (nb5 > c->ng5)
+            c->ng5 = nb5;
     }
     c->released = 0;
     c->early_req = 0;
@@ -435,6 +452,20 @@ SSI263_API ssi263 *ssi263_new(const ssi263_params *p, const unsigned char *rom, 
         bandpass_init(&c->shaper, p->noise_shaper_ratio, p->noise_shaper_bw);
     else if (p->noise_shaper == 1.0)
         set_theta(&c->shaper, 2 * M_PI * p->noise_shaper_ratio, p->noise_shaper_bw);
+    /* the noise's own path (noise_path "own", v0.17), set up whether or not it is used, as chip.py */
+    c->nw2 = p->noise_into_f2;
+    c->nw5 = p->noise_into_f5;
+    for (i = 0; i < 4; i++) {
+        c->nsec[i].zeros = p->noise_path_bilinear != 0.0;
+        c->nsec[i].g = 1.0;
+    }
+    c->nshaper.zeros = p->noise_path_bilinear != 0.0;
+    c->nshaper.g = 1.0;
+    c->nshaper_on = p->noise_path_shaper != 0.0;
+    if (p->noise_path_shaper == 2.0)
+        bandpass_init(&c->nshaper, p->noise_path_shaper_ratio, p->noise_path_shaper_bw);
+    else if (p->noise_path_shaper == 1.0)
+        set_theta(&c->nshaper, 2 * M_PI * p->noise_path_shaper_ratio, p->noise_path_shaper_bw);
     c->os = (int)p->output_oversample;
     c->ntaps = 48 * c->os + 1;
     c->fir = (double *)calloc((size_t)c->ntaps, sizeof(double));
@@ -559,6 +590,8 @@ static long chip_run(ssi263 *c, long max_out, int stop_on_request, double *out)
     unsigned long long lfsr_mask = (1ULL << (int)p->lfsr_bits) - 1;
     double ng = p->noise_gain, gain = p->output_gain, amp_mult = p->art_amp_mult;
     double swell = p->noise_voice_swell, swell_norm = sqrt(1.0 + swell * swell / 2.0);
+    int own = p->noise_own != 0.0;                 /* v0.17: the noise's own F2..F5 (chip.py noise_path) */
+    double ngn = p->noise_path_gain;
     double rem, v;
 
 #define EMIT(val)                                        \
@@ -599,6 +632,7 @@ static long chip_run(ssi263 *c, long max_out, int stop_on_request, double *out)
         v = 0.0;
         if (pw) {
             double frame, step, d, cstep, scale, rel, cdel, I, period, inc, pulse, ph, x, nz, n2, n5, hp, amp;
+            double nzn, nn2, nn5;                  /* the noise path's noise and weights (noise_path "own") */
             int f, n, rel_now;
             const int *la;
             /* -- controller: timer, transition counters, glide -- */
@@ -722,23 +756,28 @@ static long chip_run(ssi263 *c, long max_out, int stop_on_request, double *out)
             if (per_path) {
                 double astp = step * amp_mult;
                 double t2 = c->target[FA] * c->w2, t5 = c->target[FA] * c->w5;
+                double tn2 = c->target[FA] * c->nw2, tn5 = c->target[FA] * c->nw5;     /* the noise path's */
                 int rel_noise = c->elapsed >= c->duration - p->closure_release_frames * frame * scale;
                 if (look && c->releases)
                     rel_noise = rel_noise && c->released;
                 if (hold_noise && c->closing && (!c->releases || !rel_noise)) {
-                    t2 = t5 = 0.0;
+                    t2 = t5 = tn2 = tn5 = 0.0;
                     if (look && precharge && c->releases && !c->released
                             && c->elapsed >= c->duration - p->closure_release_frames * frame * scale) {
                         /* the next phoneme is a fricative: its noise builds behind the closed gate */
                         const unsigned char *pe = pending_entry(c);
                         if (pe && pe[6] && pe[FA] > 0) {
-                            double w2 = c->w2, w5 = c->w5;
+                            double w2 = c->w2, w5 = c->w5, nw2 = c->nw2, nw5 = c->nw5;
                             if (p->noise_route_b02 != 0.0) {
                                 w2 = p->noise_route_b02_w[pe[8] ? 1 : 0][0];
                                 w5 = p->noise_route_b02_w[pe[8] ? 1 : 0][1];
+                                nw2 = p->noise_path_route_b02_w[pe[8] ? 1 : 0][0];
+                                nw5 = p->noise_path_route_b02_w[pe[8] ? 1 : 0][1];
                             }
                             t2 = pe[FA] * w2;
                             t5 = pe[FA] * w5;
+                            tn2 = pe[FA] * nw2;
+                            tn5 = pe[FA] * nw5;
                         }
                     } else if (noise_lead >= 0.0 && look && c->releases && !c->released
                                && c->elapsed >= c->duration - p->closure_release_frames * frame * scale - noise_lead
@@ -747,37 +786,71 @@ static long chip_run(ssi263 *c, long max_out, int stop_on_request, double *out)
                            noise_lead before the release point (Astra, Reply 59; Tomi's ear, 2026-09-27) */
                         t2 = c->target[FA] * c->w2;
                         t5 = c->target[FA] * c->w5;
+                        tn2 = c->target[FA] * c->nw2;
+                        tn5 = c->target[FA] * c->nw5;
                     }
                 } else if (has_burst_hold && c->closing && c->releases
                            && c->elapsed >= c->duration
                               - (p->closure_release_frames - p->burst_hold_frames) * frame * scale) {
                     t2 = t2 * p->burst_tail_level;
                     t5 = t5 * p->burst_tail_level;
+                    tn2 = tn2 * p->burst_tail_level;
+                    tn5 = tn5 * p->burst_tail_level;
                 }
                 d = t2 - c->g2;
                 c->g2 = fabs(d) <= astp ? t2 : c->g2 + copysign(astp, d);
                 d = t5 - c->g5;
                 c->g5 = fabs(d) <= astp ? t5 : c->g5 + copysign(astp, d);
+                d = tn2 - c->ng2;
+                c->ng2 = fabs(d) <= astp ? tn2 : c->ng2 + copysign(astp, d);
+                d = tn5 - c->ng5;
+                c->ng5 = fabs(d) <= astp ? tn5 : c->ng5 + copysign(astp, d);
                 nz = c->noise_val * ng / 15.0;
                 n2 = c->g2;
                 n5 = c->g5;
+                nzn = c->noise_val * ngn / 15.0;
+                nn2 = c->ng2;
+                nn5 = c->ng5;
             } else {
                 nz = c->noise_val * ng * la[FA] / 15.0;
                 n2 = c->w2;
                 n5 = c->w5;
+                nzn = c->noise_val * ngn * la[FA] / 15.0;
+                nn2 = c->nw2;
+                nn5 = c->nw5;
             }
-            if (swell != 0.0 && la[VA] > 0)
+            if (swell != 0.0 && la[VA] > 0) {
                 /* the noise swells with each glottal pulse while voiced (chip.py noise_voice_swell, v0.14) */
-                nz = nz * (1.0 + swell * cos(2 * M_PI * c->phase)) / swell_norm;
-            if (c->shaper_on)
-                nz = section_step(&c->shaper, nz);
-            /* -- the cascade: F1 -> F2 (+noise) -> F3 -> F4 -> F5 (+noise) -- */
-            if (f5_post)
+                double sw = 1.0 + swell * cos(2 * M_PI * c->phase);
+                nz = nz * sw / swell_norm;
+                nzn = nzn * sw / swell_norm;
+            }
+            if (own) {
+                /* -- v0.17: the voice's cascade takes no noise; the noise has F2..F5 of its own (chip.py) -- */
+                double fn2, xn;
+                if (c->nshaper_on)
+                    nzn = section_step(&c->nshaper, nzn);
                 x = section_step(&c->sec[4], section_step(&c->sec[3], section_step(&c->sec[2],
-                        section_step(&c->sec[1], section_step(&c->sec[0], x) + n2 * nz)))) + n5 * nz;
-            else
-                x = section_step(&c->sec[4], section_step(&c->sec[3], section_step(&c->sec[2],
-                        section_step(&c->sec[1], section_step(&c->sec[0], x) + n2 * nz))) + n5 * nz);
+                        section_step(&c->sec[1], section_step(&c->sec[0], x)))));
+                fn2 = section_step(&c->nsec[0], nn2 * nzn);
+                if (f5_post)
+                    xn = section_step(&c->nsec[3], section_step(&c->nsec[2], section_step(&c->nsec[1], fn2)))
+                         + nn5 * nzn;
+                else
+                    xn = section_step(&c->nsec[3], section_step(&c->nsec[2], section_step(&c->nsec[1], fn2))
+                                      + nn5 * nzn);
+                x = x + xn;
+            } else {
+                if (c->shaper_on)
+                    nz = section_step(&c->shaper, nz);
+                /* -- the cascade: F1 -> F2 (+noise) -> F3 -> F4 -> F5 (+noise) -- */
+                if (f5_post)
+                    x = section_step(&c->sec[4], section_step(&c->sec[3], section_step(&c->sec[2],
+                            section_step(&c->sec[1], section_step(&c->sec[0], x) + n2 * nz)))) + n5 * nz;
+                else
+                    x = section_step(&c->sec[4], section_step(&c->sec[3], section_step(&c->sec[2],
+                            section_step(&c->sec[1], section_step(&c->sec[0], x) + n2 * nz))) + n5 * nz);
+            }
             /* -- high-pass with volume, then S/H -- */
             hp = x - c->hp_x1 + c->hp_r * c->hp_y1;
             c->hp_x1 = x;
@@ -877,6 +950,8 @@ SSI263_API void ssi263_skip(ssi263 *c, double seconds)
         }
         c->g2 = c->target[FA] * c->w2;
         c->g5 = c->target[FA] * c->w5;
+        c->ng2 = c->target[FA] * c->nw2;
+        c->ng5 = c->target[FA] * c->nw5;
         if (c->duration > 0) {
             double astep = 15.0 * p->amp_slew_per_phoneme * seconds / c->duration;
             d = c->amp_target - c->amp_cur;
@@ -896,6 +971,9 @@ SSI263_API void ssi263_skip(ssi263 *c, double seconds)
     for (i = 0; i < 5; i++)
         c->sec[i].y1 = c->sec[i].y2 = c->sec[i].x1 = c->sec[i].x2 = 0.0;
     c->shaper.y1 = c->shaper.y2 = c->shaper.x1 = c->shaper.x2 = 0.0;
+    for (i = 0; i < 4; i++)
+        c->nsec[i].y1 = c->nsec[i].y2 = c->nsec[i].x1 = c->nsec[i].x2 = 0.0;
+    c->nshaper.y1 = c->nshaper.y2 = c->nshaper.x1 = c->nshaper.x2 = 0.0;
     c->hp_x1 = c->hp_y1 = 0.0;
     c->pending_pulse = 0.0;
     memset(c->gl_hist, 0, sizeof c->gl_hist);

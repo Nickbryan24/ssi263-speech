@@ -32,6 +32,16 @@ EXACT = ("elapsed", "duration", "time", "timer_done", "mode", "lfsr", "trans_tar
 
 SWITCHES = [
     {},
+    # v0.17's noise path ('own', the default): v0.16's shared one, with its noise switches (the default now leaves
+    # the shared shaper and routing untried), and the noise path's own alternatives
+    {"noise_path": "shared"},
+    {"noise_path": "shared", "noise_shaper": "flat", "noise_voice_swell": 0.5},
+    {"noise_path": "shared", "noise_shaper": (0.3, 0.2), "noise_f5_point": "output"},
+    {"noise_path": "shared", "noise_route": "fixed"},
+    {"noise_path": "shared", "noise_route_mode": "switch"},
+    {"noise_path_numerator": "bilinear", "noise_path_shaper": ("bp", 0.28, 0.15)},
+    {"noise_path_shaper": (0.3, 0.2), "noise_path_gain": 0.02},
+    {"noise_path_route_b02": ((1.0, 0.0), (0.5, 0.5)), "noise_path_bw45": (0.01, 0.02)},
     {"noise_voice_swell": 0.0},
     {"noise_voice_swell": 0.5},
     {"latch_quantize": "floor"},

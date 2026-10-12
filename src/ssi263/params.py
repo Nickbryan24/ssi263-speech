@@ -359,6 +359,32 @@ DEFAULTS = {
                           "S-likeness goes away'.  A chip-level rule (voice and noise together), so J and every "
                           "voiced affricate follow.  The physical mechanism is OPEN (a Fig. 8-style gate fits Z too)"),
 
+    # ---- the noise's own path (v0.17) ------------------------------------------------
+    "noise_path": ("own", "REG+EAR",
+                   "v0.17 (Astra, Replies 200-201): 'shared' = v0.16, the noise through the voice's own sections; "
+                   "'own' = the voice's sections take no noise, and the noise takes a second F2..F5 cascade of its "
+                   "own (the noise_path_* values below; F2 and F3 tuned and damped as the voice's, by the same "
+                   "latches), summed with the voice's before the output high-pass -- so the voice is v0.16's sample "
+                   "for sample and only the noise's colour changes.  Astra's isolated noise-path audition: the "
+                   "review183 noise fit's response for the noise alone, its level one scalar calibrated on the clean "
+                   "R3=3 session's pass-0 S (pass 1 a prediction); noise shapes against the real chip improve (S "
+                   "8.3 -> 1.9, F 8.6 -> 2.6, TH 10.8 -> 4.2, SCH 12.4 -> 5.8, HF 17.0 -> 10.6 dB spread) while "
+                   "levels stay off (F +6.6, TH +13.5, Z +4.8 dB too quiet; SCH, HF too loud): open fidelity work.  "
+                   "Tomi (2026-10-12): 'no regressions on accent ... on Speakout especially for the \"judges\" "
+                   "sound (that hard J) it improves a lot to add some grit back the original has'.  A model "
+                   "construction, not an identified circuit (voice and noise poles apart are not proven)"),
+    "noise_path_f4_ratio": (0.1668963689066801, "REG", "the noise path's F4 (review183's noise fit); the voice's: f4_ratio"),
+    "noise_path_f5_ratio": (0.2346452558731321, "REG", "the noise path's F5 (review183's noise fit); the voice's: f5_ratio"),
+    "noise_path_bw45": ((0.004919565254015397, 0.012556299128582488), "REG",
+                        "the noise path's F4 and F5 B/fc (review183's noise fit); F2's and F3's are bw_ratio's"),
+    "noise_path_numerator": ("allpole", "REG", "the noise path's sections: 'allpole' (review183's fit) or 'bilinear'"),
+    "noise_path_shaper": ("flat", "REG", "the noise path's shaper, as noise_shaper: 'flat' (review183's fit)"),
+    "noise_path_route_b02": (((0.0, 1.0), (1.0, 0.5863636346382275)), "REG",
+                             "the noise path's (F2, F5) weights by class bit b02, as noise_route_b02 (review183's fit)"),
+    "noise_path_gain": (0.0012219982702749526, "REG",
+                        "the noise path's noise_gain: noise_gain x 0.10183318918957937, the one scalar calibrated "
+                        "on pass-0 S (review200/fricative_calibration.json)"),
+
     # ---- output stage ---------------------------------------------------------------
     "hp_ratio": (0.004, "GUESS", "ISSCC: high-pass removes DC and carries VOL; cutoff / fc"),
     "vol_law": ("linear15", "GUESS", "gain = A / 15"),

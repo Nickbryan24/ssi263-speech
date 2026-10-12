@@ -90,6 +90,16 @@ typedef struct ssi263_params {
     double hold_release_after[4];        /* the phonemes before them that make the context (K, KV); -1 = unused */
     double hold_release_min_frames;      /* only holds this long or longer (mode 1: 1 frame, else 4 - DR) */
     double mode1_rate15_formants;        /* 0.8, the BASIC tones: 0 "slew", 1 "immediate", 2 "pa_wait" */
+    double noise_own;                    /* v0.17 noise_path: 1 "own" (the noise's own F2..F5 cascade), 0 "shared" */
+    double noise_path_f4_ratio;          /* the noise path's F4 and F5 (f / fc) */
+    double noise_path_f5_ratio;
+    double noise_path_bw45[2];           /* ... and their B / fc */
+    double noise_path_bilinear;          /* noise_path_numerator: 1 "bilinear", 0 "allpole" */
+    double noise_path_shaper;            /* as noise_shaper: 0 "flat", 1 low-pass, 2 band-pass */
+    double noise_path_shaper_ratio;
+    double noise_path_shaper_bw;
+    double noise_path_route_b02_w[2][2]; /* as noise_route_b02_w */
+    double noise_path_gain;              /* the noise path's noise_gain */
 } ssi263_params;
 
 #define SSI263_GLOTTAL_MAX 64

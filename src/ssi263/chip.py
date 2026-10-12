@@ -170,13 +170,18 @@ class SSI263:
         self.tick = 0                # tract samples since power-up
         zeros = self.p["section_numerator"] == "bilinear"
         self.sec = [Resonator(zeros) for _ in range(5)]
-        self.shaper = Resonator(zeros)
-        shp = self.p["noise_shaper"]
-        self.shaper_on = shp != "flat"
-        if self.shaper_on and shp[0] == "bp":
-            self.shaper = Bandpass(shp[1], shp[2])
-        elif self.shaper_on:
-            self.shaper.set_theta(2 * math.pi * shp[0], shp[1])
+        self.shaper, self.shaper_on = self._shaper(self.p["noise_shaper"], zeros)
+        # the noise's own path (params noise_path 'own', v0.17): F2..F5 sections and a shaper the noise alone takes
+        if self.p["noise_path"] not in ("shared", "own"):
+            raise ValueError("noise_path = %r: 'shared' or 'own'" % (self.p["noise_path"],))
+        if self.p["noise_path_numerator"] not in ("bilinear", "allpole"):
+            raise ValueError("noise_path_numerator = %r" % (self.p["noise_path_numerator"],))
+        self.own_noise = self.p["noise_path"] == "own"
+        nzeros = self.p["noise_path_numerator"] == "bilinear"
+        self.nsec = [Resonator(nzeros) for _ in range(4)]
+        self.nshaper, self.nshaper_on = self._shaper(self.p["noise_path_shaper"], nzeros)
+        self.nw2, self.nw5 = self.w2, self.w5        # its (F2, F5) weights (noise_path_route_b02)
+        self.ng2 = self.ng5 = 0.0                    # its per-path noise levels
         if self.p["closure_point"] not in ("after_hp", "before_hp"):
             raise ValueError("closure_point = %r: 'after_hp' or 'before_hp'" % (self.p["closure_point"],))
         if self.p["noise_f2_injection"] not in ("resonator", "shelf"):
@@ -297,7 +302,7 @@ class SSI263:
     def _load_phoneme(self):
         held = (self.p["release_lookahead"] and self.p["late_release_burst"]
                 and self.releases and not self.released and self.clo <= 0.5)
-        prev_fa, pw2, pw5 = self.target["FA"], self.w2, self.w5
+        prev_fa, pw2, pw5, pnw2, pnw5 = self.target["FA"], self.w2, self.w5, self.nw2, self.nw5
         # nothing sounding as this phoneme loads: a PA with the amplitude down, or voice and
         # noise both faded out (params: closure_onto_silence)
         self.onto_silence = (self.amp_cur < 0.5
@@ -322,10 +327,13 @@ class SSI263:
             self.last_real = self.phoneme
         if self.p["noise_route"] == "b02":
             self.w2, self.w5 = self.p["noise_route_b02"][e["class2"]]
+            self.nw2, self.nw5 = self.p["noise_path_route_b02"][e["class2"]]
         if held and not self.closing:
             # the stop was held to its end: it releases here, its own noise the burst
             self.g2 = max(self.g2, prev_fa * pw2)
             self.g5 = max(self.g5, prev_fa * pw5)
+            self.ng2 = max(self.ng2, prev_fa * pnw2)
+            self.ng5 = max(self.ng5, prev_fa * pnw5)
         self.released = False
         self.lead_logged = False
         self.early_req = False
@@ -412,6 +420,8 @@ class SSI263:
                 self.cur[f] = self.target[f] if abs(d) <= st else self.cur[f] + math.copysign(st, d)
             self.g2 = self.target["FA"] * self.w2
             self.g5 = self.target["FA"] * self.w5
+            self.ng2 = self.target["FA"] * self.nw2
+            self.ng5 = self.target["FA"] * self.nw5
             if self.duration > 0:
                 astep = 15.0 * p["amp_slew_per_phoneme"] * seconds / self.duration
                 d = self.amp_target - self.amp_cur
@@ -425,7 +435,7 @@ class SSI263:
                 self.trans = self.trans_target if abs(d) <= g else self.trans + math.copysign(g, d)
             self._latch_all()
         if True:                          # skipped output is discarded: no ringing or held samples survive it
-            for sec in list(self.sec) + [self.shaper, self.inj]:
+            for sec in list(self.sec) + [self.shaper, self.inj] + list(self.nsec) + [self.nshaper]:
                 for attr in ("y1", "y2", "x1", "x2"):
                     if hasattr(sec, attr):
                         setattr(sec, attr, 0.0)
@@ -449,10 +459,23 @@ class SSI263:
             return fine
         return self.dec.process(fine)
 
+    @staticmethod
+    def _shaper(shp, zeros):
+        """A noise shaper from its parameter ('flat', ('bp', ratio, bw) or (ratio, bw)) and whether it is on."""
+        sh = Resonator(zeros)
+        if shp != "flat" and shp[0] == "bp":
+            sh = Bandpass(shp[1], shp[2])
+        elif shp != "flat":
+            sh.set_theta(2 * math.pi * shp[0], shp[1])
+        return sh, shp != "flat"
+
     def _set_fixed_sections(self):
         bw = self.p["bw_ratio"]
         self.sec[3].set_theta(2 * math.pi * self.p["f4_ratio"], bw[3])
         self.sec[4].set_theta(2 * math.pi * self.p["f5_ratio"], bw[4])
+        nbw = self.p["noise_path_bw45"]
+        self.nsec[2].set_theta(2 * math.pi * self.p["noise_path_f4_ratio"], nbw[0])
+        self.nsec[3].set_theta(2 * math.pi * self.p["noise_path_f5_ratio"], nbw[1])
         self._coef = {}
 
     def _theta(self, name, code):
@@ -495,7 +518,11 @@ class SSI263:
                 nu0 = th2 / (2 * math.pi)
                 z = self.p["noise_f2_inj_zero"]
                 self.inj.set(z, self.p["noise_f2_inj_k"] * nu0 * nu0 + z)
-            self.sec[2].set_theta(self._theta("F3", self.latch["F3"]), bw[2])
+            th3 = self._theta("F3", self.latch["F3"])
+            self.sec[2].set_theta(th3, bw[2])
+            # the noise path's F2 and F3: the same tuning and damping as the voice's
+            self.nsec[0].set_theta(th2, b2)
+            self.nsec[1].set_theta(th3, bw[2])
 
     def _run(self, max_out, stop_on_request=False):
         p = self.p
@@ -533,6 +560,10 @@ class SSI263:
         gate_hold = p["gate_hold_to_next_load"]
         s1, s2, s3, s4, s5 = self.sec
         sh = self.shaper
+        own = self.own_noise                                # v0.17: the noise's own F2..F5 (params noise_path)
+        ns2, ns3, ns4, ns5 = self.nsec
+        nsh = self.nshaper
+        ngn = p["noise_path_gain"]
         fmult = dict(zip(FIELDS, p["field_speed_mult"]))
         gw = tuple(p["glottal_wave"])
         shaped = gw != (1.0,)
@@ -679,11 +710,12 @@ class SSI263:
                 if per_path:
                     astp = step * amp_mult
                     t2, t5 = self.target["FA"] * self.w2, self.target["FA"] * self.w5
+                    tn2, tn5 = self.target["FA"] * self.nw2, self.target["FA"] * self.nw5     # the noise path's
                     rel_noise = self.elapsed >= self.duration - p["closure_release_frames"] * frame * scale
                     if look and self.releases:
                         rel_noise = rel_noise and self.released
                     if hold_noise and self.closing and (not self.releases or not rel_noise):
-                        t2 = t5 = 0.0
+                        t2 = t5 = tn2 = tn5 = 0.0
                         if (look and precharge and self.releases and not self.released
                                 and self.elapsed >= self.duration - p["closure_release_frames"] * frame * scale):
                             # the next phoneme is a fricative: its noise builds behind the closed gate
@@ -691,6 +723,9 @@ class SSI263:
                             if pe is not None and pe["closure_clear"] and pe["FA"] > 0:
                                 w = p["noise_route_b02"][pe["class2"]] if p["noise_route"] == "b02" else (self.w2, self.w5)
                                 t2, t5 = pe["FA"] * w[0], pe["FA"] * w[1]
+                                w = (p["noise_path_route_b02"][pe["class2"]] if p["noise_route"] == "b02"
+                                     else (self.nw2, self.nw5))
+                                tn2, tn5 = pe["FA"] * w[0], pe["FA"] * w[1]
                         elif (noise_lead is not None and look and self.releases and not self.released
                               and self.elapsed >= (self.duration - p["closure_release_frames"] * frame * scale
                                                    - noise_lead)
@@ -700,6 +735,7 @@ class SSI263:
                             # Astra (Reply 59): a bounded precharge, the stop's own noise building behind
                             # the closed gate over its last noise_lead before the release point
                             t2, t5 = self.target["FA"] * self.w2, self.target["FA"] * self.w5
+                            tn2, tn5 = self.target["FA"] * self.nw2, self.target["FA"] * self.nw5
                             if not self.lead_logged:
                                 self.lead_logged = True
                                 self.noise_lead_log.append((round(t, 6), self.phoneme, round(
@@ -707,30 +743,57 @@ class SSI263:
                     elif (burst_hold is not None and self.closing and self.releases
                           and self.elapsed >= self.duration - (p["closure_release_frames"] - burst_hold) * frame * scale):
                         t2, t5 = t2 * p["burst_tail_level"], t5 * p["burst_tail_level"]
+                        tn2, tn5 = tn2 * p["burst_tail_level"], tn5 * p["burst_tail_level"]
                     d = t2 - self.g2
                     self.g2 = t2 if abs(d) <= astp else self.g2 + math.copysign(astp, d)
                     d = t5 - self.g5
                     self.g5 = t5 if abs(d) <= astp else self.g5 + math.copysign(astp, d)
+                    d = tn2 - self.ng2
+                    self.ng2 = tn2 if abs(d) <= astp else self.ng2 + math.copysign(astp, d)
+                    d = tn5 - self.ng5
+                    self.ng5 = tn5 if abs(d) <= astp else self.ng5 + math.copysign(astp, d)
                     nz = self.noise_val * ng / 15.0
                     n2, n5 = self.g2, self.g5
+                    nzn = self.noise_val * ngn / 15.0
+                    nn2, nn5 = self.ng2, self.ng5
                 else:
                     nz = self.noise_val * ng * la["FA"] / 15.0
                     n2, n5 = self.w2, self.w5
+                    nzn = self.noise_val * ngn * la["FA"] / 15.0
+                    nn2, nn5 = self.nw2, self.nw5
                 if swell and la["VA"] > 0:
                     # the noise swells with each glottal pulse while voiced (params noise_voice_swell, v0.14)
-                    nz = nz * (1.0 + swell * math.cos(2 * math.pi * self.phase)) / swell_norm
-                if self.shaper_on:
-                    nz = sh(nz)
-                # -- the cascade: F1 -> F2 (+noise) -> F3 -> F4 -> F5 (+noise) -------
-                if inj is not None:
-                    # MAME's topology: the F2 noise enters after F2's resonance, through a shelf
-                    f2 = s2(s1(x)) + inj(inj_g * n2 * nz)
+                    sw = 1.0 + swell * math.cos(2 * math.pi * self.phase)
+                    nz = nz * sw / swell_norm
+                    nzn = nzn * sw / swell_norm
+                if own:
+                    # -- v0.17: the voice's cascade takes no noise; the noise has F2..F5 of its own ---------------
+                    if self.nshaper_on:
+                        nzn = nsh(nzn)
+                    if inj is not None:
+                        f2 = s2(s1(x))
+                        fn2 = inj(inj_g * nn2 * nzn)
+                    else:
+                        f2 = s2(s1(x))
+                        fn2 = ns2(nn2 * nzn)
+                    x = s5(s4(s3(f2)))
+                    if f5_post:
+                        x = x + (ns5(ns4(ns3(fn2))) + nn5 * nzn)
+                    else:
+                        x = x + ns5(ns4(ns3(fn2)) + nn5 * nzn)
                 else:
-                    f2 = s2(s1(x) + n2 * nz)
-                if f5_post:
-                    x = s5(s4(s3(f2))) + n5 * nz
-                else:
-                    x = s5(s4(s3(f2)) + n5 * nz)
+                    if self.shaper_on:
+                        nz = sh(nz)
+                    # -- the cascade: F1 -> F2 (+noise) -> F3 -> F4 -> F5 (+noise) -------
+                    if inj is not None:
+                        # MAME's topology: the F2 noise enters after F2's resonance, through a shelf
+                        f2 = s2(s1(x)) + inj(inj_g * n2 * nz)
+                    else:
+                        f2 = s2(s1(x) + n2 * nz)
+                    if f5_post:
+                        x = s5(s4(s3(f2))) + n5 * nz
+                    else:
+                        x = s5(s4(s3(f2)) + n5 * nz)
                 # -- high-pass with volume, then S/H ----------------------------------
                 if clo_pre_hp and not clo_va:
                     # Astra (Reply 58, Q1): the closure gate BEFORE the output high-pass, so its steps

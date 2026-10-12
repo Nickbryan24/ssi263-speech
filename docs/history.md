@@ -262,6 +262,7 @@ study the analog side on a real chip.
 | v0.14 | A listener: the real chip's Z "rattles"; Tomi: ours was S-like | In Z, J, V and voiced TH the noise swells with each voice pulse |
 | v0.15 | Timothy Wynn: "guess" sounded like "ess"; Tomi chose the clearer, consistent hard G; Claude implementation and Astra review | A K/KV-led HVC of at least two frames can open for its last half-frame into an open successor, with a 2 ms opening ramp; short Accent holds stay unchanged |
 | v0.16 | Tomi's register programs on his real chip: ROM vowel pairs that differ only in F1; Astra (OpenAI Codex) fitted one pair, Claude checked the predictions independently, Tomi chose it by ear | F1's code-to-frequency rule and bandwidth, fitted to E/AY alone; it predicts AI/:A and the older vowels' low end |
+| v0.17 | Tomi: fricatives closer to the chip; his ear on Astra's isolated noise-path audition ("judges" regains its grit on the Speak-Out, the Accent unchanged); Astra (OpenAI Codex) built and calibrated it, Claude integrated it | The noise takes F2..F5 sections of its own (Astra's earlier noise fit), the voice's sections none: the voice is v0.16's sample for sample |
 
 ## Add-on releases at a glance
 

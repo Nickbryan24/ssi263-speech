@@ -54,6 +54,10 @@ class _Params(ctypes.Structure):
         ("hold_release", _c_double), ("hold_release_frames", _c_double), ("hold_release_ramp_ms", _c_double),
         ("hold_release_phonemes", _c_double * 4), ("hold_release_after", _c_double * 4),
         ("hold_release_min_frames", _c_double), ("mode1_rate15_formants", _c_double),
+        ("noise_own", _c_double), ("noise_path_f4_ratio", _c_double), ("noise_path_f5_ratio", _c_double),
+        ("noise_path_bw45", _c_double * 2), ("noise_path_bilinear", _c_double), ("noise_path_shaper", _c_double),
+        ("noise_path_shaper_ratio", _c_double), ("noise_path_shaper_bw", _c_double),
+        ("noise_path_route_b02_w", (_c_double * 2) * 2), ("noise_path_gain", _c_double),
     ]
 
 
@@ -135,17 +139,32 @@ def params_struct(p):
     s.burst_hold_frames = p["burst_hold_frames"] or 0.0
     s.has_closure_floor = 0.0 if p["closure_floor_db"] is None else 1.0
     s.closure_floor_db = p["closure_floor_db"] or 0.0
-    shp = p["noise_shaper"]
-    if shp == "flat":
-        s.noise_shaper = 0.0
-    elif shp[0] == "bp":
-        s.noise_shaper, s.noise_shaper_ratio, s.noise_shaper_bw = 2.0, shp[1], shp[2]
-    else:
-        s.noise_shaper, s.noise_shaper_ratio, s.noise_shaper_bw = 1.0, shp[0], shp[1]
+    s.noise_shaper, s.noise_shaper_ratio, s.noise_shaper_bw = _shaper(p["noise_shaper"])
     for i in range(2):
         for j in range(2):
             s.noise_route_b02_w[i][j] = p["noise_route_b02"][i][j]
+    # the noise's own path (v0.17, chip.py noise_path)
+    s.noise_own = _choice(p, "noise_path", "own", ("shared", "own"))
+    s.noise_path_f4_ratio = float(p["noise_path_f4_ratio"])
+    s.noise_path_f5_ratio = float(p["noise_path_f5_ratio"])
+    for i, v in enumerate(p["noise_path_bw45"]):
+        s.noise_path_bw45[i] = v
+    s.noise_path_bilinear = _choice(p, "noise_path_numerator", "bilinear", ("bilinear", "allpole"))
+    s.noise_path_shaper, s.noise_path_shaper_ratio, s.noise_path_shaper_bw = _shaper(p["noise_path_shaper"])
+    for i in range(2):
+        for j in range(2):
+            s.noise_path_route_b02_w[i][j] = p["noise_path_route_b02"][i][j]
+    s.noise_path_gain = float(p["noise_path_gain"])
     return s
+
+
+def _shaper(shp):
+    """A noise shaper as ssi263.h codes it: (0 "flat" | 1 low-pass | 2 band-pass, f/fc, B/fc)."""
+    if shp == "flat":
+        return 0.0, 0.0, 0.0
+    if shp[0] == "bp":
+        return 2.0, shp[1], shp[2]
+    return 1.0, shp[0], shp[1]
 
 
 def rom_bytes(rom):
