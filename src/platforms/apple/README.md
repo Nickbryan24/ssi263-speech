@@ -25,6 +25,20 @@ by choosing another voice for the next request. `<lang>` elements inside a reque
 language" (Voice settings) speaks every request with the voice chosen in the app, whatever the request names, for
 readers that always ask for the system's language.
 
+## The Braille Lite unit tab
+
+The app's third tab runs a Blazie unit on the firmware already imported for the voices: one app, no second firmware
+picker (PR 18's standalone emulator was declined for that). Its units are the emulator's own catalog (`emc_list`,
+src/apps/blazie/emu_catalog.c, the list every emulator shell reads) over the unit folder: the shipped units under
+their flat names and every release on the table by its content, `units/` included -- never a unit without its
+firmware. A release unit's first start makes its state by its own recipe (`emc_make_factory`). Each unit's memory is
+the app's own (Application Support, "Braille Lite units"), saved when it is switched off or the app is left; the
+voices' states in the App Group are only read. The unit runs in real time (`emu_unit.h`: its sound pulled by the
+audio engine, its keys pushed as they go down and up through `chords.c`, as the Windows shell). Its braille field is
+the Windows and GTK pattern: one read-only element holding the display as Unicode braille, keeping the keyboard (F D
+S J K L, the space bar, ; and A the bars, by the keys' places), Alt+Shift+Right and Left the display's bars held.
+Whether VoiceOver sends the field to braille alone, and whether its keys reach the unit, are for the testers.
+
 ## The native core: SSI263Core
 
 `build_apple.sh` builds the chip, every voice's board, host and voice on MAME's Z180, 8085, V40 and 8086 cores (C++17
@@ -66,7 +80,9 @@ carries no firmware at all (Android's checks, plus Aicom's files). The icon is d
     python src/platforms/apple/test/test_apple_speech.py
     SSI263_APPLE_SPEECH_BREAK=ssml-1|ssml-2|speech-1|speech-2|import|import-2 python ...   controls: each must FAIL
     sh src/platforms/apple/test/run_swift_tests.sh                                     the import, in Swift
-    sh src/platforms/apple/test/test_installer.sh                  the app's import on the real firmware, as the app runs it
+    sh src/platforms/apple/test/test_installer.sh                  the app's import on the real firmware, as the app runs it,
+                                                                   then the unit tab's catalog and two units started
+    SSI263_UNIT_BREAK=factory sh src/platforms/apple/test/test_installer.sh             control: must FAIL
     SSI263_IMPORT_BREAK=1|state|speakout|accent|release sh src/platforms/apple/test/run_swift_tests.sh   controls
 
 `test_apple_core.py` links Android's host-side program (`test_android_native.c`) against each runnable slice's
@@ -110,6 +126,11 @@ Windows DLLs: `SSI263_ANDROID_TEST_ONLY=bl,ra,num,so,mini,import`.
 | `core/ssp_import.h`, `ssp_import.c` | Every firmware the apps import: Aicom's files by sha256 (Android carries them built in), then Android's judgement of the Braille Lite's and the Speak-Out's |
 | `app/FirmwareImport.swift` | Android's `FirmwareImport.kt` in Swift, with the Accents' files: what a source holds (zip layouts, the add-ons, update programs, single files), judged by the native side by content, and the refusals in words |
 | `app/ZipReader.swift` | A zip's entries in order from their local headers, as `ZipInputStream` reads them: stored and deflated (Apple's Compression), sizes in the header or a data descriptor |
+| `app/UnitCatalog.swift` | The unit tab's units (`emc_list` over the unit folder, present only), each one's memory in the app's own folder, a unit's first state |
+| `app/UnitRunner.swift` | One unit running: `emu_create`, its sound through AVAudioEngine (`emu_render`), keys through `chords.c`, the bars, the display, the save |
+| `app/UnitKeys.swift` | The unit's keyboard by the keys' places: macOS key codes, iOS HID usages |
+| `app/BrailleField.swift` | The braille field: the display as Unicode braille for the screen reader, the keyboard kept, never edited |
+| `app/UnitModel.swift`, `app/UnitView.swift` | The tab's state (the chosen unit, start and stop, volume, quick response) and its screen |
 | `testflight.py` | TestFlight: fresh archives for both platforms, checked (build numbers, icon, privacy manifests, no firmware), then uploaded as checked |
 | `test/check_archive_no_firmware.py` | An archive, app or .ipa carries no firmware: Android's checks (Blazie images, Intel HEX, states, disk images, the Speak-Out's and the Mockingboards' files, names) and Aicom's files by sha256; its controls |
 | `app/PrivacyInfo.xcprivacy`, `extension/PrivacyInfo.xcprivacy` | No tracking, no data collected; UserDefaults only for the App Group's settings the app and its extension share (1C8F.1), and file attributes (FileManager.attributesOfItem: the firmware's file protection) in the app's own containers (C617.1). Plain plists, Apple's own layout and no comments: build 1's commented ones were refused as invalid (ITMS-91056) |

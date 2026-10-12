@@ -1,7 +1,12 @@
 // The app's import as the app runs it -- FirmwareInstaller.inspect and Job.commit over the real native side
 // (SSI263Core's macos-arm64 slice) -- on the repository's own firmware, in a folder of its own in place of the App
 // Group's: each unit's files end up in the unit folder, labelled, and SsiShared sees each voice as installed -- and
-// the Mockingboard from the toolkit's disk image, in MOCKINGBOARD_DISKS (paths.local).  Skips what is not there.   sh src/platforms/apple/test/test_installer.sh
+// the Mockingboard from the toolkit's disk image, in MOCKINGBOARD_DISKS (paths.local).  Then the Braille Lite unit
+// tab's catalog on what was imported, and two units started (a release unit's first state made).  Skips what is not
+// there.
+//
+//     sh src/platforms/apple/test/test_installer.sh
+//     SSI263_UNIT_BREAK=factory sh ...      the control: a release unit's first state not made, so its start must FAIL
 import Foundation
 
 let repo = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -57,6 +62,44 @@ if let d = disks {
 } else {
     print("skip  the toolkit's disk image: MOCKINGBOARD_DISKS (paths.local) is not set")
 }
+
+// The Braille Lite unit tab on what was imported: the catalog finds each Blazie unit in the unit folder (the shipped
+// ones under their flat names, the releases by content, units/ too), and a release unit's first start makes its
+// state and runs: the unit boots and speaks (its PCM not silent within its first seconds).  No sound is played.
+UnitCatalog.savedOverride = root.appendingPathComponent("saved", isDirectory: true)
+func unitCase(_ label: String, _ ok: Bool, _ detail: String) {
+    print("\(ok ? "ok   " : "FAIL ") \(label): \(detail)")
+    if !ok { failures += 1 }
+}
+let entries = UnitCatalog.list()
+let want = ["bl-en", "bl-de", "bl-it", "bns-sk", "bl2_hu_1999_07", "bl2_ja"].filter { k in
+    k == "bl2_ja" || k == "bl2_hu_1999_07" ? FileManager.default.fileExists(atPath: repo.path + "/firmware/blazie/bl2000")
+        : true
+}
+let keys = entries.map { $0.key }
+unitCase("the unit tab's units", want.allSatisfy(keys.contains), keys.joined(separator: ", "))
+for key in ["bl2_hu_1999_07", "bl-en"] {
+    guard let e = entries.first(where: { $0.key == key }) else { continue }
+    do {
+        let state = try UnitCatalog.prepare(e)
+        var err = [CChar](repeating: 0, count: 300)
+        guard let u = emu_create(e.unit.kind, UnitCatalog.firmware(e), state, 22050, 0, &err, Int32(err.count)) else {
+            throw UnitCatalog.Failure(message: String(cString: err))
+        }
+        var pcm = [Int16](repeating: 0, count: 22050)
+        var loud = 0
+        for _ in 0..<8 where loud == 0 {
+            emu_render(u, &pcm, Int32(pcm.count))
+            loud = pcm.reduce(0) { max($0, abs(Int($1))) }
+        }
+        emu_destroy(u)
+        unitCase("the \(e.name) starts from \(state.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "cold")",
+                 loud > 1000, "peak \(loud) in its first seconds")
+    } catch {
+        unitCase("the \(e.name) starts", false, error.localizedDescription)
+    }
+}
+
 try? FileManager.default.removeItem(at: root)
-print(failures == 0 ? "the import installs every unit" : "FAILED: \(failures)")
+print(failures == 0 ? "the import installs every unit, and the unit tab runs them" : "FAILED: \(failures)")
 exit(failures == 0 ? 0 : 1)

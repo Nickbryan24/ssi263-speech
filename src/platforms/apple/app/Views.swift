@@ -26,6 +26,8 @@ struct ContentView: View {
                 .tabItem { Label("Setup", systemImage: "square.and.arrow.down") }
             NavigationStack { VoiceSettingsView() }
                 .tabItem { Label("Voice settings", systemImage: "slider.horizontal.3") }
+            NavigationStack { UnitView() }
+                .tabItem { Label("Braille Lite unit", systemImage: "hand.point.up.braille") }
         }
     }
 }

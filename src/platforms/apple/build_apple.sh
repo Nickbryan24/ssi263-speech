@@ -38,6 +38,9 @@ MAME="-O2 -std=c++17 -fno-exceptions -fno-rtti -ffp-contract=off -fvisibility=hi
 ACCENT="-O2 -std=gnu89 -ffp-contract=off -fvisibility=hidden -Wall -I$SRC/cpu -I$SRC/accentsa -I$SRC"
 SPEAKOUT="-O2 -std=gnu89 -ffp-contract=off -fvisibility=hidden -Wall -I$SRC/cpu -I$SRC/speakout -I$SRC"
 MOCKING="-O2 -std=gnu99 -ffp-contract=off -fvisibility=hidden -w -I$SRC/cpu -I$SRC/mockingboard -I$SRC"
+# the Braille Lite unit tab: the emulator's portable C (src/apps/blazie), as build_linux.sh builds it
+APP="$ROOT/src/apps/blazie"
+EMU="-O2 -std=gnu99 -ffp-contract=off -fvisibility=hidden -w -I$APP -I$SRC"
 # Every voice: the Accent-mini and the Mockingboard when their sources are in the tree, as build_android.sh decides
 MINI=0
 MB=0
@@ -115,6 +118,13 @@ slice() {
             cc $MOCKING -c -o "$O/${f##*/}.o" "$SRC/$f.c"
         done
     fi
+    # The Braille Lite unit tab: one Blazie unit running in real time (emu_unit, on the boards above and the Type 'n
+    # Speak's), the units a firmware folder can run (emu_catalog: the release recipes for a release unit's first
+    # state), and a chord from keys going down and up (chords)
+    cc $BOARD -c -o "$O/tns_board.o" "$SRC/blazie/tns_board.c"
+    for f in emu_unit emu_catalog tns_setup chords; do
+        cc $EMU -c -o "$O/$f.o" "$APP/$f.c"
+    done
     # Android's front end, unchanged (the engine and the import with the voices' flags, as build_android.sh), and the
     # Apple front end's own C
     cc $FRONT -c -o "$O/ssa_map.o" "$CPP/ssa_map.c"
