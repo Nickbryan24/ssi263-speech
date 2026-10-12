@@ -5,6 +5,7 @@
 #include "bl_board.h"
 #include "bl_firmware.h"
 #include "bl_state.h"
+#include "bl_voice.h"                      /* BLV_LATIN1 .. BLV_CP866: a release's text encoding */
 
 #define FILE_ROM_OFFSET 0x3000             /* bl_board.c's: where bl_create reads the image from */
 #define ROM_SIZE 0x40000
@@ -30,10 +31,15 @@ typedef struct {
     int shape;                             /* bl_state.h BLV_SHAPE_* */
     unsigned char yes;                     /* the chord that answers its setup */
     int code_page;                         /* 850, 852; 0 not yet read */
+    int text;                              /* the voice's text encoding (bl_voice.h BLV_*) */
+    int slow_boot;                         /* the voice's boot keys later and further apart (a slower firmware) */
+    int echo;                              /* the unit echoes ^F at a line's end */
+    int speaks;                            /* the voice path speaks it */
     long length;
     const char *sha256;                    /* the image */
     const char *state;                     /* the state made from it */
     const char *name;                      /* the unit's name in the emulators' menus */
+    const char *file;                      /* the file name a person is expected to bring */
     const char *label;
 } bl_release;
 #include "bl_languages_table.h"
@@ -225,8 +231,32 @@ BL_API const char *blv_release_name(int release)
     return release >= 0 && release < N_KNOWN ? KNOWN[release].name : NULL;
 }
 
-BL_API const char *blv_release_tag(int release)
+BL_API const char *blv_release_file(int release)
 {
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].file : NULL;
+}
+
+BL_API int blv_release_text(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].text : -1;
+}
+
+BL_API int blv_release_slow_boot(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].slow_boot : -1;
+}
+
+BL_API int blv_release_echo(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].echo : -1;
+}
+
+BL_API int blv_release_speaks(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].speaks : -1;
+}
+
+BL_API const char *blv_release_tag(int release){
     return release >= 0 && release < N_KNOWN ? KNOWN[release].tag : NULL;
 }
 

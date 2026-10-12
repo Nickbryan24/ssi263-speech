@@ -60,6 +60,16 @@ BL_API int blv_state_check(const char *bns_path, const char *state_path);
 BL_API int blv_release_of(const char *bns_path);
 BL_API const char *blv_release_id(int release);
 BL_API const char *blv_release_name(int release);
+/* The voice's side of a release: the file name a person is expected to bring ("BL2HUN.BNS"; the import goes by the
+   content, never the name); its text encoding (bl_voice.h BLV_LATIN1 .. BLV_CP866); 1 when the voice must press its
+   boot keys later and further apart (a slower firmware drops early keys); 1 when the unit echoes ^F at a line's end
+   (0: the voice judges by the chip, bh_set_int "no_echo"); 1 when the voice path speaks it -- NULL / -1 past the
+   end.  blv_create reads the boot keys and the echo from the firmware's own release. */
+BL_API const char *blv_release_file(int release);
+BL_API int blv_release_text(int release);
+BL_API int blv_release_slow_boot(int release);
+BL_API int blv_release_echo(int release);
+BL_API int blv_release_speaks(int release);
 BL_API const char *blv_release_tag(int release);
 BL_API int blv_release_model(int release);
 BL_API int blv_release_code_page(int release);

@@ -13,6 +13,10 @@
 #include "bl_voice.h"
 #include "bl_cp850.h"
 #include "bl_cp852.h"
+#include "bl_cp857.h"
+#include "bl_cp860.h"
+#include "bl_cp866.h"
+#include "bl_firmware.h"                    /* blv_release_of: the firmware's own boot keys and echo */
 #include "../translit.h"
 
 /* the driver's constants */
@@ -33,6 +37,9 @@
 /* hosts/blazie.py boot_keys(menu=("punct_none", "numbers_toggle"), start=3000000, gap=1500000, status) */
 #define KEY_START 3000000ULL
 #define KEY_GAP 1500000ULL
+/* a slower firmware's (bl_languages.txt boot = slow): the MASTER harness's schedule (8M, then 10M apart) */
+#define KEY_START_SLOW 8000000ULL
+#define KEY_GAP_SLOW 10000000ULL
 
 struct bl_voice {
     ssi263 *chip;
@@ -53,6 +60,10 @@ struct bl_voice {
     int pcm_cap;
 };
 
+/* the tests' controls (test_release_voices.py; an app never sets it): 1 boots every firmware with the fast keys, 2
+   ignores the release's echo -- each must fail its own case */
+BL_API int blv_voice_break = 0;
+
 /* ---- _boot ---------------------------------------------------------------------------------------------------- */
 BL_API bl_voice *blv_create(const char *firmware, const char *state, int encoding, double out_rate, int inflection,
                             int whine, char *err, int errlen)
@@ -60,8 +71,8 @@ BL_API bl_voice *blv_create(const char *firmware, const char *state, int encodin
     bl_voice *v = (bl_voice *)calloc(1, sizeof(bl_voice));
     ssi263_params p;
     unsigned char codes[16];
-    unsigned long long key_at[16];
-    int n = 0, i;
+    unsigned long long key_at[16], start, gap;
+    int n = 0, i, release, slow;
     const double *y;
     if (!v) { snprintf(err, errlen, "out of memory"); return NULL; }
     /* params = {"closure_noise_lead_ms": CLOSURE_NOISE_LEAD_MS}, and carrier_rel_db -300 under the whine model */
@@ -77,11 +88,20 @@ BL_API bl_voice *blv_create(const char *firmware, const char *state, int encodin
         codes[n++] = 0x4C; codes[n++] = 0x0A; codes[n++] = 0x1D; codes[n++] = 0x51;
     }
     codes[n++] = 0x5C; codes[n++] = 0x35; codes[n++] = 0x1D; codes[n++] = 0x7F; codes[n++] = 0x07; codes[n++] = 0x51;
+    /* the firmware's own release (bl_languages.txt): a slower one takes its boot keys later and further apart, else
+       it drops them and never enters speech-box mode; a unit that never echoes ^F is judged by the chip.  Any other
+       firmware, and the shipped voices' releases, boot exactly as they always have */
+    release = blv_release_of(firmware);
+    slow = release >= 0 && blv_release_slow_boot(release) == 1 && blv_voice_break != 1;
+    start = slow ? KEY_START_SLOW : KEY_START;
+    gap = slow ? KEY_GAP_SLOW : KEY_GAP;
     for (i = 0; i < n; i++)
-        key_at[i] = KEY_START + (unsigned long long)i * KEY_GAP;
+        key_at[i] = start + (unsigned long long)i * gap;
     v->host = bh_create(firmware, state, v->chip, out_rate, BOARD_LOWPASS_HZ, key_at, codes, n,
-                        KEY_START + (unsigned long long)n * KEY_GAP, 0, err, errlen);
+                        start + (unsigned long long)n * gap, 0, err, errlen);
     if (!v->host) { ssi263_free(v->chip); free(v); return NULL; }
+    if (release >= 0 && blv_release_echo(release) == 0 && blv_voice_break != 2)
+        bh_set_int(v->host, "no_echo", 1);
     bh_send(v->host, (const unsigned char *)"\x18", 1);
     bh_send(v->host, (const unsigned char *)"\r\x06", 2);
     bh_run(v->host, 0.3, 0.0005, &y);
@@ -190,10 +210,18 @@ static int py_isspace(unsigned c)
         || (c >= 0x2000 && c <= 0x200A) || c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000;
 }
 
-/* the unit's byte for c in its DOS code page (BLV_CP850, BLV_CP852); -1 if the page has no such character */
+/* the code page's upper half (bytes 80h-FFh), or NULL for the English unit's 7-bit text */
+static const unsigned short *page_high(int encoding)
+{
+    return encoding == BLV_CP850 ? bl_cp850_high : encoding == BLV_CP852 ? bl_cp852_high
+         : encoding == BLV_CP857 ? bl_cp857_high : encoding == BLV_CP860 ? bl_cp860_high
+         : encoding == BLV_CP866 ? bl_cp866_high : NULL;
+}
+
+/* the unit's byte for c in its DOS code page (BLV_CP850 ... BLV_CP866); -1 if the page has no such character */
 static int cp_byte(int encoding, unsigned c)
 {
-    const unsigned short *high = encoding == BLV_CP850 ? bl_cp850_high : encoding == BLV_CP852 ? bl_cp852_high : NULL;
+    const unsigned short *high = page_high(encoding);
     int i;
     if (c < 0x80) return (int)c;
     if (!high) return -1;
@@ -204,6 +232,9 @@ static int cp_byte(int encoding, unsigned c)
 
 static int known_cp850(unsigned c) { return cp_byte(BLV_CP850, c) >= 0; }   /* those units' alphabet (translit.h) */
 static int known_cp852(unsigned c) { return cp_byte(BLV_CP852, c) >= 0; }   /* the Slovak unit's */
+static int known_cp857(unsigned c) { return cp_byte(BLV_CP857, c) >= 0; }   /* the Turkish unit's */
+static int known_cp860(unsigned c) { return cp_byte(BLV_CP860, c) >= 0; }   /* the Portuguese units' */
+static int known_cp866(unsigned c) { return cp_byte(BLV_CP866, c) >= 0; }   /* the Russian unit's */
 
 /* ---- ssi263_numwords.currencies (English only): "£2.63" -> "2 pounds 63 pence" -------------------------------------
    The regex, tried as Python's re does: at each position the three alternatives in order, each amount in the
@@ -494,8 +525,9 @@ static int say_bytes(const char *utf8, int encoding, int pack, blv_numbers_fn fn
     /* translit.h first: the letters this unit's alphabet lacks, as base letters (or a lone one's words) */
     cur = (unsigned *)malloc(sizeof(unsigned) * (size_t)tl_room(m));
     if (!cur) { free(cps); return 0; }
-    m = tl_apply(cps, m, encoding == BLV_CP850 ? known_cp850 : encoding == BLV_CP852 ? known_cp852 : tl_known_ascii,
-                 cur);
+    m = tl_apply(cps, m, encoding == BLV_CP850 ? known_cp850 : encoding == BLV_CP852 ? known_cp852
+                         : encoding == BLV_CP857 ? known_cp857 : encoding == BLV_CP860 ? known_cp860
+                         : encoding == BLV_CP866 ? known_cp866 : tl_known_ascii, cur);
     free(cps);
     cps = cur;
     /* sizes: currencies() writes at most 8 code points per one it reads ("£.5" -> "50 pence"), _clean 3 ("...") */

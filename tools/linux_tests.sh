@@ -74,6 +74,14 @@ check "releases: each one's state by its row's recipe" python3 src/csrc/blazie/t
     --firmware "$DATA"
 control "releases CONTROL (every setup answered n, must fail)" "^releases: [0-9]+ FAILED$" \
     -- env SSI263_RELEASES_TEST_BREAK=1 python3 src/csrc/blazie/test_releases.py --lib "$LIB" --firmware "$DATA"
+check "release voices: each new release speaks through the voice" python3 src/csrc/blazie/test_release_voices.py \
+    --lib "$LIB" --firmware "$DATA"
+control "release voices CONTROL (the fast boot keys everywhere, must fail)" "^FAIL bl2_cs_1999_07: speaks: 0\.0 s" \
+    "^release voices: [0-9]+ FAILED$" \
+    -- env SSI263_RELEASE_VOICES_BREAK=fast python3 src/csrc/blazie/test_release_voices.py --lib "$LIB" --firmware "$DATA"
+control "release voices CONTROL (the echo ignored, must fail)" "^FAIL bl2_hu_1999_07: speaks: .* done at [4-9]" \
+    "^release voices: [0-9]+ FAILED$" \
+    -- env SSI263_RELEASE_VOICES_BREAK=echo python3 src/csrc/blazie/test_release_voices.py --lib "$LIB" --firmware "$DATA"
 control "releases CONTROL (a release with no voice handed out as English, must fail)" "^releases: 1 FAILED$" \
     -- env SSI263_RELEASES_TEST_BREAK=voice python3 src/csrc/blazie/test_releases.py --lib "$LIB" --firmware "$DATA"
 # issue #8: the Accent SA's text done only when said (as_voice's settle between clauses), on the module's own engine

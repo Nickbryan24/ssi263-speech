@@ -36,6 +36,7 @@ PROGRESS = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_double)
 VOICE = {"english": 0, "spanish": 1, "german": 2, "italian": 3, "slovak": 4, "-": -1}
 MODEL = {"bl": 0, "bns": 1}
 SHAPE = {"english": 0, "slow": 1}
+TEXT_ID = {"7bit": 0, "850": 1, "852": 2, "857": 3, "860": 4, "866": 5, "-": 0}   # bl_voice.h BLV_*
 N_CHORD = 0x1D                                   # n in computer braille
 NO_VOICE = -8                                    # bl_firmware.h BLV_FW_NO_VOICE
 
@@ -46,10 +47,11 @@ def load(lib_path, chip_path):
     global lib
     import test_android_native as TAN
     lib = TAN.load_reference(lib_path, chip_path)
-    for name in ("blv_firmware_label", "blv_release_id", "blv_release_name", "blv_release_tag"):
+    for name in ("blv_firmware_label", "blv_release_id", "blv_release_name", "blv_release_tag", "blv_release_file"):
         getattr(lib, name).restype = ctypes.c_char_p
         getattr(lib, name).argtypes = [ctypes.c_int]
-    for name in ("blv_firmware_language", "blv_release_model", "blv_release_code_page"):
+    for name in ("blv_firmware_language", "blv_release_model", "blv_release_code_page", "blv_release_text",
+                 "blv_release_slow_boot", "blv_release_echo", "blv_release_speaks"):
         getattr(lib, name).argtypes = [ctypes.c_int]
     lib.blv_release_of.argtypes = [ctypes.c_char_p]
     lib.blv_import_firmware.argtypes = [ctypes.c_char_p, ctypes.c_long, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
@@ -119,12 +121,15 @@ def main():
 
     if not BREAK:
         got = [(lib.blv_release_id(k), lib.blv_release_name(k), lib.blv_release_tag(k), lib.blv_firmware_label(k),
-                lib.blv_firmware_language(k), lib.blv_release_model(k), lib.blv_release_code_page(k))
+                lib.blv_firmware_language(k), lib.blv_release_model(k), lib.blv_release_code_page(k),
+                lib.blv_release_file(k), lib.blv_release_text(k), lib.blv_release_slow_boot(k), lib.blv_release_echo(k),
+                lib.blv_release_speaks(k))
                for k in range(lib.blv_firmware_count())]
         want = [(r["id"].encode(), r["name"].encode(), r["tag"].encode(), r["label"].encode(), VOICE[r["voice"]],
-                 MODEL[r["model"]], int(r["cp"]) if r["cp"] != "-" else 0) for r in table]
+                 MODEL[r["model"]], int(r["cp"]) if r["cp"] != "-" else 0, r["file"].encode(), TEXT_ID[r["text"]],
+                 int(r["boot"] == "slow"), int(r["echo"] == "yes"), int(r["speaks"] == "yes")) for r in table]
         result(got == want, "the library's list = bl_languages.txt (%d releases: id, name, language, label, voice, "
-               "model, code page)" % len(want), "" if got == want else "first difference at row %d" %
+               "model, code page, file, text, boot, echo, speaks)" % len(want), "" if got == want else "first difference at row %d" %
                next(k for k in range(max(len(got), len(want))) if k >= len(got) or k >= len(want) or got[k] != want[k]))
         n = len(table)
         result(lib.blv_release_id(n) is None and lib.blv_release_name(n) is None and lib.blv_release_tag(-1) is None

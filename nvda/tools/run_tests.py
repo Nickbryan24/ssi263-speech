@@ -1599,6 +1599,21 @@ if os.path.isfile(os.path.join(os.path.dirname(HERE), "dist", "blazie-lib", "x64
     CHECKS.append(check("releases CONTROL (every setup answered n, must fail)",
                         [PY, os.path.join(BL_SRC, "test_releases.py")], env={"SSI263_RELEASES_TEST_BREAK": "1"},
                         expect_fail=True, fail_marks=[r"^FAIL bl2_en_2003_06: its state", r"^releases: \d+ FAILED$"]))
+    # the voice on the releases only the emulator had: each one's own boot keys and echo (bl_voice.c), a sentence said
+    # and done; the controls boot them all with the shipped voices' fast keys (the slower firmwares fall silent) and
+    # ignore the echo (the units that never echo take the timeout path)
+    CHECKS.append(check("release voices: each new release speaks through the voice",
+                        [PY, os.path.join(BL_SRC, "test_release_voices.py")]))
+    CHECKS.append(check("release voices CONTROL (the fast boot keys everywhere, must fail)",
+                        [PY, os.path.join(BL_SRC, "test_release_voices.py")],
+                        env={"SSI263_RELEASE_VOICES_BREAK": "fast"}, expect_fail=True,
+                        fail_marks=[r"^FAIL bl2_cs_1999_07: speaks: 0\.0 s", r"^ok +bl2_hu_1999_07: speaks",
+                                    r"^release voices: \d+ FAILED$"]))
+    CHECKS.append(check("release voices CONTROL (the echo ignored, must fail)",
+                        [PY, os.path.join(BL_SRC, "test_release_voices.py")],
+                        env={"SSI263_RELEASE_VOICES_BREAK": "echo"}, expect_fail=True,
+                        fail_marks=[r"^FAIL bl2_hu_1999_07: speaks: .* done at [4-9]", r"^ok +bl2_da_1999_11: speaks",
+                                    r"^release voices: \d+ FAILED$"]))
     CHECKS.append(check("releases CONTROL (a release with no voice handed out as English, must fail)",
                         [PY, os.path.join(BL_SRC, "test_releases.py")], env={"SSI263_RELEASES_TEST_BREAK": "voice"},
                         expect_fail=True, fail_marks=[r"^FAIL no voice offered", r"^releases: 1 FAILED$"]))
