@@ -50,7 +50,7 @@ final class PreviewPlayer: NSObject, AVAudioPlayerDelegate {
             engineStamp = stamp
         }
         guard let e = engine else { return .failure(Failure(message: "The app's shared folder is not available.")) }
-        e.configure(sampleRate: settings.sampleRate, inflection: settings.inflection)
+        e.configure(sampleRate: settings.sampleRate, inflection: settings.inflection, whine: settings.whine)
         e.loadAicom()
         guard e.has(voice) else { return .failure(Failure(message: "The \(voice.name)'s firmware is not imported.")) }
         guard let p = ssp_speech_new(e.engine) else { return .failure(Failure(message: "Out of memory.")) }

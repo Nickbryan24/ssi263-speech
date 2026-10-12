@@ -86,6 +86,7 @@ final class AppModel: ObservableObject {
         importing = true
         progress = 0
         step = "Starting"
+        let awake = KeepAwake()                 // Android's FLAG_KEEP_SCREEN_ON: Spanish's minute outlasts a lock
         job.onChange = { [weak self] j in
             let (p, s) = (j.progress, j.step)
             Task { @MainActor in self?.update(progress: p, step: s) }
@@ -93,13 +94,14 @@ final class AppModel: ObservableObject {
         Task.detached {
             let result = Result { try job.commit() }
             await MainActor.run {
+                awake.end()
                 self.job = nil
                 self.importing = false
                 switch result {
                 case .success(let labels):
                     Registration.firmwareChanged()
                     self.refresh()
-                    var words = "Imported: " + labels.joined(separator: "; ") + "."
+                    var words = "Imported \(Self.and(labels)). The voice speaks now."
                     if !plan.notes.isEmpty { words += " " + plan.notes.joined(separator: " ") }
                     if self.voices.contains(where: { $0.voice.key == "accentsa" && $0.label == nil })
                         && plan.found.contains(where: { FirmwareImport.accentRoms.contains($0.kind) }) {
@@ -108,8 +110,8 @@ final class AppModel: ObservableObject {
                     }
                     self.finish(words)
                 case .failure(let e):
-                    self.finish(e is CancellationError ? "The import was cancelled; nothing was changed."
-                                : "Nothing was imported. " + e.localizedDescription)
+                    self.finish(e is CancellationError ? "Import cancelled. Nothing was changed."
+                                : "Import failed. Nothing was changed. " + e.localizedDescription)
                 }
             }
         }
@@ -119,11 +121,22 @@ final class AppModel: ObservableObject {
     /// it -- never the confirmation's closing, which SwiftUI does before an Import button's action runs (a closing
     /// that cancelled once dropped every confirmed import before it started).
     func cancelImport() {
-        job?.cancel()
+        if let j = job {
+            j.cancel()
+            step = "Cancelling"
+            announce(step)
+        }
         if pending != nil {
             pending = nil
+            finish("Not imported.")
             if let s = SsiShared.stagingFolder { try? FileManager.default.removeItem(at: s) }
         }
+    }
+
+    /// "A", "A and B", "A, B and C".
+    private static func and(_ items: [String]) -> String {
+        items.count < 3 ? items.joined(separator: " and ")
+            : items.dropLast().joined(separator: ", ") + " and " + items.last!
     }
 
     private func update(progress p: Double, step s: String) {
@@ -167,4 +180,18 @@ final class AppModel: ObservableObject {
     }
 
     func stopPreview() { preview.stop() }
+}
+
+/// The device kept from sleeping (iOS: the screen from locking) while an import runs, and let go after.
+@MainActor
+final class KeepAwake {
+    #if os(iOS)
+    private let was = UIApplication.shared.isIdleTimerDisabled
+    init() { UIApplication.shared.isIdleTimerDisabled = true }
+    func end() { UIApplication.shared.isIdleTimerDisabled = was }
+    #else
+    private let activity = ProcessInfo.processInfo.beginActivity(
+        options: [.userInitiated, .idleSystemSleepDisabled], reason: "Importing firmware")
+    func end() { ProcessInfo.processInfo.endActivity(activity) }
+    #endif
 }

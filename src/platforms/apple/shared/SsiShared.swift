@@ -189,6 +189,7 @@ enum SsiShared {
         static let soTone = "speakout_tone"             // the Speak-Out's, 0-25 = A-Z
         static let soJoin = "speakout_join"
         static let soShortPauses = "speakout_short_pauses"
+        static let whine = "whine"                      // the Blazie units' idle sound: 0 off, 1 hiss, 2 whine
         static let pauseMode = "pause_mode"             // VoiceOver's pauses: 0 off, 1 short, 2 long
         static let sampleRate = "sample_rate"           // the units': 11025 or 22050 (Android's key)
         static let logRequests = "log_requests"         // the extension logs each request's SSML (for finding bugs)
@@ -205,6 +206,7 @@ enum SsiShared {
         var shortPauses = true, numbers = true, runAhead = false, lineLift = false, inflection = true
         var soTone = 8, soJoin = true, soShortPauses = true
         var pauseMode = 1
+        var whine = 0
         var sampleRate = SsiShared.outputRate
         var logRequests = false
         var lockLanguage = false
@@ -234,6 +236,7 @@ enum SsiShared {
         s.soJoin = bool(Key.soJoin, true)
         s.soShortPauses = bool(Key.soShortPauses, true)
         s.pauseMode = int(Key.pauseMode, 0, 2, 1)
+        s.whine = int(Key.whine, 0, 2, 0)
         s.sampleRate = sampleRates.contains(d.integer(forKey: Key.sampleRate)) ? d.integer(forKey: Key.sampleRate)
             : outputRate
         s.logRequests = bool(Key.logRequests, false)
@@ -315,8 +318,8 @@ final class SsiEngine {
     }
 
     /// The boot settings: a change shuts the units down (the next use boots them again).
-    func configure(sampleRate: Int, inflection: Bool) {
-        ssa_configure(engine, Int32(sampleRate), inflection ? 1 : 0, 0)
+    func configure(sampleRate: Int, inflection: Bool, whine: Int) {
+        ssa_configure(engine, Int32(sampleRate), inflection ? 1 : 0, Int32(whine))
     }
 
     var sampleRate: Int { Int(ssa_sample_rate(engine)) }

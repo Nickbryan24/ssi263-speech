@@ -113,6 +113,7 @@ public final class SsiAudioUnit: AVSpeechSynthesisProviderAudioUnit {
     private var player: OpaquePointer?
     private var inflection = true
     private var sampleRate = SsiShared.outputRate
+    private var whine = 0                               // as SsiEngine.init configured it
     private var firmwareStamp = -1
 
     public override init(componentDescription: AudioComponentDescription,
@@ -244,10 +245,11 @@ public final class SsiAudioUnit: AVSpeechSynthesisProviderAudioUnit {
         guard let voice = [wanted, named].compactMap({ $0 }).first(where: { e.has($0) })
             ?? SsiShared.voices.first(where: { e.has($0) })
         else { return }
-        if settings.inflection != inflection || settings.sampleRate != sampleRate {
-            e.configure(sampleRate: settings.sampleRate, inflection: settings.inflection)
+        if settings.inflection != inflection || settings.sampleRate != sampleRate || settings.whine != whine {
+            e.configure(sampleRate: settings.sampleRate, inflection: settings.inflection, whine: settings.whine)
             inflection = settings.inflection
             sampleRate = settings.sampleRate
+            whine = settings.whine
         }
         var native = SsiShared.native(settings)
         guard ssp_speech_start(p, voice.index, &request, &native) == 0 else { return }

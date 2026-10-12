@@ -95,10 +95,42 @@ enum FirmwareInstaller {
     }
 
     /// Spanish's state is 1150 million Z180 instructions, every other Blazie unit's English's 150 million (German,
-    /// Italian and Slovak run English's recipe or one as long); a release voice's as Spanish's, the slow recipe's
-    /// twelve answers being as long; the rest only a check.
+    /// Italian and Slovak run English's recipe or one as long; a release voice's takes as long as English's, about
+    /// 3 s on an M-series Mac, as Android's SsiImport weighs it); the rest only a check.
     private static func weight(_ kind: Int) -> Double {
-        kind == FirmwareImport.spanish || isReleaseVoice(kind) ? 1150 : FirmwareImport.blazie.contains(kind) ? 150 : 15
+        kind == FirmwareImport.spanish ? 1150 : FirmwareImport.blazie.contains(kind) || isReleaseVoice(kind) ? 150 : 15
+    }
+
+    /// The confirmation's words, Android's: a line per unit -- what it is and where from, how long preparing it
+    /// takes, and whether it replaces one already here -- then the notes.
+    static func confirmation(_ plan: FirmwareImport.Plan) -> String {
+        let id = NativeIdentify(), dir = SsiShared.unitFolder
+        let lines = plan.found.map { f -> String in
+            var s = "Will import \(f.label) (from \(f.from)). "
+            let kept = FirmwareImport.keptAs(f.kind, id)
+            if f.kind == FirmwareImport.spanish {
+                s += "The unit is then prepared on this device, which takes about a minute."
+            } else if FirmwareImport.blazie.contains(f.kind) || isReleaseVoice(f.kind) {
+                s += "The unit is then prepared on this device, which takes a few seconds."
+            } else if FirmwareImport.isRelease(f.kind) {
+                s += "It is kept for the Braille Lite unit tab, which prepares it on its first start."
+            } else {
+                s += "It is then checked on this device, which takes a moment."
+            }
+            if let file = kept?.file, let d = dir, FileManager.default.fileExists(atPath: d.appendingPathComponent(file).path) {
+                s += " The \(FirmwareImport.name(of: f.kind, id)) firmware already here will be replaced."
+            }
+            return s
+        }
+        return (lines + plan.notes).joined(separator: "\n\n")
+    }
+
+    /// Android's floor: below 16 MB free an import is refused before anything is written.
+    static func checkRoom(_ folder: URL) throws {
+        guard let free = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+                .volumeAvailableCapacityForImportantUsage, free < 16 << 20 else { return }
+        throw Failure(message: "Not enough room: the firmware and the unit's state need about 3 MB, and this device " +
+                      "has \(max(free, 0) >> 10) KB free.")
     }
 
     /// A release voice found (Hungarian ...): its ssa_engine voice, else nil.
@@ -157,6 +189,7 @@ enum FirmwareInstaller {
             guard let staging = SsiShared.stagingFolder, let unit = SsiShared.unitFolder else {
                 throw Failure(message: "The app's shared folder is not available.")
             }
+            try FirmwareInstaller.checkRoom(unit)
             let fm = FileManager.default
             let ready = staging.appendingPathComponent("ready", isDirectory: true)
             try? fm.removeItem(at: ready)

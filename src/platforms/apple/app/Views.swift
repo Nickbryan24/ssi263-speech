@@ -41,10 +41,23 @@ struct SetupView: View {
     @State private var showLicenses = false
     @State private var allLanguages = false
     @AppStorage(SsiShared.Key.voice, store: SsiShared.defaults()) private var previewVoice = "accentsa"
-    @State private var text = "Hello there. This is the SSI-263, speaking on Apple."
+    @State private var text = "Hello there. This is SSI-263 Speech, speaking on Apple. You owe 1,234 dollars."
 
     var body: some View {
         Form {
+            Section {
+                Text("Talking hardware of the 1980s, emulated around a model of the Silicon Systems SSI-263 speech " +
+                     "chip. Each voice is the device's own firmware, running live: the rules, the number reading " +
+                     "and the inflection are its own, and nothing is recorded. They are the same voices as the NVDA " +
+                     "add-ons, byte for byte.")
+                Text("The voices: the Blazie Braille Lite 2000 in speech-box mode, its own firmware on an emulated " +
+                     "Z180, in English, Spanish, German and Italian, and with its language updates in many more " +
+                     "(the list below); the Blazie Braille 'n Speak 2000 the same way, in Slovak; the GW Micro " +
+                     "Speak-Out, its own firmware on an emulated V40; the Aicom Accent SA and Accent-mini; and the " +
+                     "Sweet Micro Systems Mockingboard, the Apple II's speech card, on an emulated 6502. Each " +
+                     "language is offered to VoiceOver and the system once its unit is imported.")
+            }
+
             Section {
                 // the release voices (the Braille Lite's many languages) only when asked for, imported or not:
                 // seventeen more lines are a wall to read past (Tomi); the button counts the imported ones
@@ -80,6 +93,7 @@ struct SetupView: View {
                             .accessibilityLabel("Import progress")
                             .accessibilityValue("\(Int(model.progress * 100)) percent")
                     }
+                    Text("Keep the app open until it finishes.")
                     Button("Cancel the import", role: .cancel) { model.cancelImport() }
                 } else {
                     Button("Import firmware…") { picking = true }
@@ -94,7 +108,10 @@ struct SetupView: View {
                 Text("Firmware").accessibilityAddTraits(.isHeader)
             } footer: {
                 Text("Choose firmware files you own, update programs, disk images, or .zip or .nvda-addon packages " +
-                     "containing them, one or several at once. Each file is known by its contents, whatever its name.")
+                     "containing them, one or several at once. Each file is known by its contents, whatever its " +
+                     "name. This device then prepares each Braille Lite unit once: a few seconds for most, about a " +
+                     "minute for Spanish; the others are checked in a moment. The files stay in this app's own " +
+                     "storage and never leave this device.")
             }
 
             Section {
@@ -111,7 +128,7 @@ struct SetupView: View {
                 }
                 if !model.previewStatus.isEmpty { Text(model.previewStatus) }
             } header: {
-                Text("Preview").accessibilityAddTraits(.isHeader)
+                Text("Try it").accessibilityAddTraits(.isHeader)
             }
 
             Section {
@@ -134,11 +151,11 @@ struct SetupView: View {
         .fileImporter(isPresented: $picking, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
             if case .success(let urls) = r { model.choose(urls) }
         }
-        .confirmationDialog("Import this firmware?", isPresented: $model.askingToImport, titleVisibility: .visible) {
+        .confirmationDialog("Import the firmware?", isPresented: $model.askingToImport, titleVisibility: .visible) {
             Button("Import") { model.confirm() }
             Button("Cancel", role: .cancel) { model.cancelImport() }
         } message: {
-            Text(planWords(model.pending))
+            Text(model.pending.map(FirmwareInstaller.confirmation) ?? "")
         }
         .confirmationDialog("Remove all firmware?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { model.removeAll() }
@@ -157,15 +174,6 @@ struct SetupView: View {
         if !imported.contains(previewVoice), let first = imported.first { previewVoice = first }
     }
 
-    private func planWords(_ plan: FirmwareImport.Plan?) -> String {
-        guard let plan = plan else { return "" }
-        var s = plan.found.map { "\($0.label), from \($0.from)" }.joined(separator: ". ") + "."
-        if !plan.notes.isEmpty { s += " " + plan.notes.joined(separator: " ") }
-        if plan.found.contains(where: { $0.kind == FirmwareImport.spanish }) {
-            s += " Preparing the Spanish unit takes a while."
-        }
-        return s
-    }
 }
 
 struct LicensesView: View {
@@ -185,8 +193,11 @@ struct LicensesView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                Text("SSI-263 Speech is MIT-licensed, and its source is at github.com/tgeczy/ssi263-speech. It " +
-                     "carries no firmware. MAME's CPU cores keep their BSD-3-Clause licences.\n\n" + text)
+                Text("This app is free software under the MIT License; its emulated processors are MAME's, under " +
+                     "their BSD-3-Clause licenses, and the Mockingboard's 6502 is Mike Chambers' Fake6502 (public " +
+                     "domain), by way of Jayson Smith's EchoTalk (BSD-3-Clause). Its source is at " +
+                     "github.com/tgeczy/ssi263-speech. The app carries no firmware: the copy you import is its " +
+                     "makers', is not covered by those licenses, and never leaves this device.\n\n" + text)
                     .textSelection(.enabled)
                     .padding()
             }
@@ -243,12 +254,129 @@ struct VoiceSettingsView: View {
     @AppStorage(SsiShared.Key.soShortPauses, store: store) private var soShortPauses = true
     @AppStorage(SsiShared.Key.logRequests, store: store) private var logRequests = false
 
+    @AppStorage(SsiShared.Key.whine, store: store) private var whine = 0
+
     private static let letters = (0..<26).map { String(UnicodeScalar(UInt8(65 + $0))) }
 
-    private var chosenName: String { SsiShared.voices.first { $0.key == chosenVoice }?.name ?? chosenVoice }
+    /// The voices that can speak now: those imported (the app carries none).
+    private var imported: [SsiShared.Voice] { SsiShared.voices.filter { SsiShared.installed($0) } }
 
     var body: some View {
         Form {
+            Section {
+                if imported.isEmpty {
+                    Text("Import a voice's firmware in Setup first.")
+                } else {
+                    Picker("Voice", selection: $chosenVoice) {
+                        ForEach(imported, id: \.key) { Text($0.name).tag($0.key) }
+                    }
+                }
+                Toggle("Lock language", isOn: $lockLanguage)
+            } header: {
+                Text("Voice").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("Each voice speaks its own language, and VoiceOver uses the voice you chose in its own " +
+                     "settings for a text's language. Lock language speaks everything with the voice chosen here " +
+                     "instead, whatever the screen reader asks for: for readers that always ask for the system's " +
+                     "language. The voice chosen here is also the one Try it speaks with.")
+            }
+
+            Section {
+                SettingSlider(title: "Speech rate", value: $rate, range: 0...100) {
+                    $0 == 50 ? "50, the unit's factory rate" : "\($0)"
+                }
+            } header: {
+                Text("Rate").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("The NVDA add-ons' scale: 50 is the unit's factory rate. The rate VoiceOver or an app asks for " +
+                     "is applied on top.")
+            }
+
+            Section {
+                SettingSlider(title: "Pitch", value: $pitch, range: 0...100) {
+                    $0 == 50 ? "50, the unit's factory pitch" : "\($0)"
+                }
+            } header: {
+                Text("Pitch").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("50 is the unit's factory pitch; an app's pitch is applied on top, such as VoiceOver's higher " +
+                     "pitch for capital letters.")
+            }
+
+            Section {
+                SettingSlider(title: "Tone", value: $tone, range: 0...26) { $0 == 7 ? "7, factory" : "\($0)" }
+            } header: {
+                Text("Tone").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("The Blazie units' tone setting, 0 to 26. 7 is the factory tone. The Speak-Out has its own, " +
+                     "below; the Accents and the Mockingboards have none.")
+            }
+
+            Section {
+                SettingSlider(title: "Engine volume", value: $volume, range: 0...200) {
+                    $0 == SsiShared.defaultVolume ? "\($0) percent, default" : "\($0) percent"
+                }
+            } header: {
+                Text("Volume").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("The engine's own level, for every voice; the system's volume and VoiceOver's still apply. 100 " +
+                     "percent is the desktop voices' level; the default, \(SsiShared.defaultVolume), sits beside " +
+                     "VoiceOver's own sounds. Above about 140 the loudest syllables can clip.")
+            }
+
+            Section {
+                Toggle("Voice inflection", isOn: $inflection)
+                Text("The unit's own intonation. Off, questions stay flat: the Braille Lite's status-menu setting, " +
+                     "and the Accent SA's monotone.").font(.footnote)
+                Toggle("Short pauses", isOn: $shortPauses)
+                Text("The Blazie units only: sentences packed onto one line from the second on, as the NVDA " +
+                     "add-on's default.").font(.footnote)
+                Toggle("Read numbers as words", isOn: $numbers)
+                Text("The English and Spanish Braille Lite and the Mockingboards, on by default, as the NVDA " +
+                     "add-on's custom number processing: 1,234,567 as one number, read in words, and the Spanish " +
+                     "voice in Spain's way (1.234.567, and 3,5 as tres coma cinco). Off, the unit's own firmware " +
+                     "reads them (the Mockingboard's digit by digit). The Accents keep their own add-on's number " +
+                     "processing on; the German, Italian and Slovak units always read their own, as in the NVDA " +
+                     "add-on.").font(.footnote)
+                Toggle("Run the unit ahead (experimental: with short pauses)", isOn: $runAhead)
+                Text("The English and Spanish Braille Lite only, experimental and off by default, as in the NVDA " +
+                     "add-on: the unit runs ahead of its speech chip, so long text starts sooner. It needs short " +
+                     "pauses on.").font(.footnote)
+                Toggle("Lift line starts (as note-taking mode)", isOn: $lineLift)
+                Text("The English Braille Lite only, off by default, as in the NVDA add-on: like the unit when you " +
+                     "move by line, the start of a line spoken after you interrupt speech, or after a pause, slides " +
+                     "up in pitch. Reading on is never lifted.").font(.footnote)
+                Picker("Idle sound", selection: $whine) {
+                    Text("Off").tag(0)
+                    Text("Hiss").tag(1)
+                    Text("Whine").tag(2)
+                }
+                Text("The Blazie units only: the faint sound a real unit makes under its speech, hiss at even " +
+                     "volumes (the factory setting), whine at odd ones.").font(.footnote)
+                Picker("Sample rate", selection: $sampleRate) {
+                    Text("11 kHz, like the unit's own speaker").tag(11025)
+                    Text("22 kHz (recommended)").tag(22050)
+                }
+            } header: {
+                Text("The unit").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("Inflection, the idle sound and the sample rate restart the unit on the next utterance, which " +
+                     "takes a moment.")
+            }
+
+            Section {
+                SettingSlider(title: "Speak-Out tone", value: $soTone, range: 0...25) {
+                    Self.letters[$0] + ($0 == 8 ? ", the box's own" : "")
+                }
+                Toggle("Join phrases (fewer pauses between words)", isOn: $soJoin)
+                Toggle("Shorten pauses between sentences", isOn: $soShortPauses)
+            } header: {
+                Text("The Speak-Out").accessibilityAddTraits(.isHeader)
+            } footer: {
+                Text("The Speak-Out's tones A to Z, as its NVDA add-on offers them; I is the box's own. Joining " +
+                     "phrases and shorter pauses are on by default, as in its NVDA add-on.")
+            }
+
             Section {
                 Picker("Pauses between VoiceOver's phrases", selection: $pauseMode) {
                     Text("Off").tag(0)
@@ -260,64 +388,6 @@ struct VoiceSettingsView: View {
             } footer: {
                 Text("The pauses VoiceOver asks for between an item's name, its kind and its hint: long as asked, " +
                      "short at half, or off.")
-            }
-
-            Section {
-                SettingSlider(title: "Rate", value: $rate, range: 0...100)
-                SettingSlider(title: "Pitch", value: $pitch, range: 0...100)
-                SettingSlider(title: "Volume", value: $volume, range: 0...200)
-                Picker("Sample rate", selection: $sampleRate) {
-                    Text("11 kHz, like the unit's own speaker").tag(11025)
-                    Text("22 kHz (recommended)").tag(22050)
-                }
-                Toggle("Voice inflection", isOn: $inflection)
-                Toggle("Read numbers as words", isOn: $numbers)
-            } header: {
-                Text("Every voice").accessibilityAddTraits(.isHeader)
-            } footer: {
-                Text("Rate and pitch at 50 are each unit's factory settings; VoiceOver's own rate and pitch come on " +
-                     "top. Inflection and the sample rate restart the units on the next utterance. Reading numbers " +
-                     "as words is the Braille Lite's and the Mockingboard's: 1,234,567 as one number, in words. Off, " +
-                     "the unit's own firmware reads them (the Mockingboard's digit by digit). The Accents always " +
-                     "read numbers as words.")
-            }
-
-            Section {
-                Stepper("Tone: \(tone)", value: $tone, in: 0...26)
-                Toggle("Short pauses", isOn: $shortPauses)
-                Toggle("Run the unit ahead (experimental)", isOn: $runAhead)
-                Toggle("Lift line starts (as note-taking mode)", isOn: $lineLift)
-            } header: {
-                Text("Braille Lite").accessibilityAddTraits(.isHeader)
-            } footer: {
-                Text("Run ahead is for the English and Spanish units, which are the ones it is tested on. Lifting line " +
-                     "starts raises the pitch at the start of a line, as the unit does when you move to a line in " +
-                     "note-taking mode; it is heard on the English unit. The German, Italian and Slovak units read " +
-                     "their own numbers.")
-            }
-
-            Section {
-                Picker("Tone", selection: $soTone) {
-                    ForEach(0..<26, id: \.self) { Text(Self.letters[$0]).tag($0) }
-                }
-                Toggle("Join phrases", isOn: $soJoin)
-                Toggle("Shorten pauses between sentences", isOn: $soShortPauses)
-            } header: {
-                Text("Speak-Out").accessibilityAddTraits(.isHeader)
-            }
-
-            Section {
-                Toggle("Lock language", isOn: $lockLanguage)
-                    .accessibilityLabel(lockLanguage ? "Lock language, \(chosenName), change in Setup" : "Lock language")
-                if lockLanguage {
-                    Text(chosenName).accessibilityHidden(true)
-                }
-            } header: {
-                Text("Languages").accessibilityAddTraits(.isHeader)
-            } footer: {
-                Text("Each voice speaks its own language, and VoiceOver switches to the voice you chose for a text's " +
-                     "language. Lock language speaks everything with the voice chosen in Setup instead, whatever " +
-                     "the screen reader asks for: for readers that always ask for the system's language.")
             }
 
             Section {

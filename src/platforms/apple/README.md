@@ -26,6 +26,17 @@ by choosing another voice for the next request. `<lang>` elements inside a reque
 language" (Voice settings) speaks every request with the voice chosen in the app, whatever the request names, for
 readers that always ask for the system's language.
 
+## The app's pages, as Android's
+
+Setup and Voice settings follow the Android app's pages and words (`SettingsActivity.kt`), with VoiceOver in place of
+TalkBack and nothing built in. Setup: the voices, the firmware list (file names, the languages under "Show all"), the
+import (a line per unit in the confirmation: how long it takes, and whether it replaces one already here; the device
+kept awake while it runs; refused below 16 MB free), "Try it", where to choose the voice, the licences. Voice settings:
+the voice and Lock language, rate, pitch, tone, engine volume (135 percent by default), the unit's settings (inflection,
+short pauses, numbers, run ahead, line lift, the idle sound, the sample rate), the Speak-Out's, and VoiceOver's pauses.
+Left out on purpose: Android's built-in Accent SA and Mockingboards (the app carries no firmware), its update check (the
+App Store's), and 44 kHz (the Audio Unit runs at 22050).
+
 ## The Braille Lite unit tab
 
 The app's third tab runs a Blazie unit on the firmware already imported for the voices: one app, no second firmware

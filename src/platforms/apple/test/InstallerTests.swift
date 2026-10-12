@@ -54,6 +54,24 @@ run("the Hungarian Braille Lite (a release voice)", ["blazie/bl2000/BL2HUN.BNS"]
     kept: ["BL2HUN.BNS", "bl2_hu_1999_07.state", "BL2HUN.BNS.label"])
 run("the Japanese Braille Lite (the unit tab's alone, beside the Hungarian)", ["blazie/bl2000/BL2JPN.BNS"],
     expect: ["braillelite-hu"], kept: ["units/bl2_ja.BNS", "units/bl2_ja.BNS.label"])
+// the confirmation's words (Android's): a language update takes a few seconds, and one already here is replaced;
+// the unit tab's alone is kept for it
+func confirms(_ label: String, _ file: String, _ words: [String]) {
+    let url = repo.appendingPathComponent("firmware/" + file)
+    guard FileManager.default.fileExists(atPath: url.path), let plan = try? FirmwareInstaller.inspect([url]) else {
+        print("skip  \(label): its firmware is not there")
+        return
+    }
+    let said = FirmwareInstaller.confirmation(plan)
+    let ok = words.allSatisfy(said.contains)
+    print("\(ok ? "ok   " : "FAIL ") \(label): \(said)")
+    if !ok { failures += 1 }
+}
+confirms("the Hungarian again: a few seconds, replacing the one here", "blazie/bl2000/BL2HUN.BNS",
+         ["takes a few seconds.", "The Braille Lite 2000 (Hungarian) firmware already here will be replaced."])
+confirms("the Japanese again: kept for the unit tab", "blazie/bl2000/BL2JPN.BNS",
+         ["kept for the Braille Lite unit tab", "already here will be replaced."])
+
 if let d = disks {
     run("the Mockingboard from the toolkit's disk image", ["Sweet Micro Systems Mockingboard Developers toolkit 1984.dsk"],
         expect: ["mockingboard"], from: d)
