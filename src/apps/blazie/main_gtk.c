@@ -30,7 +30,15 @@
  *
  * For the tests (tools/linux_tests.sh, test_emu_gtk.py): --no-sound, --trace FILE (the unit's level every 100 ms of
  * its time, every key action, the status lines, --ram-has texts as the unit's memory first holds them), and
- * BLAZIE_GTK_BREAK=noname (the keyboard area left without its accessible name: the must-fail control).
+ * BLAZIE_GTK_BREAK=noname (the keyboard area left without its accessible name: the must-fail control);
+ * BLAZIE_GTK_BREAK=brlfrozen (the braille display field never updated after its first cells: the braille check's).
+ *
+ * The braille display (Settings > Braille display in the window, Alt+Shift+B), as the Windows app's (brl_win.h): a
+ * read-only field holding the unit's cells as Unicode braille (U+2800 + the dots), which Orca shows on the person's
+ * own braille display.  The field keeps the keyboard: the unit's keys work as before, and the field never edits or
+ * moves.  The display's own keys stay Orca's, so the unit's bars are the PC keyboard's: Alt+Shift+Right and Left
+ * (the Braille Lite's ; and A too), held as long as the arrow is.  A unit without a display (the Type 'n Speak, the
+ * Braille 'n Speak 2000) shows "no braille display".
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -50,6 +58,7 @@
 #include "audio_linux.h"
 #include "audio_pace.h"
 #include "bl_keys.h"
+#include "emu_catalog.h"
 #include "emu_unit.h"
 #include "evdev_linux.h"
 #include "ini.h"
@@ -72,43 +81,19 @@
    bns2000/), or all in one folder (the package's share/ssi263-speech).  state NULL: a cold start (tns_setup.h).
    codepage: the code page of the unit's file and folder names, for files in and out (bl_files_xfer.h), as
    main_win.c's: 850, the Slovak Braille 'n Speak 2000's 852 (its "fles subory" folder). */
-typedef struct {
-    const char *name, *id;
-    int kind;
-    const char *firmware[2], *state[2];
-    const char *saved, *ini;
-    int codepage;
-} unit_kind;
-static const unit_kind KINDS[] = {
-    {"Braille Lite 2000 (English)", "bl-en", EMU_BRAILLE_LITE, {"BL2ENG.BNS", NULL}, {"bl2_2003_warm.state", NULL},
-     "english.state", "english", BLX_CP850},
-    {"Braille Lite 2000 (Spanish)", "bl-es", EMU_BRAILLE_LITE, {"spanish/BL2SPA.BNS", "BL2SPA.BNS"},
-     {"spanish/bl2spa_fresh.state", "bl2spa_fresh.state"}, "spanish.state", "spanish", BLX_CP850},
-    {"Type 'n Speak (English)", "tns-en", EMU_TYPE_N_SPEAK, {"tns/TNSENG.TNS", "TNSENG.TNS"}, {NULL, NULL},
-     "tns_english.state", "tns_english", BLX_CP850},
-    {"Type 'n Speak (Spanish)", "tns-es", EMU_TYPE_N_SPEAK, {"tns/TNSSPA.TNS", "TNSSPA.TNS"}, {NULL, NULL},
-     "tns_spanish.state", "tns_spanish", BLX_CP850},
-    /* the Braille 'n Speak 2000 on the Braille Lite's board (emu_unit.h emu_model), in the menu when its firmware and
-       its factory state (make_state.c) are there */
-    {"Braille 'n Speak 2000 (English)", "bns-en", EMU_BRAILLE_LITE, {"bns2000/BS03ENG.BNS", "BS03ENG.BNS"},
-     {"bns2000/bs03eng_fresh.state", "bs03eng_fresh.state"}, "bns_english.state", "bns_english", BLX_CP850},
-    {"Braille 'n Speak 2000 (Slovak)", "bns-sk", EMU_BRAILLE_LITE, {"bns2000/BS2SLL.BNS", "BS2SLL.BNS"},
-     {"bns2000/bs2sll_fresh.state", "bs2sll_fresh.state"}, "bns_slovak.state", "bns_slovak", BLX_CP852},
-    /* Blazie's September 2000 German and Italian updates (an anonymous donation), in the menu when their firmware and
-       factory states are there */
-    {"Braille Lite 2000 (German)", "bl-de", EMU_BRAILLE_LITE, {"german/Lite2000.BNS", "Lite2000_de.BNS"},
-     {"german/lite2000_de_fresh.state", "lite2000_de_fresh.state"}, "german.state", "german", BLX_CP850},
-    {"Braille Lite 2000 (Italian)", "bl-it", EMU_BRAILLE_LITE, {"italian/Lite2000.BNS", "Lite2000_it.BNS"},
-     {"italian/lite2000_it_fresh.state", "lite2000_it_fresh.state"}, "italian.state", "italian", BLX_CP850},
-};
-#define N_KINDS ((int)(sizeof KINDS / sizeof KINDS[0]))
+/* the units: emu_catalog.h's list, the one every shell reads (made once the firmware folder is known) */
+static emc_unit g_units[EMC_MAX];
+static int g_n_units;
 #define N_FIRST_KINDS 4                 /* always in the menu; the kinds after them only when they can run */
 /* the mnemonics: each letter once in the Firmware menu (GTK only moves between items sharing one): Windows' Sl&ovak
-   would share Export's o */
-static const char *const KIND_MENU[N_KINDS] = {"Braille Lite 2000, _English", "Braille Lite 2000, _Spanish",
-                                               "_Type 'n Speak, English", "Type 'n Speak, S_panish",
-                                               "Braille 'n Speak 2000, E_nglish", "Braille 'n Speak 2000, S_lovak",
-                                               "Braille Lite 2000, _German", "Braille Lite 2000, It_alian"};
+   would share Export's o.  A release unit (More languages) has its name, without one. */
+static const struct { const char *key, *menu; } KIND_MENU[] = {
+    {"bl-en", "Braille Lite 2000, _English"}, {"bl-es", "Braille Lite 2000, _Spanish"},
+    {"tns-en", "_Type 'n Speak, English"}, {"tns-es", "Type 'n Speak, S_panish"},
+    {"bns-en", "Braille 'n Speak 2000, E_nglish"}, {"bns-sk", "Braille 'n Speak 2000, S_lovak"},
+    {"bl-de", "Braille Lite 2000, _German"}, {"bl-it", "Braille Lite 2000, It_alian"},
+};
+#define N_KIND_MENU ((int)(sizeof KIND_MENU / sizeof *KIND_MENU))
 static const int RATES[] = {11025, 16000, 22050, 32000, 44100, 48000};
 #define N_RATES ((int)(sizeof RATES / sizeof RATES[0]))
 static const char *const IDLE_NAMES[] = {"off", "hiss", "whine", "unit"};
@@ -169,9 +154,16 @@ static int g_n_ram_has, g_ram_found[MAX_RAM_HAS];
 /* the window */
 static GtkApplication *g_app;
 static GtkWidget *g_win, *g_area, *g_status, *g_bar, *g_firmware_item;
-static GtkWidget *g_kind_items[N_KINDS], *g_idle_items[4], *g_open_items[3], *g_rate_items[N_RATES];
+static GtkWidget *g_kind_items[EMC_MAX], *g_idle_items[4], *g_open_items[3], *g_rate_items[N_RATES];
 static GtkWidget *g_buffer_items[AP_N_MODES];
 static GtkWidget *g_popclick_item, *g_tick_item, *g_quick_item, *g_serial_menu;
+static GtkWidget *g_brl, *g_brl_box, *g_brl_item; /* the braille display field, its row (label and field), its item */
+static int g_braille;                           /* the field shown (Settings > Braille display): [braille] display */
+static int g_bars;                              /* the bars held from Alt+Shift+Right, Left (emu_braille_bars) */
+static int g_b_down;                            /* Alt+Shift+B held: its auto-repeat ignored (reset when the focus
+                                                   leaves: its release may go to the dialog it opened) */
+static int g_break_brl;                         /* the tests' control: the field frozen after its first cells */
+static char g_brl_text[EMU_CELLS * 3 + 32];     /* the field's text: the cells in UTF-8 */
 static char g_ports[MAX_PORTS][32];
 static int g_n_ports;
 static int g_updating;                          /* the menu's marks being set by the program, not chosen */
@@ -236,8 +228,8 @@ static void set_status(int announce, const char *fmt, ...)
 static void update_names(void)
 {
     char title[PATH_MAX + 200], name[300];
-    const char *unit = g_unit ? KINDS[g_kind].name : "No unit running";
-    int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
+    const char *unit = g_unit ? g_units[g_kind].name : "No unit running";
+    int tns = g_units[g_kind].kind == EMU_TYPE_N_SPEAK;
     if (g_tty)
         snprintf(title, sizeof title, "%s, serial port on %s - Blazie emulator", unit, g_serial_shown);
     else
@@ -264,14 +256,15 @@ static void update_names(void)
    focus back, X would leave it nowhere) */
 static void focus_area(void)
 {
-    if (!g_area)
+    GtkWidget *to = g_braille && g_brl ? g_brl : g_area;   /* the braille display field, when shown, has the keys */
+    if (!to)
         return;
     gtk_window_present(GTK_WINDOW(g_win));
     /* the window never lost the keyboard (a dialog that did not take it): the area's focus moved away and back, so
        the screen reader is told where the focus is again (a window manager giving the window back does the same) */
-    if (gtk_window_is_active(GTK_WINDOW(g_win)) && gtk_widget_has_focus(g_area))
+    if (gtk_window_is_active(GTK_WINDOW(g_win)) && gtk_widget_has_focus(to))
         gtk_window_set_focus(GTK_WINDOW(g_win), NULL);
-    gtk_widget_grab_focus(g_area);
+    gtk_widget_grab_focus(to);
 }
 
 /* the dialog's title, also its accessible name (GTK names a message dialog "Information", "Warning" ...: Orca would
@@ -331,33 +324,15 @@ static void make_dirs(const char *path)
 
 static void saved_path(int kind, char *out, int cap)
 {
-    snprintf(out, (size_t)cap, "%s/%s", g_cfg_dir, KINDS[kind].saved);
+    snprintf(out, (size_t)cap, "%s/%s", g_cfg_dir, g_units[kind].saved);
 }
 
-static void fw_file(const char *const names[2], char *out, int cap)
-{
-    int i;
-    out[0] = 0;
-    for (i = 0; i < 2; i++)
-        if (names[i]) {
-            snprintf(out, (size_t)cap, "%s/%s", g_fw_dir, names[i]);
-            if (exists(out))
-                return;
-        }
-    if (names[0])
-        snprintf(out, (size_t)cap, "%s/%s", g_fw_dir, names[0]);
-}
-
-/* a kind the menu offers: the first four always (a missing firmware is said when it is chosen); the Braille 'n Speak
-   2000 only when its firmware and its factory state are both in the firmware folder */
+/* a kind the menu offers: the first four always (a missing firmware is said when it is chosen); the others only when
+   they can run (a Braille 'n Speak 2000's firmware and factory state both in the firmware folder; a release unit's
+   firmware) -- emu_catalog.h */
 static int kind_offered(int kind)
 {
-    char fw[PATH_MAX], st[PATH_MAX];
-    if (kind < N_FIRST_KINDS)
-        return 1;
-    fw_file(KINDS[kind].firmware, fw, sizeof fw);
-    fw_file(KINDS[kind].state, st, sizeof st);
-    return exists(fw) && exists(st);
+    return g_units[kind].always || g_units[kind].present;
 }
 
 /* --firmware, else firmware_dir in the settings, else beside the program (main_linux.c's places) */
@@ -503,6 +478,7 @@ static void load_settings(void)
         if (RATES[k] == r)
             g_rate = r;
     g_quick = ini_get_int(g_ini, "unit", "quick_keys", 0) != 0;
+    g_braille = ini_get_int(g_ini, "braille", "display", 0) != 0;
     if ((k = ap_mode_of(ini_get(g_ini, "sound", "buffer", "auto"))) >= 0)
         g_buffer_mode = k;
 }
@@ -511,7 +487,7 @@ static void load_settings(void)
 static void save_settings(void)
 {
     char v[16];
-    ini_set(g_ini, "unit", "kind", KINDS[g_kind].ini);
+    ini_set(g_ini, "unit", "kind", g_units[g_kind].ini);
     ini_set(g_ini, "unit", "quick_keys", g_quick ? "1" : "0");
     ini_set(g_ini, "sound", "idle", IDLE_NAMES[g_whine]);
     ini_set(g_ini, "sound", "keep_open", OPEN_NAMES[g_keep_open]);
@@ -626,7 +602,7 @@ static int offer_setup(int kind, const char *fw, const char *st)
              "factory's.\n"
              "Factory state: it asks its own setup questions, and its files are not kept.\n"
              "As it is: start it unchanged.\n\n"
-             "Set it up and Factory state keep the old memory as %s.", KINDS[kind].name, r.ram_files, lost, before);
+             "Set it up and Factory state keep the old memory as %s.", g_units[kind].name, r.ram_files, lost, before);
     d = gtk_message_dialog_new(GTK_WINDOW(g_win), GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
                                GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE, "%s", msg);
     titled(d, "Type 'n Speak not set up");
@@ -662,7 +638,7 @@ static int offer_setup(int kind, const char *fw, const char *st)
         message(GTK_MESSAGE_ERROR, "Blazie emulator", msg);
         return 1;
     }
-    snprintf(msg, sizeof msg, "The %s is set up: %d files kept%s. The old memory is in %s.\n\n%s", KINDS[kind].name,
+    snprintf(msg, sizeof msg, "The %s is set up: %d files kept%s. The old memory is in %s.\n\n%s", g_units[kind].name,
              r.carried, r.first_lost ? " (one had lost its first letter on the old unit)" : "", before, r.log);
     message(GTK_MESSAGE_INFO, "Type 'n Speak set up", msg);
     return 1;
@@ -677,24 +653,37 @@ static int start_unit(int kind)
     emu_unit *u, *old;
     save_unit();                                /* first: the unit being left keeps its memory (it may be this kind) */
     release_keys();
-    fw_file(KINDS[kind].firmware, fw, sizeof fw);
+    snprintf(fw, sizeof fw, "%s", g_units[kind].firmware);
     saved_path(kind, st, sizeof st);
-    if (exists(st) && KINDS[kind].kind == EMU_TYPE_N_SPEAK && !offer_setup(kind, fw, st))
+    if (exists(st) && g_units[kind].kind == EMU_TYPE_N_SPEAK && !offer_setup(kind, fw, st))
         state = NULL;                           /* the factory state: the unit's cold reset, its own questions */
-    else if (!exists(st)) {                     /* the first time: the unit as it left the factory */
-        if (KINDS[kind].state[0])
-            fw_file(KINDS[kind].state, st, sizeof st);
+    else if (!exists(st) && emc_needs_factory(&g_units[kind])) {
+        /* a release unit's first start: its factory state made from its firmware, by its own recipe, as its memory */
+        set_status(1, "Setting up the %s for its first start (a few seconds).", g_units[kind].name);
+        make_dirs(g_cfg_dir);
+        if (!emc_make_factory(&g_units[kind], st, NULL, NULL, err, sizeof err)) {
+            char msg[700];
+            snprintf(msg, sizeof msg, "Could not set up the %s for its first start.\n\n%s", g_units[kind].name,
+                     err);
+            message(GTK_MESSAGE_ERROR, "Blazie emulator", msg);
+            sync_menu();
+            update_names();
+            return 0;
+        }
+    } else if (!exists(st)) {                   /* the first time: the unit as it left the factory */
+        if (g_units[kind].factory[0])
+            snprintf(st, sizeof st, "%s", g_units[kind].factory);
         else
             state = NULL;
     }
-    if (!state && KINDS[kind].kind == EMU_TYPE_N_SPEAK)
-        message(GTK_MESSAGE_INFO, KINDS[kind].name, TNS_FIRST_START);
-    trace("starting %s from %s", KINDS[kind].id, state ? st : "cold");
-    u = emu_create(KINDS[kind].kind, fw, state, g_rate, g_whine, err, sizeof err);
+    if (!state && g_units[kind].kind == EMU_TYPE_N_SPEAK)
+        message(GTK_MESSAGE_INFO, g_units[kind].name, TNS_FIRST_START);
+    trace("starting %s from %s", g_units[kind].key, state ? st : "cold");
+    u = emu_create(g_units[kind].kind, fw, state, g_rate, g_whine, err, sizeof err);
     if (!u) {
         char msg[PATH_MAX + 700];
         snprintf(msg, sizeof msg, "Could not start the %s.\n\n%s\n\nThe firmware is looked for in %s (firmware_dir in "
-                 "%s).", KINDS[kind].name, err, g_fw_dir, g_ini_path);
+                 "%s).", g_units[kind].name, err, g_fw_dir, g_ini_path);
         message(GTK_MESSAGE_ERROR, "Blazie emulator", msg);
         sync_menu();
         update_names();
@@ -999,13 +988,13 @@ static void export_files(void)
     unsigned char *img;
     unsigned long size;
     if (!g_unit) return;
-    snprintf(path, sizeof path, "%s files.img", KINDS[g_kind].name);
+    snprintf(path, sizeof path, "%s files.img", g_units[g_kind].name);
     if (!image_dialog(1, path, sizeof path)) return;
     if (!save_unit()) return;                   /* its memory as it is this moment */
     saved_path(g_kind, st, sizeof st);
     if (!open_saved(st, &u, &fs)) return;
     blx_report_init(&r);
-    img = blx_export_cp(fs, u.model, KINDS[g_kind].codepage, &size, &r, err, sizeof err);
+    img = blx_export_cp(fs, u.model, g_units[g_kind].codepage, &size, &r, err, sizeof err);
     if (!img || !write_bytes(path, img, size)) {
         snprintf(msg, sizeof msg, "Could not export the files to %s: %s", path,
                  img ? "the image could not be written" : err);
@@ -1095,7 +1084,7 @@ static void import_files(void)
     blx_report_init(&r);
     ok = open_saved(st, &u, &fs);
     if (ok) {
-        ok = blx_import_cp(fs, KINDS[g_kind].codepage, img, size, &r, err, sizeof err)
+        ok = blx_import_cp(fs, g_units[g_kind].codepage, img, size, &r, err, sizeof err)
              && blf_check(fs, err, sizeof err);
         if (ok && r.deleted) {                  /* an image holding only new files would empty the unit: ask */
             char ask[3000];
@@ -1234,7 +1223,7 @@ static void add_programs(void)
         goto done;
     blx_report_init(&r);
     if (open_saved(st, &u, &fs)) {
-        got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 0, &r, err, sizeof err);
+        got = blx_add_cp(fs, g_units[g_kind].codepage, n, names, data, sizes, times, dates, 0, &r, err, sizeof err);
         if (got == BLX_ADD_EXISTS) {            /* names the unit has: asked once for the whole batch */
             char ask[3000];
             const char *line = r.log ? r.log : "";
@@ -1250,7 +1239,7 @@ static void add_programs(void)
             if (ask_yes_no("Load into flash", ask)) {
                 blx_report_free(&r);
                 blx_report_init(&r);
-                got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
+                got = blx_add_cp(fs, g_units[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
                                  sizeof err);
             } else
                 cancelled = 1;
@@ -1272,7 +1261,7 @@ static void add_programs(void)
         report_text(msg, sizeof msg, summary, &r);
         message(GTK_MESSAGE_ERROR, "Load into flash", msg);
     } else {
-        int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
+        int tns = g_units[g_kind].kind == EMU_TYPE_N_SPEAK;
         snprintf(summary, sizeof summary, "Loaded %d file%s into flash: %d added, %d replaced. The unit was "
                  "restarted. Run a program with %s, its name, then %s; open a document with %s, its name, then %s. "
                  "(The unit as it was before is kept in %s.before-import.)", n, n == 1 ? "" : "s", r.added,
@@ -1323,6 +1312,99 @@ static void open_menu(void)
     gtk_widget_mnemonic_activate(g_firmware_item, FALSE);
 }
 
+static void defer(void (*fn)(int), int arg);   /* a menu choice's work, once the menu has closed (below) */
+
+/* ---- the braille display field (as brl_win.c's) ------------------------------------------------------------------ */
+/* the field's text for n cells: each cell U+2800 + its dots (dot 1 = bit 0 .. dot 8 = bit 7) in UTF-8, or "no
+   braille display" when n is 0 */
+static void brl_text(const unsigned char *cells, int n, char *out, int cap)
+{
+    int i, k = 0;
+    if (n <= 0) {
+        snprintf(out, (size_t)cap, "no braille display");
+        return;
+    }
+    for (i = 0; i < n && k + 4 <= cap; i++) {
+        unsigned cp = 0x2800u + cells[i];
+        out[k++] = (char)(0xE0 | (cp >> 12));
+        out[k++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[k++] = (char)(0x80 | (cp & 0x3F));
+    }
+    out[k] = 0;
+}
+
+/* the unit's cells into the field, as the firmware last latched them, when they changed (every 50 ms) */
+static gboolean on_brl_tick(gpointer data)
+{
+    unsigned char cells[EMU_CELLS];
+    char text[sizeof g_brl_text];
+    int n = 0, display = 0;
+    (void)data;
+    if (!g_braille || !g_brl)
+        return G_SOURCE_CONTINUE;
+    pthread_mutex_lock(&g_lock);
+    if (g_unit) {
+        n = emu_braille(g_unit, cells, EMU_CELLS);
+        display = emu_model(g_unit) == EMU_MODEL_BRAILLE_LITE;
+    }
+    pthread_mutex_unlock(&g_lock);
+    brl_text(cells, n, text, sizeof text);
+    if (!n && display)
+        text[0] = 0;                            /* a Braille Lite before its first latch: its display, still blank */
+    /* the control: frozen once the field holds the unit's cells */
+    if (strcmp(text, g_brl_text) && !(g_break_brl && (unsigned char)g_brl_text[0] == 0xE2)) {
+        snprintf(g_brl_text, sizeof g_brl_text, "%s", text);
+        gtk_entry_set_text(GTK_ENTRY(g_brl), text);
+        gtk_editable_set_position(GTK_EDITABLE(g_brl), 0);   /* the cursor at the unit's first cell */
+        trace("braille %d cells", n);
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+static void bars(int bits)
+{
+    pthread_mutex_lock(&g_lock);
+    g_bars = bits;
+    if (g_unit)
+        emu_braille_bars(g_unit, bits);
+    pthread_mutex_unlock(&g_lock);
+    trace("bars %d", bits);
+}
+
+/* the field shown or hidden, the keyboard with it, the setting kept */
+static void set_braille(int on)
+{
+    g_braille = on;
+    if (g_brl_box)
+        gtk_widget_set_visible(g_brl_box, on);
+    g_brl_text[0] = 0;                          /* shown afresh */
+    on_brl_tick(NULL);
+    if (g_brl_item) {
+        g_updating = 1;
+        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_brl_item), on);
+        g_updating = 0;
+    }
+    ini_set(g_ini, "braille", "display", on ? "1" : "0");
+    focus_area();
+}
+
+static void do_braille(int on)
+{
+    if (on && !g_braille)
+        message(GTK_MESSAGE_INFO, "Braille display",
+                "The unit's braille display is shown in a field in this window, which Orca shows on your braille "
+                "display. The field keeps the keyboard: the unit's keys work as before.\n\n"
+                "Your braille display's own keys stay Orca's, so they cannot press the unit's advance bars, and the "
+                "display does not advance by itself at the end of the field. Advance from your PC keyboard "
+                "instead:\n\n"
+                "Alt+Shift+Right Arrow = the advance bar\nAlt+Shift+Left Arrow = the back bar\n"
+                "(on the Braille Lite, ; and A as well)\n\n"
+                "Please turn off contracted braille in Orca's braille settings: it can interfere with the unit's "
+                "braille cells.");
+    set_braille(on);
+    set_status(1, "Braille display in the window: %s.", on ? "on" : "off");
+}
+
 /* A key going down or up, at the window, before GTK's own mnemonics and accelerators: X's and Wayland's key codes are
    Linux's input codes plus 8, so a key is named by its place, as an input device's (evdev_linux.c) -- the same keys
    whatever the layout.  TRUE: the unit's (or the menu key), FALSE: GTK's. */
@@ -1330,16 +1412,43 @@ static gboolean on_key(GtkWidget *w, GdkEventKey *ev, gpointer data)
 {
     key_event e;
     int down = ev->type == GDK_KEY_PRESS, tns, code;
+    GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(g_win));
+    int in_brl = g_braille && g_brl && focus == g_brl;   /* the braille display field: it keeps the keyboard */
+    guint kv = gdk_keyval_to_lower(ev->keyval);
     (void)w; (void)data;
-    if (gtk_window_get_focus(GTK_WINDOW(g_win)) != g_area)
+    if (focus != g_area && !in_brl)
         return FALSE;
+    tns = g_units[g_kind].kind == EMU_TYPE_N_SPEAK;
+    /* Alt+Shift+B: the braille display field on or off; Alt+Shift+Right and Left: the advance and back bars, held as
+       long as the arrow is -- for a braille display's user, whose display's keys stay Orca's.  Not the Type 'n
+       Speak's: its keyboard is its own, and it has no bars */
+    if (!tns && kv == GDK_KEY_b && (ev->state & GDK_MOD1_MASK) && (ev->state & GDK_SHIFT_MASK)) {
+        static double last;                     /* and a press soon after a toggle: the key still held */
+        if (down && !g_b_down && mono() - last > 0.4) {
+            last = mono();
+            defer(do_braille, !g_braille);
+        }
+        g_b_down = down;
+        return TRUE;
+    }
+    if (!tns && (kv == GDK_KEY_Right || kv == GDK_KEY_Left)) {
+        int bit = kv == GDK_KEY_Right ? 1 : 2;
+        if (down && (ev->state & GDK_MOD1_MASK) && (ev->state & GDK_SHIFT_MASK)) {
+            if (!(g_bars & bit))                /* the first down only */
+                bars(g_bars | bit);
+            return TRUE;
+        }
+        if (!down && (g_bars & bit)) {
+            bars(g_bars & ~bit);
+            return TRUE;
+        }
+    }
     e.key = ev->hardware_keycode >= 8 ? evdev_key_of(ev->hardware_keycode - 8) : 0;
     e.mods = (ev->state & GDK_SHIFT_MASK ? KM_SHIFT : 0) | (ev->state & GDK_CONTROL_MASK ? KM_CTRL : 0)
            | (ev->state & GDK_MOD1_MASK ? KM_ALT : 0);
     e.type = KE_PRESS;
     if (!e.key)
-        return FALSE;
-    tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
+        return in_brl ? TRUE : FALSE;
     if (down && key_in_list(&e, tns ? g_menu_tns : g_menu_bl, tns ? g_n_menu_tns : g_n_menu_bl)) {
         open_menu();
         return TRUE;
@@ -1354,11 +1463,15 @@ static gboolean on_key(GtkWidget *w, GdkEventKey *ev, gpointer data)
         taken = blk_event(&g_blk, &e, mono());
         blk_apply();
         pthread_mutex_unlock(&g_lock);
+        /* in the field, a key that is not the unit's never reaches it (no caret moved), but Tab and F10 stay GTK's */
+        if (!taken && in_brl && ev->keyval != GDK_KEY_Tab && ev->keyval != GDK_KEY_ISO_Left_Tab &&
+                ev->keyval != GDK_KEY_F10)
+            return TRUE;
         return taken ? TRUE : FALSE;
     }
     code = tns_code_of(e.key);
     if (!code)
-        return FALSE;                           /* a key the unit does not have: GTK's */
+        return in_brl ? TRUE : FALSE;           /* a key the unit does not have: GTK's (not into the field) */
     pthread_mutex_lock(&g_lock);
     if (down && !g_tns_held[code & 0x7F]) {     /* the first down only: auto-repeat is the unit's business */
         g_tns_held[code & 0x7F] = 1;
@@ -1376,6 +1489,9 @@ static gboolean on_area_focus_out(GtkWidget *w, GdkEventFocus *ev, gpointer data
     (void)w; (void)ev; (void)data;
     trace("focus out");
     release_keys();                             /* a chord half-pressed is dropped, the keys held come up */
+    if (g_bars)
+        bars(0);                                /* and the bars */
+    g_b_down = 0;
     return FALSE;
 }
 
@@ -1423,6 +1539,7 @@ static void sync_menu(void)
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_popclick_item), g_popclick);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tick_item), g_tick);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_quick_item), g_quick);
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_brl_item), g_braille);
     for (k = 0; k < N_RATES; k++)
         if (RATES[k] == g_rate)
             gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_rate_items[k]), TRUE);
@@ -1463,7 +1580,7 @@ static void do_unit(int k)
     if (k == g_kind && g_unit)
         return;
     if (start_unit(k))
-        set_status(1, "Switched to the %s.", KINDS[k].name);
+        set_status(1, "Switched to the %s.", g_units[k].name);
 }
 
 static void do_factory(int unused)
@@ -1473,7 +1590,7 @@ static void do_factory(int unused)
     (void)unused;
     snprintf(q, sizeof q, "Put the %s back as it left the factory? "
                           "Its files and settings are erased, and a firmware update it was given.",
-             KINDS[g_kind].name);
+             g_units[g_kind].name);
     if (!ask_yes_no("Back to the factory state", q))
         return;
     release_keys();
@@ -1489,7 +1606,7 @@ static void do_factory(int unused)
         unlink(path);
     }
     if (start_unit(g_kind))
-        set_status(1, "The %s is as it left the factory.", KINDS[g_kind].name);
+        set_status(1, "The %s is as it left the factory.", g_units[g_kind].name);
 }
 
 static void do_export(int unused) { (void)unused; release_keys(); export_files(); }
@@ -1541,6 +1658,8 @@ static void do_keys(int unused)
              "Alt and a letter open this program's menus (Alt+F Firmware, Alt+E Settings, Alt+H Help); Ctrl+Q exits.\n\n"
              "Type 'n Speak: the whole keyboard is the unit's, Alt and the function keys included.\n\n"
              "F11 or Alt+Shift+F opens this program's menu, whichever unit runs.\n"
+             "Alt+Shift+B shows the unit's braille display in a field Orca shows on your braille display; "
+             "Alt+Shift+Right and Left Arrow are then the advance and back bars.\n"
              "With Orca, its own keys (the Orca key, Insert or Caps Lock, and the keys pressed with it) stay Orca's "
              "and do not reach the unit.\n\n%s", g_ini_path, TNS_FIRST_START);
     message(GTK_MESSAGE_INFO, "Keys", text);
@@ -1589,6 +1708,9 @@ static void on_toggle_item(GtkWidget *item, gpointer which)
     if (g_updating)
         return;
     switch (GPOINTER_TO_INT(which)) {
+    case 3:
+        defer(do_braille, on);                  /* after the menu closes: its first-time dialog, then the focus */
+        return;
     case 0:
         g_popclick = on;
         apply_idle();
@@ -1724,15 +1846,27 @@ static GtkWidget *add_submenu(GtkWidget *bar, const char *label, GtkWidget **ite
 
 static GtkWidget *make_menu(GtkAccelGroup *accel)
 {
-    GtkWidget *bar = gtk_menu_bar_new(), *fw, *settings, *help, *rates, *buffer, *item, *serial_item;
+    GtkWidget *bar = gtk_menu_bar_new(), *fw, *settings, *help, *rates, *buffer, *item, *serial_item, *more = NULL;
     GSList *group = NULL;
     int k;
     fw = add_submenu(bar, "_Firmware", &g_firmware_item);
-    for (k = 0; k < N_KINDS; k++) {
-        g_kind_items[k] = gtk_radio_menu_item_new_with_mnemonic(group, KIND_MENU[k]);
+    for (k = 0; k < g_n_units; k++) {
+        const char *text = g_units[k].name;
+        int m, mnemonic = 0;
+        for (m = 0; m < N_KIND_MENU; m++)
+            if (!strcmp(KIND_MENU[m].key, g_units[k].key)) {
+                text = KIND_MENU[m].menu;
+                mnemonic = 1;
+            }
+        g_kind_items[k] = mnemonic ? gtk_radio_menu_item_new_with_mnemonic(group, text)
+                                   : gtk_radio_menu_item_new_with_label(group, text);
         group = gtk_radio_menu_item_get_group(GTK_RADIO_MENU_ITEM(g_kind_items[k]));
         g_signal_connect(g_kind_items[k], "activate", G_CALLBACK(on_kind_item), GINT_TO_POINTER(k));
-        if (kind_offered(k))
+        if (g_units[k].release >= 0) {          /* a release unit found in the firmware folder: More languages */
+            if (!more)
+                more = add_submenu(fw, "More _languages", NULL);
+            gtk_menu_shell_append(GTK_MENU_SHELL(more), g_kind_items[k]);
+        } else if (kind_offered(k))
             gtk_menu_shell_append(GTK_MENU_SHELL(fw), g_kind_items[k]);
         else                                    /* not in the menu (a hidden item is still in the accessible tree), */
             g_object_ref_sink(g_kind_items[k]); /* kept: g_kind names it after a --unit whose firmware is missing */
@@ -1780,6 +1914,9 @@ static GtkWidget *make_menu(GtkAccelGroup *accel)
     g_quick_item = gtk_check_menu_item_new_with_mnemonic("_Quick key response (faster than the real unit)");
     g_signal_connect(g_quick_item, "toggled", G_CALLBACK(on_toggle_item), GINT_TO_POINTER(2));
     gtk_menu_shell_append(GTK_MENU_SHELL(settings), g_quick_item);
+    g_brl_item = gtk_check_menu_item_new_with_mnemonic("Braille _display in the window (Alt+Shift+B)");
+    g_signal_connect(g_brl_item, "toggled", G_CALLBACK(on_toggle_item), GINT_TO_POINTER(3));
+    gtk_menu_shell_append(GTK_MENU_SHELL(settings), g_brl_item);
     add_separator(settings);
     rates = add_submenu(settings, "Sample _rate", NULL);
     group = NULL;
@@ -1884,6 +2021,24 @@ static void on_activate(GtkApplication *app, gpointer data)
     gtk_container_add(GTK_CONTAINER(frame), g_area);
     gtk_box_pack_start(GTK_BOX(box), frame, TRUE, TRUE, 0);
 
+    /* the braille display field and its label (its name to Orca), hidden unless Settings > Braille display */
+    {
+        GtkWidget *label = gtk_label_new("Braille display:");
+        g_brl_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+        g_brl = gtk_entry_new();
+        gtk_editable_set_editable(GTK_EDITABLE(g_brl), FALSE);
+        gtk_entry_set_width_chars(GTK_ENTRY(g_brl), EMU_CELLS);
+        gtk_label_set_mnemonic_widget(GTK_LABEL(label), g_brl);
+        atk_object_set_name(gtk_widget_get_accessible(g_brl), "Braille display");
+        g_signal_connect(g_brl, "focus-out-event", G_CALLBACK(on_area_focus_out), NULL);
+        gtk_box_pack_start(GTK_BOX(g_brl_box), label, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(g_brl_box), g_brl, TRUE, TRUE, 0);
+        gtk_widget_set_margin_start(g_brl_box, 6);
+        gtk_widget_set_margin_end(g_brl_box, 6);
+        gtk_widget_set_margin_top(g_brl_box, 4);
+        gtk_box_pack_start(GTK_BOX(box), g_brl_box, FALSE, FALSE, 0);
+    }
+
     g_status = gtk_label_new("");
     gtk_label_set_line_wrap(GTK_LABEL(g_status), TRUE);
     gtk_label_set_xalign(GTK_LABEL(g_status), 0.0f);
@@ -1898,11 +2053,13 @@ static void on_activate(GtkApplication *app, gpointer data)
     fill_serial_menu();
     update_names();
     gtk_widget_show_all(g_win);
-    gtk_widget_grab_focus(g_area);
+    gtk_widget_set_visible(g_brl_box, g_braille);
+    g_timeout_add(50, on_brl_tick, NULL);
+    gtk_widget_grab_focus(g_braille ? g_brl : g_area);
     while (gtk_events_pending())
         gtk_main_iteration();
     if (start_unit(g_start_kind))
-        set_status(0, "%s is on. F11 or Alt+Shift+F opens the menu.", KINDS[g_kind].name);
+        set_status(0, "%s is on. F11 or Alt+Shift+F opens the menu.", g_units[g_kind].name);
     audio_start();
     if (strcmp(g_serial_want, "none") && g_serial_want[0]) {
         char p[PATH_MAX];
@@ -1952,6 +2109,8 @@ int main(int argc, char **argv)
         blk_break = 1;                          /* the tests' control: dots 1 and 4 swapped */
     if (getenv("BLAZIE_GTK_BREAK") && !strcmp(getenv("BLAZIE_GTK_BREAK"), "noname"))
         g_break_name = 1;                       /* the tests' control: the keyboard area unnamed */
+    if (getenv("BLAZIE_GTK_BREAK") && !strcmp(getenv("BLAZIE_GTK_BREAK"), "brlfrozen"))
+        g_break_brl = 1;                        /* the tests' control: the braille display field frozen */
     if (trace_path && !(g_trace = fopen(trace_path, "w"))) {
         fprintf(stderr, "blazie_emu_gtk: could not write %s\n", trace_path);
         return 2;
@@ -1988,15 +2147,17 @@ int main(int argc, char **argv)
         g_rate = rate;
     }
     find_firmware(fw_given);
+    g_n_units = emc_list(g_fw_dir, g_units, EMC_MAX);
     snprintf(v, sizeof v, "%s", ini_get(g_ini, "unit", "kind", "english"));
-    for (i = 0; i < N_KINDS; i++)
-        if (unit_id ? !strcmp(unit_id, KINDS[i].id) : !strcmp(v, KINDS[i].ini))
+    for (i = 0; i < g_n_units; i++)
+        if (unit_id ? !strcmp(unit_id, g_units[i].key) : !strcmp(v, g_units[i].ini))
             kind = i;
     if (kind >= 0 && !unit_id && !kind_offered(kind))
         kind = -1;                              /* the unit used last is not here now (its firmware moved): bl-en */
     if (kind < 0) {
         if (unit_id) {
-            fprintf(stderr, "blazie_emu_gtk: --unit bl-en, bl-es, bl-de, bl-it, tns-en, tns-es, bns-en or bns-sk\n");
+            fprintf(stderr, "blazie_emu_gtk: --unit bl-en, bl-es, bl-de, bl-it, tns-en, tns-es, bns-en, bns-sk, or a "
+                    "release's id whose firmware is in the firmware folder\n");
             return 2;
         }
         kind = 0;

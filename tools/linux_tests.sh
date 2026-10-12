@@ -287,6 +287,12 @@ check "emulator: blazie_files round trip (export, unpack, pack, import)" sh tool
 control "emulator: blazie_files round trip CONTROL (flash blocks not marked used, must fail)" \
     "^NOT saved: .*not marked used" "^FAIL import$" "^round trip: FAILED$" \
     -- env TEST_FILES_BREAK=2 sh tools/blazie_files_roundtrip.sh build/linux/blazie_files "$DATA/bl2_2003_warm.state"
+# the units a firmware folder can run, one list for every shell (emu_catalog.c): the old eight unchanged, a release
+# unit only when its firmware is there; its control lists one without its firmware
+check "emulator: the units a firmware folder can run (the catalog)" ./build/linux/test_catalog "$DATA"
+control "emulator: the catalog CONTROL (a unit without its firmware, must fail)" \
+    "^FAIL a folder with two release files" "^catalog: 2 FAILED$" \
+    -- env CATALOG_BREAK=1 ./build/linux/test_catalog "$DATA"
 # blazie_files add (the menu's "Load programs into flash"): one batch, all or nothing; its control writes the new
 # entries in folder 0 (bl_files.h blf_break 7)
 check "emulator: programs into flash (blazie_files add)" python3 nvda/tools/files_add.py build/linux/blazie_files \
@@ -326,7 +332,8 @@ fi
 # display (Xvfb) with its own session and accessibility buses, its keys typed through the X server (xdotool), its
 # window read as Orca reads it (AT-SPI): the menu bar's items, the keyboard area's name and focus, a chord answered,
 # F11 and Alt+Shift+F, the dialogs' text, the announcements, the Type 'n Speak's keys, i-chord held through a
-# restart.  Its controls leave the keyboard area unnamed (BLAZIE_GTK_BREAK=noname) and swap dots 1 and 4.  Skipped,
+# restart, the braille display field for Orca.  Its controls leave the keyboard area unnamed (BLAZIE_GTK_BREAK=noname),
+# freeze the braille display field (brlfrozen) and swap dots 1 and 4.  Skipped,
 # saying why, where GTK, Xvfb, xdotool or the accessibility bus is missing (the BTSpeak, a minimal build).
 GTK_EMU=build/linux/blazie_emu_gtk
 GTK_SHIP=""
@@ -360,6 +367,12 @@ gobject-2\.0|gio-2\.0|atk-1\.0|pango-1\.0|pangocairo-1\.0|cairo|cairo-gobject|gd
             "^ok +status bar" "^gtk emulator: 1 of 4 FAILED$" \
             -- env BLAZIE_GTK_BREAK=noname $XRUN "-screen 0 1024x768x24" \
             python3 src/apps/blazie/test_emu_gtk.py "$GTK_EMU" "$DATA" --only settings,tree
+        # the braille display field (Alt+Shift+B, for Orca): frozen after its first cells, the advance bar must fail
+        control "emulator (GTK): braille display CONTROL (the field frozen, must fail)" \
+            "^ok +braille display field shown and focused" "^FAIL +braille display field: Alt\+Shift\+Right is the advance bar" \
+            "^gtk emulator: 1 of 4 FAILED$" \
+            -- env BLAZIE_GTK_BREAK=brlfrozen $XRUN "-screen 0 1024x768x24" \
+            python3 src/apps/blazie/test_emu_gtk.py "$GTK_EMU" "$DATA" --only braille
         control "emulator (GTK): held keys CONTROL (dots 1 and 4 swapped, must fail)" \
             "^FAIL +i-chord held through the restart +the unit asked \"initialize file system\": no" \
             "^gtk emulator: 1 of 1 FAILED$" \

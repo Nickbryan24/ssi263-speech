@@ -30,6 +30,7 @@
 #include "audio_pace.h"
 #include "brl_win.h"
 #include "chords.h"
+#include "emu_catalog.h"
 #include "emu_unit.h"
 #include "serial_win.h"
 #include "tns_keymap_win.h"
@@ -47,6 +48,7 @@
 
 enum { ID_EN = 100, ID_ES, ID_TNS_EN, ID_TNS_ES, ID_BNS_EN, ID_BNS_SK, ID_DE, ID_IT, ID_FACTORY, ID_EXIT, ID_EXPORT, ID_IMPORT,
        ID_ADDPROG,
+       ID_RELEASE = 600,                    /* ID_RELEASE + k: g_units[k], a release unit (More languages) */
        ID_HISS = 200, ID_WHINE, ID_QUIET, ID_UNITSOUND,
        ID_OPEN_OFF = 210, ID_OPEN_UNTIL, ID_OPEN_ALWAYS, ID_POPCLICK = 215, ID_TICK, ID_QUICK = 218, ID_BRAILLE,
        ID_RATE = 220,
@@ -54,33 +56,45 @@ enum { ID_EN = 100, ID_ES, ID_TNS_EN, ID_TNS_ES, ID_BNS_EN, ID_BNS_SK, ID_DE, ID
        ID_KEYS = 300, ID_ABOUT,
        ID_SERIAL_NONE = 400, ID_SERIAL_PORT };   /* ID_SERIAL_PORT + k: g_ports[k] */
 
-/* state NULL: a cold start (the Type 'n Speak's cold reset asks how to set itself up: TNS_FIRST_START); codepage:
-   its file names' code page (bl_files_xfer.h) */
-typedef struct { const char *name; int kind; const char *firmware, *state, *saved, *ini; int codepage; } unit_kind;
-static const unit_kind KINDS[] = {
-    {"Braille Lite 2000 (English)", EMU_BRAILLE_LITE, "BL2ENG.BNS", "bl2_2003_warm.state", "english.state",
-     "english", BLX_CP850},
-    {"Braille Lite 2000 (Spanish)", EMU_BRAILLE_LITE, "spanish\\BL2SPA.BNS", "spanish\\bl2spa_fresh.state",
-     "spanish.state", "spanish", BLX_CP850},
-    {"Type 'n Speak (English)", EMU_TYPE_N_SPEAK, "tns\\TNSENG.TNS", NULL, "tns_english.state", "tns_english",
-     BLX_CP850},
-    {"Type 'n Speak (Spanish)", EMU_TYPE_N_SPEAK, "tns\\TNSSPA.TNS", NULL, "tns_spanish.state", "tns_spanish",
-     BLX_CP850},
-    /* the Braille 'n Speak 2000 on the Braille Lite's board (emu_unit.h emu_model), in the menu when its firmware is
-       there; its factory states made from the firmware by make_state.exe (make_state.c) */
-    {"Braille 'n Speak 2000 (English)", EMU_BRAILLE_LITE, "bns2000\\BS03ENG.BNS", "bns2000\\bs03eng_fresh.state",
-     "bns_english.state", "bns_english", BLX_CP850},
-    {"Braille 'n Speak 2000 (Slovak)", EMU_BRAILLE_LITE, "bns2000\\BS2SLL.BNS", "bns2000\\bs2sll_fresh.state",
-     "bns_slovak.state", "bns_slovak", BLX_CP852},
-    /* Blazie's September 2000 German and Italian updates (an anonymous donation), in the menu when their firmware is
-       there; their factory states made by make_state.exe (bl_state.c's recipes: the English one with the unit's own
-       "yes") */
-    {"Braille Lite 2000 (German)", EMU_BRAILLE_LITE, "german\\Lite2000.BNS", "german\\lite2000_de_fresh.state",
-     "german.state", "german", BLX_CP850},
-    {"Braille Lite 2000 (Italian)", EMU_BRAILLE_LITE, "italian\\Lite2000.BNS", "italian\\lite2000_it_fresh.state",
-     "italian.state", "italian", BLX_CP850},
+/* The units the firmware folder can run: emu_catalog.h's list, the one every shell reads (made at start).  A unit with
+   no factory state is a cold start (the Type 'n Speak's cold reset asks how to set itself up: TNS_FIRST_START), or a
+   release unit whose factory state is made the first time it starts (emc_make_factory). */
+static emc_unit g_units[EMC_MAX];
+static int g_n_units;
+/* the units the menus always had, each with its own menu item */
+static const struct { const char *key; int id; } MENU_IDS[] = {
+    {"bl-en", ID_EN}, {"bl-es", ID_ES}, {"tns-en", ID_TNS_EN}, {"tns-es", ID_TNS_ES}, {"bns-en", ID_BNS_EN},
+    {"bns-sk", ID_BNS_SK}, {"bl-de", ID_DE}, {"bl-it", ID_IT},
 };
-#define N_KINDS ((int)(sizeof KINDS / sizeof KINDS[0]))
+#define N_MENU_IDS ((int)(sizeof MENU_IDS / sizeof *MENU_IDS))
+
+/* a unit's menu command, and the unit a command starts (-1: not a unit's) */
+static int unit_id(int k)
+{
+    int i;
+    for (i = 0; i < N_MENU_IDS; i++)
+        if (!strcmp(g_units[k].key, MENU_IDS[i].key))
+            return MENU_IDS[i].id;
+    return ID_RELEASE + k;
+}
+
+static int unit_of_id(int id)
+{
+    int k;
+    for (k = 0; k < g_n_units; k++)
+        if (unit_id(k) == id)
+            return k;
+    return -1;
+}
+
+static int unit_by_key(const char *key)
+{
+    int k;
+    for (k = 0; k < g_n_units; k++)
+        if (!strcmp(g_units[k].key, key))
+            return k;
+    return -1;
+}
 
 static HWND g_wnd;
 static CRITICAL_SECTION g_lock;
@@ -175,7 +189,7 @@ static int exists(const char *path)
 /* what the unit keeps while switched off (its files and settings): %APPDATA%\ssi263-speech\blazie-emu\<kind>.state */
 static void saved_path(int kind, char *out, int cap)
 {
-    snprintf(out, cap, "%s\\%s", g_save_dir, KINDS[kind].saved);
+    snprintf(out, cap, "%s\\%s", g_save_dir, g_units[kind].saved);
 }
 
 static void save_unit(void)
@@ -222,7 +236,7 @@ static int offer_setup(int kind, const char *fw, const char *st)
              "factory's.\n"
              "No: start it from the factory state: it asks its own setup questions, and its files are not kept.\n"
              "Cancel: start it as it is.\n\n"
-             "Yes and No keep the old memory as %s.", KINDS[kind].name, r.ram_files, lost, before);
+             "Yes and No keep the old memory as %s.", g_units[kind].name, r.ram_files, lost, before);
     answer = MessageBoxA(g_wnd, msg, "Type 'n Speak not set up", MB_YESNOCANCEL | MB_ICONWARNING);
     if (answer == IDNO) {
         if (!CopyFileA(st, before, FALSE)) {
@@ -241,7 +255,7 @@ static int offer_setup(int kind, const char *fw, const char *st)
         MessageBoxA(g_wnd, msg, "Blazie emulator", MB_OK | MB_ICONERROR);
         return 1;
     }
-    snprintf(msg, sizeof msg, "The %s is set up: %d files kept%s. The old memory is in %s.\n\n%s", KINDS[kind].name,
+    snprintf(msg, sizeof msg, "The %s is set up: %d files kept%s. The old memory is in %s.\n\n%s", g_units[kind].name,
              r.carried, r.first_lost ? " (one had lost its first letter on the old unit)" : "", before, r.log);
     MessageBoxA(g_wnd, msg, "Type 'n Speak set up", MB_OK | MB_ICONINFORMATION);
     return 1;
@@ -253,23 +267,33 @@ static int start_unit(int kind)
     const char *state = st;
     emu_unit *u;
     save_unit();                            /* first: the unit being left keeps its memory (it may be this kind) */
-    snprintf(fw, sizeof fw, "%s\\%s", g_fw_dir, KINDS[kind].firmware);
+    snprintf(fw, sizeof fw, "%s", g_units[kind].firmware);
     saved_path(kind, st, sizeof st);
-    if (exists(st) && KINDS[kind].kind == EMU_TYPE_N_SPEAK && !offer_setup(kind, fw, st))
+    if (exists(st) && g_units[kind].kind == EMU_TYPE_N_SPEAK && !offer_setup(kind, fw, st))
         state = NULL;                       /* the factory state: the unit's cold reset, its own questions */
-    else if (!exists(st)) {                 /* the first time: the unit as it left the factory */
-        if (KINDS[kind].state)
-            snprintf(st, sizeof st, "%s\\%s", g_fw_dir, KINDS[kind].state);
+    else if (!exists(st) && emc_needs_factory(&g_units[kind])) {
+        /* a release unit's first start: its factory state made from its firmware, by its own recipe, as its memory */
+        char msg[700];
+        status("Setting up the unit for its first start (a few seconds)");
+        CreateDirectoryA(g_save_dir, NULL);
+        if (!emc_make_factory(&g_units[kind], st, NULL, NULL, err, sizeof err)) {
+            snprintf(msg, sizeof msg, "Could not set up the %s for its first start.\n\n%s", g_units[kind].name, err);
+            MessageBoxA(g_wnd, msg, "Blazie emulator", MB_OK | MB_ICONERROR);
+            return 0;
+        }
+    } else if (!exists(st)) {               /* the first time: the unit as it left the factory */
+        if (g_units[kind].factory[0])
+            snprintf(st, sizeof st, "%s", g_units[kind].factory);
         else
             state = NULL;                   /* a cold start */
     }
-    if (!state && KINDS[kind].kind == EMU_TYPE_N_SPEAK)
-        MessageBoxA(g_wnd, TNS_FIRST_START, KINDS[kind].name, MB_OK | MB_ICONINFORMATION);
+    if (!state && g_units[kind].kind == EMU_TYPE_N_SPEAK)
+        MessageBoxA(g_wnd, TNS_FIRST_START, g_units[kind].name, MB_OK | MB_ICONINFORMATION);
     status("Starting");
-    u = emu_create(KINDS[kind].kind, fw, state, g_rate, g_whine, err, sizeof err);
+    u = emu_create(g_units[kind].kind, fw, state, g_rate, g_whine, err, sizeof err);
     if (!u) {
         char msg[700];
-        snprintf(msg, sizeof msg, "Could not start the %s.\n\n%s\n\nFirmware looked for in:\n%s", KINDS[kind].name,
+        snprintf(msg, sizeof msg, "Could not start the %s.\n\n%s\n\nFirmware looked for in:\n%s", g_units[kind].name,
                  err, g_fw_dir);
         MessageBoxA(g_wnd, msg, "Blazie emulator", MB_OK | MB_ICONERROR);
         return 0;
@@ -284,9 +308,14 @@ static int start_unit(int kind)
     g_kind = kind;
     chord_reset(&g_chord);
     LeaveCriticalSection(&g_lock);
-    status(KINDS[kind].name);
-    CheckMenuRadioItem(GetMenu(g_wnd), ID_EN, ID_EN + N_KINDS - 1, ID_EN + kind, MF_BYCOMMAND);
-    WritePrivateProfileStringA("unit", "kind", KINDS[kind].ini, g_ini);
+    status(g_units[kind].name);
+    {
+        int k;
+        for (k = 0; k < g_n_units; k++)
+            CheckMenuItem(GetMenu(g_wnd), unit_id(k), MF_BYCOMMAND | MF_UNCHECKED);
+        CheckMenuRadioItem(GetMenu(g_wnd), unit_id(kind), unit_id(kind), unit_id(kind), MF_BYCOMMAND);
+    }
+    WritePrivateProfileStringA("unit", "kind", g_units[kind].ini, g_ini);
     return 1;
 }
 
@@ -386,13 +415,13 @@ static void export_files(void)
     unsigned long size;
     if (!g_unit) return;
     tns_release_all();
-    snprintf(path, sizeof path, "%s files.img", KINDS[g_kind].name);
+    snprintf(path, sizeof path, "%s files.img", g_units[g_kind].name);
     if (!image_dialog(1, path, sizeof path)) return;
     save_unit();                            /* its memory as it is this moment */
     saved_path(g_kind, st, sizeof st);
     if (!open_saved(st, &u, &fs)) return;
     blx_report_init(&r);
-    img = blx_export_cp(fs, u.model, KINDS[g_kind].codepage, &size, &r, err, sizeof err);
+    img = blx_export_cp(fs, u.model, g_units[g_kind].codepage, &size, &r, err, sizeof err);
     if (!img || !write_bytes(path, img, size)) {
         snprintf(msg, sizeof msg, "Could not export the files: %s", img ? "the image could not be written" : err);
         MessageBoxA(g_wnd, msg, "Export files", MB_OK | MB_ICONERROR);
@@ -469,7 +498,7 @@ static void import_files(void)
     blx_report_init(&r);
     ok = open_saved(st, &u, &fs);
     if (ok) {
-        ok = blx_import_cp(fs, KINDS[g_kind].codepage, img, size, &r, err, sizeof err)
+        ok = blx_import_cp(fs, g_units[g_kind].codepage, img, size, &r, err, sizeof err)
              && blf_check(fs, err, sizeof err);
         if (ok && r.deleted) {              /* an image holding only new files would empty the unit: ask */
             char ask[3000];
@@ -611,7 +640,7 @@ static void add_programs(void)
         goto done;
     blx_report_init(&r);
     if (open_saved(st, &u, &fs)) {
-        got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 0, &r, err, sizeof err);
+        got = blx_add_cp(fs, g_units[g_kind].codepage, n, names, data, sizes, times, dates, 0, &r, err, sizeof err);
         if (got == BLX_ADD_EXISTS) {        /* names the unit has: asked once for the whole batch */
             char ask[3000];
             const char *line = r.log ? r.log : "";
@@ -627,7 +656,7 @@ static void add_programs(void)
             if (MessageBoxA(g_wnd, ask, "Load into flash", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES) {
                 blx_report_free(&r);
                 blx_report_init(&r);
-                got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
+                got = blx_add_cp(fs, g_units[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
                                  sizeof err);
             } else
                 cancelled = 1;
@@ -652,7 +681,7 @@ static void add_programs(void)
         report_text(msg, sizeof msg, summary, &r);
         MessageBoxA(g_wnd, msg, "Load into flash", MB_OK | MB_ICONERROR);
     } else {
-        int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
+        int tns = g_units[g_kind].kind == EMU_TYPE_N_SPEAK;
         snprintf(summary, sizeof summary, "Loaded %d file%s into flash: %d added, %d replaced. The unit was "
                  "restarted. Run a program with %s, its name, then %s; open a document with %s, its name, then %s. "
                  "(The unit as it was before is kept in %s.before-import.)", n, n == 1 ? "" : "s", r.added,
@@ -942,7 +971,7 @@ static int set_serial(const char *name, int at_start)
     if (!at_start || link)
         WritePrivateProfileStringA("serial", "port", link ? name : "none", g_ini);
     if (g_unit)
-        status(KINDS[g_kind].name);
+        status(g_units[g_kind].name);
     return link != NULL;
 }
 
@@ -965,31 +994,39 @@ static void fill_serial_menu(void)
                        : ID_SERIAL_PORT + current, MF_BYCOMMAND);
 }
 
-/* the kind's firmware is in the firmware folder */
-static int fw_present(int kind)
+/* a unit the menus always had is offered: its firmware is in the folder, or it is one of the four always listed */
+static int listed(const char *key)
 {
-    char fw[MAX_PATH];
-    snprintf(fw, sizeof fw, "%s\\%s", g_fw_dir, KINDS[kind].firmware);
-    return exists(fw);
+    int k = unit_by_key(key);
+    return k >= 0 && (g_units[k].present || g_units[k].always);
 }
 
 static HMENU make_menu(void)
 {
     HMENU bar = CreateMenu(), unit = CreatePopupMenu(), sound = CreatePopupMenu(), help = CreatePopupMenu();
-    HMENU rates = CreatePopupMenu(), buffer = CreatePopupMenu();
+    HMENU rates = CreatePopupMenu(), buffer = CreatePopupMenu(), more = NULL;
     int k;
     AppendMenuA(unit, MF_STRING, ID_EN, "Braille Lite 2000, &English");
     AppendMenuA(unit, MF_STRING, ID_ES, "Braille Lite 2000, &Spanish");
-    if (fw_present(ID_DE - ID_EN))
+    if (listed("bl-de"))
         AppendMenuA(unit, MF_STRING, ID_DE, "Braille Lite 2000, &German");
-    if (fw_present(ID_IT - ID_EN))
+    if (listed("bl-it"))
         AppendMenuA(unit, MF_STRING, ID_IT, "Braille Lite 2000, It&alian");
     AppendMenuA(unit, MF_STRING, ID_TNS_EN, "&Type 'n Speak, English");
     AppendMenuA(unit, MF_STRING, ID_TNS_ES, "Type 'n Speak, S&panish");
-    if (fw_present(ID_BNS_EN - ID_EN))
+    if (listed("bns-en"))
         AppendMenuA(unit, MF_STRING, ID_BNS_EN, "Braille 'n Speak 2000, E&nglish");
-    if (fw_present(ID_BNS_SK - ID_EN))
+    if (listed("bns-sk"))
         AppendMenuA(unit, MF_STRING, ID_BNS_SK, "Braille 'n Speak 2000, Sl&ovak");
+    /* the release units found in the firmware folder (emu_catalog.h), by name */
+    for (k = 0; k < g_n_units; k++)
+        if (g_units[k].release >= 0) {
+            if (!more)
+                more = CreatePopupMenu();
+            AppendMenuA(more, MF_STRING, ID_RELEASE + k, g_units[k].name);
+        }
+    if (more)
+        AppendMenuA(unit, MF_POPUP, (UINT_PTR)more, "&More languages");
     AppendMenuA(unit, MF_SEPARATOR, 0, NULL);
     AppendMenuA(unit, MF_STRING, ID_EXPORT, "Exp&ort files to disk image (.img)...");
     AppendMenuA(unit, MF_STRING, ID_IMPORT, "&Import files from disk image (.img)...");
@@ -1199,11 +1236,12 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         brlw_layout(g_brl, LOWORD(lp), HIWORD(lp));
         return 0;
     case WM_COMMAND:
-        switch (LOWORD(wp)) {
-        case ID_EN: case ID_ES: case ID_TNS_EN: case ID_TNS_ES: case ID_BNS_EN: case ID_BNS_SK: case ID_DE: case ID_IT:
+        if (unit_of_id(LOWORD(wp)) >= 0) {  /* a unit chosen in the Firmware menu */
             tns_release_all();
-            start_unit(LOWORD(wp) - ID_EN);
+            start_unit(unit_of_id(LOWORD(wp)));
             return 0;
+        }
+        switch (LOWORD(wp)) {
         case ID_EXIT: DestroyWindow(w); return 0;
         case ID_EXPORT: export_files(); return 0;
         case ID_IMPORT: import_files(); return 0;
@@ -1388,6 +1426,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
         snprintf(g_save_dir, sizeof g_save_dir, "%s\\ssi263-speech\\blazie-emu", appdata);
     }
     find_firmware();
+    g_n_units = emc_list(g_fw_dir, g_units, EMC_MAX);
     load_keymap();
     no_power_throttling();
     InitializeCriticalSection(&g_lock);
@@ -1436,11 +1475,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
         MessageBoxA(g_wnd, "Could not open the sound card.", "Blazie emulator", MB_OK | MB_ICONERROR);
     GetPrivateProfileStringA("unit", "kind", "english", v, sizeof v, g_ini);
     {
-        int k, start = 0;
-        for (k = 0; k < N_KINDS; k++)
-            if (!strcmp(v, KINDS[k].ini))
-                start = k;
-        start_unit(start);
+        start_unit(emc_find(g_units, g_n_units, v));
     }
     GetPrivateProfileStringA("serial", "port", "none", v, sizeof v, g_ini);
     if (_stricmp(v, "none") && v[0])

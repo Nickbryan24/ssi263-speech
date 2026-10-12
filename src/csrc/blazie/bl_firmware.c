@@ -33,6 +33,7 @@ typedef struct {
     long length;
     const char *sha256;                    /* the image */
     const char *state;                     /* the state made from it */
+    const char *name;                      /* the unit's name in the emulators' menus */
     const char *label;
 } bl_release;
 #include "bl_languages_table.h"
@@ -217,6 +218,11 @@ BL_API int blv_firmware_language(int release)
 BL_API const char *blv_release_id(int release)
 {
     return release >= 0 && release < N_KNOWN ? KNOWN[release].id : NULL;
+}
+
+BL_API const char *blv_release_name(int release)
+{
+    return release >= 0 && release < N_KNOWN ? KNOWN[release].name : NULL;
 }
 
 BL_API const char *blv_release_tag(int release)

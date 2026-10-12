@@ -11,7 +11,9 @@ including the channel left open (hiss or whine) until the firmware clicks it off
 | --- | --- |
 | `chords.h`, `chords.c` | A braille chord from separate key presses: sent when the last key of the chord comes up. Portable. |
 | `emu_unit.h`, `emu_unit.c` | One unit running in real time: create from firmware + state, render 16-bit PCM, take chords. Portable. |
-| `main_win.c` | The Windows shell: the window, the menu (firmware, idle channel, keep open, pop and tick, sample rate, sound buffer, serial port, help), the keyboard, waveOut. |
+| `emu_catalog.h`, `.c` | The units a firmware folder can run, the one list every shell reads (Windows, GTK, the terminal; Apple's emulator tab next): the eight the emulators always had, with their saved-state names and settings values unchanged, then every Braille Lite release in `../../csrc/blazie/bl_languages.txt` whose firmware is in the folder (any .BNS, by its image) -- never one whose firmware is not; a release unit's first state made by its own recipe. Portable. |
+| `test_catalog.c` | The catalog headless: the eight unchanged; in a folder holding two release files exactly those two release units, one when a file is taken away; a release unit's first state its release's hash; `CATALOG_BREAK=1` (a unit listed without its firmware) must fail. |
+| `main_win.c` | The Windows shell: the window, the menu (firmware -- its units from `emu_catalog.c`, the release units under More languages --, idle channel, keep open, pop and tick, sample rate, sound buffer, serial port, help), the keyboard, waveOut. |
 | `audio_pace.h`, `.c` | The sound queue: how many blocks the sound thread keeps at the card (automatic, short, medium, long), a gap told from the card's played position, the minute's save after rendering ahead; for the Linux shells, a card's queue and played position from its delay, and the sleep until a block is wanted. Portable: `main_win.c`, `audio_linux.c`. |
 | `test_audio.c` | The sound queue against a simulated sound card (calibrated on this desktop's waveOut): a steady card, a busy machine, a remote card, a slow save, and the gap detector -- for `main_win.c`'s sound thread and the Linux shells' (`audio_linux.c`); the Linux card's arithmetic; `--old` (the 0.7.0 draft's queue) is the must-fail control of run_tests and `tools/linux_tests.sh`. |
 | `brl_win.c`, `.h` | The unit's braille display in the Windows window (Settings > Braille display, Alt+Shift+B; off by default): a read-only field holding the cells as Unicode braille, which the screen reader shows on the user's display; the field passes every key to the window. The bars from the keyboard: Alt+Shift+Right and Left (`main_win.c`). |
@@ -54,8 +56,8 @@ The Linux shells (`README-linux.md`: build, keys, sound, the BTSpeak, the deskto
 | `test_display.c` | The braille display's bus (`../../csrc/blazie/bl_display.h`), without a unit: the dot wiring and bit order, clock and latch edges, the 18-cell board's padding, an overlong transfer refused, the 40-cell layout, reset. |
 | `test_emu_linux.py` | The whole program headless, and its serial port end to end in a pseudo-terminal. |
 | `test_bt_handover.py` | The BT hand-over: the detection against a stand-in `BTSpeak` library (and this machine, which must say no), the options a stand-in frontend receives, `--no-bt`, `bt = off`, no device and a missing frontend keeping the terminal; `BLAZIE_BT_BREAK=1` must fail. |
-| `main_gtk.c` | The desktop shell, for Orca: one GTK 3 window -- the Windows app's menu bar, a keyboard area that takes keys down and up (chords and keys held through `bl_keys.c`, the Type 'n Speak through `tns_keys.h`) with an accessible name, a status line announced to the screen reader, GTK dialogs and file chooser. Sound, settings and memory as `main_linux.c` (its unit table and settings text copied, as `main_win.c` keeps its own; `test_emu_gtk.py` checks the settings text matches). |
-| `test_emu_gtk.py` | The desktop app in Xvfb: keys through the X server, the window read through AT-SPI as Orca reads it; `BLAZIE_GTK_BREAK=noname` and `BLAZIE_KEYS_BREAK=1` must fail. |
+| `main_gtk.c` | The desktop shell, for Orca: one GTK 3 window -- the Windows app's menu bar, a keyboard area that takes keys down and up (chords and keys held through `bl_keys.c`, the Type 'n Speak through `tns_keys.h`) with an accessible name, the braille display field (Alt+Shift+B, as `brl_win.c`'s: the cells as Unicode braille for Orca, the bars on Alt+Shift+Right and Left), a status line announced to the screen reader, GTK dialogs and file chooser. Its units from `emu_catalog.c`; sound, settings and memory as `main_linux.c` (its settings text copied; `test_emu_gtk.py` checks it matches). |
+| `test_emu_gtk.py` | The desktop app in Xvfb: keys through the X server, the window read through AT-SPI as Orca reads it (the braille display field's cells too); `BLAZIE_GTK_BREAK=noname`, `BLAZIE_GTK_BREAK=brlfrozen` and `BLAZIE_KEYS_BREAK=1` must fail. |
 
 ## Keys
 
@@ -66,7 +68,7 @@ Windows (Alt opens the menu). The keys can be changed in `blazie_emu.ini` beside
 
 **The braille display** (Braille Lite): **Alt+Shift+B** (or Settings > Braille display in the window; off until you
 turn it on) shows the unit's 18 cells in a read-only field, which your screen reader shows on your own braille display
-as the unit's real dots (Unicode braille; tried with NVDA). The field keeps the keyboard, so the unit's keys work as
+as the unit's real dots (Unicode braille; tried with NVDA; on Linux the desktop app does the same for Orca). The field keeps the keyboard, so the unit's keys work as
 before. Your display's own keys stay your screen reader's: they cannot press the unit's bars, and the display does not
 advance by itself at the end of the field. From the PC keyboard: **Alt+Shift+Right Arrow** = the advance bar,
 **Alt+Shift+Left Arrow** = the back bar (on every unit but the Type 'n Speak, whose keyboard is its own). Turn off
@@ -211,6 +213,13 @@ factory state beside it, made from the firmware by `make_state.exe` (the three p
 Lite's state, three seconds; `firmware/blazie/README.txt` has the commands and hashes):
 
     make_state bns2000\BS2SLL.BNS english bns2000\bs2sll_fresh.state
+
+**More languages.** Blazie's Braille Lite 2000 updates in other languages -- the releases the emulator knows, listed
+in `src/csrc/blazie/bl_languages.txt` -- appear under Firmware > More languages when their .BNS file is anywhere in
+the firmware folder (or one folder down; found by its content, not its name), and only then. The first time one
+starts, it sets itself up from its own firmware, answering its setup questions in its own language (a few seconds:
+"Setting up the unit for its first start"); after that it keeps its memory as `<its id>.state`, as the others do.
+On Linux they follow the eight in the terminal menu (20 on) and take `--unit` with their id (`bl2_hu_1999_07`).
 
 ## The Braille 'n Speak 2000
 

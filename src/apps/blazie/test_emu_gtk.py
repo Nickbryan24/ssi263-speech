@@ -17,6 +17,10 @@ FIRMWARE_DIR as test_emu_linux.py's (BL2ENG.BNS + bl2_2003_warm.state; BL2SPA.BN
              alert (added to flash startup, how to run it), the result announced
   menu       F11 and Alt+Shift+F open the Firmware menu; Escape gives the keyboard back
   dialog     Help > About through the screen reader's own action: its text read from the alert, closed with OK
+  braille    Alt+Shift+B: the braille display field's explanation read and closed; the field ("Braille display")
+             focused, its text the English unit's 18 cells as Unicode braille; Alt+Shift+Right (the advance bar)
+             changes it; F typed in the field still reaches the unit as dot 1; Alt+Shift+B again gives the keyboard
+             area back
   announce   Firmware > the Spanish Braille Lite: "Switched to ..." announced (object:announcement), the area renamed
   bns        (FIRMWARE_DIR with bns2000/: BS03ENG.BNS, BS2SLL.BNS and their factory states) Firmware > the Slovak
              Braille 'n Speak 2000: announced, the area renamed; its files exported: the folder names in UTF-8 from
@@ -29,7 +33,8 @@ FIRMWARE_DIR as test_emu_linux.py's (BL2ENG.BNS + bl2_2003_warm.state; BL2SPA.BN
 The tree check also wants the two Braille 'n Speak 2000 items in the Firmware menu when bns2000/ is there, and none
 when it is not.
 Controls (tools/linux_tests.sh judges them by their marks): BLAZIE_GTK_BREAK=noname leaves the keyboard area
-unnamed -- tree must FAIL for that alone; BLAZIE_KEYS_BREAK=1 swaps dots 1 and 4 -- held must FAIL.
+unnamed -- tree must FAIL for that alone; BLAZIE_GTK_BREAK=brlfrozen keeps the braille display field's first cells
+-- braille must FAIL for the advance bar alone; BLAZIE_KEYS_BREAK=1 swaps dots 1 and 4 -- held must FAIL.
 """
 import os
 import re
@@ -462,6 +467,51 @@ def run_main(exe, fw, tmp, want):
                       "focused again" if back else "NOT focused"))
             emu.focus()
 
+        if want("braille"):
+            def field():
+                return find(app, "text", "Braille display")
+
+            def cells(o):
+                try:
+                    ti = o.get_text_iface()
+                    return Atspi.Text.get_text(ti, 0, Atspi.Text.get_character_count(ti))
+                except Exception:               # noqa: BLE001 (gone, or no text interface)
+                    return None
+            emu.quiet_after_boot()              # the unit idle: the bars are read once its greeting is over
+            xdo("key", "alt+shift+b")
+            alert = wait(lambda: find(app, "alert"), 10)
+            text = " ".join(labels(alert)) if alert is not None else ""
+            ok_btn = button(alert, "OK") if alert is not None else None
+            if ok_btn is not None:
+                click(ok_btn)
+            f = wait(lambda: (lambda o: o if o is not None and has_state(o, Atspi.StateType.FOCUSED) else None)(
+                field()), 10)
+            first = wait(lambda: (lambda s: s if s and len(s) == 18 else None)(cells(f)) if f is not None else None, 15)
+            braille = bool(first) and all(0x2800 <= ord(c) <= 0x28FF for c in first) and \
+                any(c != "\u2800" for c in first)
+            check("braille display field shown and focused (Alt+Shift+B)", "Alt+Shift+Right" in text and f is not None
+                  and braille, "dialog %s; field %s; text %r" % (
+                      "read and closed" if "Alt+Shift+Right" in text else "NOT read: %r" % text[:60],
+                      "focused" if f is not None else "NOT focused", first))
+            # the advance bar from the PC keyboard: the display moves on
+            xdo("keydown", "alt", "keydown", "shift", "keydown", "Right", "sleep", "0.4", "keyup", "Right",
+                "keyup", "shift", "keyup", "alt")
+            moved = wait(lambda: (lambda s: s if s and s != first else None)(cells(f)) if f is not None else None, 8)
+            check("braille display field: Alt+Shift+Right is the advance bar", bool(moved) and all(
+                0x2800 <= ord(c) <= 0x28FF for c in moved), "now %r" % moved)
+            # the unit's keys still the unit's in the field, and the field never edited
+            n0 = len([ln for ln in emu.lines() if re.match(r"^[0-9.]+ chord 0x", ln)])
+            xdo("keydown", "f", "sleep", "0.06", "keyup", "f")
+            sent = wait(lambda: [ln for ln in emu.lines() if re.match(r"^[0-9.]+ chord 0x", ln)][n0:], 3)
+            after = cells(f) if f is not None else None
+            check("braille display field: F still the unit's dot 1, the field not edited",
+                  bool(sent) and " 0x01 " in sent[0] and after is not None and "f" not in after.lower(),
+                  "sent %r; text %r" % (sent[0] if sent else None, after))
+            xdo("key", "alt+shift+b")
+            back = wait(emu.focused, 5)
+            check("braille display field off again (Alt+Shift+B): the keyboard area focused", bool(back), "")
+            emu.focus()
+
         if want("announce"):
             item = find(app, "radio menu item", "Braille Lite 2000, Spanish")
             n0 = len(events)
@@ -573,8 +623,8 @@ def run_kind(exe, fw, tmp):
     bns = bns_present(fw)
     r = subprocess.run([exe, "--unit", "nonesuch"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        universal_newlines=True, timeout=30)
-    check("--unit: the units named", r.returncode == 2 and "bl-de, bl-it, tns-en, tns-es, bns-en or bns-sk" in r.stdout,
-          "exit %d: %r" % (r.returncode, r.stdout.strip()[-80:]))
+    check("--unit: the units named", r.returncode == 2 and "bl-de, bl-it, tns-en, tns-es, bns-en, bns-sk, or a "
+          "release's id" in r.stdout, "exit %d: %r" % (r.returncode, r.stdout.strip()[-80:]))
     runs = [("kind-ini", [], "Braille 'n Speak 2000 (Slovak)" if bns else "Braille Lite 2000 (English)")]
     if bns:
         runs.append(("kind-unit", ["--unit", "bns-en"], "Braille 'n Speak 2000 (English)"))
@@ -647,8 +697,8 @@ def main():
         return only is None or n in only
     tmp = tempfile.mkdtemp(prefix="blazie_emu_gtk_test.")
     try:
-        if any(want(n) for n in ("settings", "tree", "chord", "export", "addprog", "menu", "dialog", "announce",
-                                 "bns", "tns", "exit")):
+        if any(want(n) for n in ("settings", "tree", "chord", "export", "addprog", "menu", "dialog", "braille",
+                             "announce", "bns", "tns", "exit")):
             run_main(exe, fw, tmp, want)
         if want("kind"):
             run_kind(exe, fw, tmp)

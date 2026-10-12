@@ -46,7 +46,7 @@ def load(lib_path, chip_path):
     global lib
     import test_android_native as TAN
     lib = TAN.load_reference(lib_path, chip_path)
-    for name in ("blv_firmware_label", "blv_release_id", "blv_release_tag"):
+    for name in ("blv_firmware_label", "blv_release_id", "blv_release_name", "blv_release_tag"):
         getattr(lib, name).restype = ctypes.c_char_p
         getattr(lib, name).argtypes = [ctypes.c_int]
     for name in ("blv_firmware_language", "blv_release_model", "blv_release_code_page"):
@@ -118,17 +118,17 @@ def main():
         bad += not ok
 
     if not BREAK:
-        got = [(lib.blv_release_id(k), lib.blv_release_tag(k), lib.blv_firmware_label(k),
+        got = [(lib.blv_release_id(k), lib.blv_release_name(k), lib.blv_release_tag(k), lib.blv_firmware_label(k),
                 lib.blv_firmware_language(k), lib.blv_release_model(k), lib.blv_release_code_page(k))
                for k in range(lib.blv_firmware_count())]
-        want = [(r["id"].encode(), r["tag"].encode(), r["label"].encode(), VOICE[r["voice"]], MODEL[r["model"]],
-                 int(r["cp"]) if r["cp"] != "-" else 0) for r in table]
-        result(got == want, "the library's list = bl_languages.txt (%d releases: id, language, label, voice, model, "
-               "code page)" % len(want), "" if got == want else "first difference at row %d" %
+        want = [(r["id"].encode(), r["name"].encode(), r["tag"].encode(), r["label"].encode(), VOICE[r["voice"]],
+                 MODEL[r["model"]], int(r["cp"]) if r["cp"] != "-" else 0) for r in table]
+        result(got == want, "the library's list = bl_languages.txt (%d releases: id, name, language, label, voice, "
+               "model, code page)" % len(want), "" if got == want else "first difference at row %d" %
                next(k for k in range(max(len(got), len(want))) if k >= len(got) or k >= len(want) or got[k] != want[k]))
         n = len(table)
-        result(lib.blv_release_id(n) is None and lib.blv_release_tag(-1) is None and lib.blv_release_model(n) == -1
-               and lib.blv_release_code_page(-1) == -1, "past the list: none")
+        result(lib.blv_release_id(n) is None and lib.blv_release_name(n) is None and lib.blv_release_tag(-1) is None
+               and lib.blv_release_model(n) == -1 and lib.blv_release_code_page(-1) == -1, "past the list: none")
     found = find_images(a.firmware, table)
     for k, r in enumerate(table):
         if k not in found:
@@ -161,7 +161,8 @@ def main():
     # the control remakes only the voices' releases (both recipe shapes are among them): enough to fail as named
     jobs = [(k, SHAPE[table[k]["shape"]], found[k], os.path.join(tmp, "%s.state" % table[k]["id"]))
             for k in sorted(found) if not BREAK or table[k]["voice"] != "-"]
-    with ProcessPoolExecutor(max_workers=min(len(jobs), os.cpu_count() or 1) or 1, initializer=load,
+    # half the cores: the suite runs timing-sensitive checks alongside (key latency, the open channel)
+    with ProcessPoolExecutor(max_workers=max(1, min(len(jobs), (os.cpu_count() or 2) // 2)), initializer=load,
                              initargs=(a.lib, a.chip)) as ex:
         for k, ok, got in ex.map(make, jobs):
             r = table[k]

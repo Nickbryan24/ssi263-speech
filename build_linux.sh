@@ -85,7 +85,7 @@ APP="$ROOT/src/apps/blazie"
 APPF="-O2 -std=gnu99 -ffp-contract=off -Wall -Wextra -Wno-unused-parameter -Wno-format-truncation -I$APP -I$SRC -fmacro-prefix-map=$ROOT=."
 rm -rf "$OUT/obj_emu" "$OUT/blazie_emu" "$OUT/blazie_bt" "$OUT/blazie_emu_bt"; mkdir -p "$OUT/obj_emu"
 $CC $BOARD -c -o "$OUT/obj_emu/tns_board.o" "$SRC/blazie/tns_board.c"
-for f in emu_unit chords keys term_keys bl_keys tns_term ini tns_setup tns_rescue audio_pace; do
+for f in emu_unit emu_catalog chords keys term_keys bl_keys tns_term ini tns_setup tns_rescue audio_pace; do
     $CC $APPF -c -o "$OUT/obj_emu/$f.o" "$APP/$f.c"
 done
 # the units' files (src/csrc/blazie/bl_files*.c, fat_img.c: portable C99, no unit runs)
@@ -96,6 +96,9 @@ FILES_OBJS="$OUT/obj_emu/bl_files.o $OUT/obj_emu/bl_files_state.o $OUT/obj_emu/b
 KEY_OBJS="$OUT/obj_emu/chords.o $OUT/obj_emu/keys.o $OUT/obj_emu/term_keys.o $OUT/obj_emu/bl_keys.o $OUT/obj_emu/tns_term.o $OUT/obj_emu/ini.o"
 # the unit, and the Type 'n Speak's factory setup (its cold reset's questions answered: the tests, the rescue)
 EMU_OBJS="$CHIP_OBJS $BOARD_OBJS $OUT/obj/bl_host.o $OUT/obj_emu/tns_board.o $OUT/obj_emu/emu_unit.o $OUT/obj_emu/tns_setup.o"
+# the units a firmware folder can run, one list for every shell (emu_catalog.c), with the release recipes it makes a
+# release unit's first state by
+CATALOG_OBJS="$OUT/obj_emu/emu_catalog.o $OUT/obj/bl_firmware.o $OUT/obj/bl_state.o"
 # a saved Type 'n Speak that was never set up (the previews' first start), told apart and set up anew
 RESCUE_OBJS="$OUT/obj_emu/tns_rescue.o $OUT/obj_emu/bl_files.o $OUT/obj_emu/bl_files_state.o"
 $CC $APPF -o "$OUT/test_keys" "$APP/test_keys.c" $KEY_OBJS
@@ -120,6 +123,8 @@ $CXX $SHARED_CXX -o "$OUT/test_rescue" "$OUT/obj_emu/test_rescue.o" $RESCUE_OBJS
 # Blazie's games run from the unit's files (test_games.c: Simon, Hangman; the games themselves never in the repo)
 $CC $APPF -c -o "$OUT/obj_emu/test_games.o" "$APP/test_games.c"
 $CXX $SHARED_CXX -o "$OUT/test_games" "$OUT/obj_emu/test_games.o" $FILES_OBJS $EMU_OBJS -lm
+$CC $APPF -c -o "$OUT/obj_emu/test_catalog.o" "$APP/test_catalog.c"
+$CXX $SHARED_CXX -o "$OUT/test_catalog" "$OUT/obj_emu/test_catalog.o" $CATALOG_OBJS $EMU_OBJS -lm
 # the sound buffer (audio_pace.c, portable) against a simulated sound card, and the Linux shells' reading of the
 # device's queue and played position; --old: its must-fail control (the 0.7.0 draft's queue), as on Windows
 $CC $APPF -o "$OUT/test_audio" "$APP/test_audio.c" "$OUT/obj_emu/audio_pace.o"
@@ -138,7 +143,7 @@ if [ -n "$AUDIO_LIBS" ]; then
     # program reads the device's keyboard server and BRLTTY's display itself (BrlAPI, loaded when it runs: -ldl)
     $CXX $SHARED_CXX -o "$OUT/blazie_emu" "$OUT/obj_emu/main_linux.o" "$OUT/obj_emu/bt_handover.o" "$OUT/obj_emu/audio_linux.o" \
         "$OUT/obj_emu/audio_pace.o" "$OUT/obj_emu/serial_linux.o" "$OUT/obj_emu/evdev_linux.o" $BT_OBJS $KEY_OBJS $RESCUE_OBJS \
-        "$OUT/obj_emu/bl_files_xfer.o" "$OUT/obj_emu/fat_img.o" $EMU_OBJS $AUDIO_LIBS \
+        "$OUT/obj_emu/bl_files_xfer.o" "$OUT/obj_emu/fat_img.o" $CATALOG_OBJS $EMU_OBJS $AUDIO_LIBS \
         -lpthread -ldl -lm
     echo "built $OUT/blazie_emu (sound: $SOUND)"
     # Native worker for the BT Speak / BT Braille Python frontend. Shares the same board and audio code.
@@ -161,7 +166,8 @@ if [ -n "$AUDIO_LIBS" ] && pkg-config --exists gtk+-3.0 2>/dev/null; then
         "$APP/main_gtk.c"
     $CXX $SHARED_CXX -Wl,--as-needed -o "$OUT/blazie_emu_gtk" "$OUT/obj_emu/main_gtk.o" "$OUT/obj_emu/audio_linux.o" \
         "$OUT/obj_emu/audio_pace.o" "$OUT/obj_emu/serial_linux.o" "$OUT/obj_emu/evdev_linux.o" $KEY_OBJS $RESCUE_OBJS \
-        "$OUT/obj_emu/bl_files_xfer.o" "$OUT/obj_emu/fat_img.o" $EMU_OBJS $AUDIO_LIBS $(pkg-config --libs gtk+-3.0) \
+        "$OUT/obj_emu/bl_files_xfer.o" "$OUT/obj_emu/fat_img.o" $CATALOG_OBJS $EMU_OBJS $AUDIO_LIBS \
+        $(pkg-config --libs gtk+-3.0) \
         -lpthread -lm
     echo "built $OUT/blazie_emu_gtk (GTK $(pkg-config --modversion gtk+-3.0), sound: $SOUND)"
 elif [ -n "$AUDIO_LIBS" ]; then

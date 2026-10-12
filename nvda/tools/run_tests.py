@@ -781,6 +781,15 @@ if os.path.isfile(TEST_BNS) and all(os.path.isfile(os.path.join(BNS_DIR, fw)) an
 # guess answered; the same samples with the bus answered FFh wherever the game does not read it.  Controls: the bus
 # answered FFh again (bl_board.h bl_bus_break): Simon silent from its start key, the unit locked up
 GAMES = os.path.join(FW_BLAZIE, "games")
+# the units a firmware folder can run, one list for every shell (emu_catalog.c): the eight old units unchanged (users'
+# saved-state names and settings values), a release unit only when its firmware is there, and a release unit's first
+# state its release's own; the control lists a release unit without its firmware and must fail
+TEST_CATALOG = os.path.join(EMU, "test_catalog.exe")
+if os.path.isfile(TEST_CATALOG):
+    CHECKS.append(check("emulator: the units a firmware folder can run (the catalog)", [TEST_CATALOG, FW_BLAZIE]))
+    CHECKS.append(check("emulator: the catalog CONTROL (a unit without its firmware, must fail)",
+                        [TEST_CATALOG, FW_BLAZIE], env={"CATALOG_BREAK": "1"}, expect_fail=True,
+                        fail_marks=[r"^FAIL a folder with two release files", r"^catalog: 2 FAILED$"]))
 TEST_GAMES = os.path.join(EMU, "test_games.exe")
 if os.path.isfile(TEST_GAMES):
     GAME_UNITS = [("Braille Lite ENG", ["bl", os.path.join(FW_BLAZIE, "BL2ENG.BNS"),

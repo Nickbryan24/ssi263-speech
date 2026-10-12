@@ -107,7 +107,8 @@ After a choice the menu says one line; `?` lists it again.
 in `/usr/local/bin` with a menu entry, "Blazie emulator" (Utility, Accessibility).
 
     blazie_emu_gtk                  the unit you used last
-    blazie_emu_gtk --unit tns-en    bl-en, bl-es, bl-de, bl-it, tns-en, tns-es, bns-en, bns-sk
+    blazie_emu_gtk --unit tns-en    bl-en, bl-es, bl-de, bl-it, tns-en, tns-es, bns-en, bns-sk, or a
+                                    More languages unit's id (bl2_hu_1999_07) when its firmware is there
     blazie_emu_gtk --no-sound       no sound card: the unit runs on silent
     blazie_emu_gtk --firmware DIR   --config DIR, as blazie_emu
 
@@ -120,12 +121,21 @@ Run one at a time (each saves its unit when it closes).
   when the Braille 'n Speak 2000's firmware and factory states are there; the Slovak one's file names go in and out
   in code page 852 -- Export
   files to disk image (.img), Import files from disk image (.img), Load programs and files into flash -- several files
-  at once in GTK's chooser --, Back to the factory state, Exit), Settings (Alt+E:
-  the idle channel, keep the channel open, the pop and the click, the 10 Hz tick, quick key response, Sample rate,
+  at once in GTK's chooser --, Back to the factory state, Exit; and More languages, the Braille Lite 2000 releases
+  whose firmware is in the firmware folder: README.md, "More languages"), Settings (Alt+E:
+  the idle channel, keep the channel open, the pop and the click, the 10 Hz tick, quick key response, the braille
+  display in the window, Sample rate,
   Sound buffer (below, "Sound"), Serial port: none, the serial devices present, or a pseudo-terminal), Help (Alt+H: Keys, About). Ctrl+Q exits
   (with the Braille Lite; on the Type 'n Speak Ctrl+Q is the unit's).
 - **The keyboard area**, the one thing in the window that takes the focus. When it does Orca says its name, "Braille
   Lite 2000 (English): keyboard. F11 or Alt+Shift+F opens the menu", and "panel".
+- **The braille display** (Braille Lite; off until you turn it on: **Alt+Shift+B**, or Settings > Braille display
+  in the window): a read-only field, "Braille display", holding the unit's 18 cells as Unicode braille, which Orca
+  shows on your braille display as the unit's own dots. It takes the focus and keeps the keyboard, so the unit's keys
+  work as before; the field never edits or moves. Your display's own keys stay Orca's, so they cannot press the
+  unit's bars: from the PC keyboard, **Alt+Shift+Right Arrow** is the advance bar and **Alt+Shift+Left Arrow** the
+  back bar (the Braille Lite's ; and A as well), held as long as the arrow is. Turn off contracted braille in Orca's
+  braille settings: it can interfere with the unit's cells. The Windows app's field, the same way (README.md).
 - **The status line**: short results -- "Switched to the Type 'n Speak (Spanish).", "Exported 12 files to ...",
   "Sample rate 22050 Hz." -- which Orca speaks as they come (ATK's announcement: ATK 2.46 and later, as on Debian 12
   and 13; with an older one the line is only there to read, with Orca's flat review).

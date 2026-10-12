@@ -128,8 +128,12 @@ def main():
     # the sound queue against a simulated sound card (Tomi: the emulator's speech stutters); --old: its control
     link("test_audio.exe", [compile_c(os.path.join(HERE, "test_audio.c"), APP), os.path.join(obj, "audio_pace.o")],
          libs=())
-    link("blazie_emu.exe", unit + shell + files + [rescue], libs=("-lwinmm", "-lsetupapi", "-lcomdlg32", "-lm"),
-         extra=("-mwindows",))
+    # the units a firmware folder can run, one list for every shell (emu_catalog.c), with the release recipes it
+    # makes a release unit's first state by (bl_state.c, bl_firmware.c)
+    recipes = [compile_c(os.path.join(BLAZIE, f + ".c"), BOARD) for f in ("bl_state", "bl_firmware")]
+    catalog = compile_c(os.path.join(HERE, "emu_catalog.c"), APP)
+    link("blazie_emu.exe", unit + shell + files + [rescue, catalog] + recipes,
+         libs=("-lwinmm", "-lsetupapi", "-lcomdlg32", "-lm"), extra=("-mwindows",))
     link("test_rescue.exe", [compile_c(os.path.join(HERE, "test_rescue.c"), APP), rescue] + unit + files)
     link("test_chords.exe", [compile_c(os.path.join(HERE, "test_chords.c"), APP), chords], libs=())
     # the same from the command line, on a saved state (no unit runs: Linux and the BTSpeak build it alone)
@@ -171,9 +175,11 @@ def main():
         link(exe, [serial_win, win] + objs, libs=("-lsetupapi", "-lm"))
     # the Braille 'n Speak 2000 (Tomi: the Slovak firmware): its factory states made from its firmware by the state
     # recipe (bl_state.c), and its checks on the board -- the units told apart, its words through the chip's writes
-    recipes = [compile_c(os.path.join(BLAZIE, f + ".c"), BOARD) for f in ("bl_state", "bl_firmware")]
     link("make_state.exe", [compile_c(os.path.join(HERE, "make_state.c"), APP)] + recipes + chip + board())
     link("test_bns.exe", [compile_c(os.path.join(HERE, "test_bns.c"), APP)] + recipes + chip + board())
+    # the catalog's headless test
+    link("test_catalog.exe", [compile_c(os.path.join(HERE, "test_catalog.c"), APP), catalog] + recipes + chip +
+         board())
     # the idle channel's sounds against the unit's (run_tests passes the firmware); its board built with the test hooks
     # its must-fail controls use (bl_idle.c, BLI_TEST_HOOKS)
     link("test_idle.exe", [compile_c(os.path.join(HERE, "test_idle.c"), ["-O2"])] + chip + board("hooks"))

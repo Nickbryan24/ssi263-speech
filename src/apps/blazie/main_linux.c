@@ -44,6 +44,7 @@
 #include "brl_linux.h"
 #include "bt_handover.h"
 #include "btkb_linux.h"
+#include "emu_catalog.h"
 #include "emu_unit.h"
 #include "evdev_linux.h"
 #include "ini.h"
@@ -61,41 +62,14 @@
 #define RATE_MAX 48000
 #define AUTOSAVE_S 60.0
 
-/* firmware: the folder's layout as the repository's firmware/blazie (spanish/, tns/), or all in one folder (the
-   Linux package's share/ssi263-speech) -- the first that exists.  state NULL: a cold start (the Type 'n Speak's cold
-   reset asks how to set itself up: tns_setup.h, TNS_FIRST_START). */
-typedef struct {
-    const char *name, *id;
-    int kind;
-    const char *firmware[2], *state[2];
-    const char *saved, *ini;
-    int codepage;                   /* its names' code page (bl_files_xfer.h): 852 for the Slovak unit */
-} unit_kind;
-static const unit_kind KINDS[] = {
-    {"Braille Lite 2000 (English)", "bl-en", EMU_BRAILLE_LITE, {"BL2ENG.BNS", NULL}, {"bl2_2003_warm.state", NULL},
-     "english.state", "english", BLX_CP850},
-    {"Braille Lite 2000 (Spanish)", "bl-es", EMU_BRAILLE_LITE, {"spanish/BL2SPA.BNS", "BL2SPA.BNS"},
-     {"spanish/bl2spa_fresh.state", "bl2spa_fresh.state"}, "spanish.state", "spanish", BLX_CP850},
-    {"Type 'n Speak (English)", "tns-en", EMU_TYPE_N_SPEAK, {"tns/TNSENG.TNS", "TNSENG.TNS"}, {NULL, NULL},
-     "tns_english.state", "tns_english", BLX_CP850},
-    {"Type 'n Speak (Spanish)", "tns-es", EMU_TYPE_N_SPEAK, {"tns/TNSSPA.TNS", "TNSSPA.TNS"}, {NULL, NULL},
-     "tns_spanish.state", "tns_spanish", BLX_CP850},
-    /* the Braille 'n Speak 2000 on the Braille Lite's board (emu_unit.h emu_model), in the menu when its firmware is
-       there (menu numbers 15 and 16: 5-14 are the settings, 17 the sound buffer); its factory states made by
-       make_state (make_state.c) */
-    {"Braille 'n Speak 2000 (English)", "bns-en", EMU_BRAILLE_LITE, {"bns2000/BS03ENG.BNS", "BS03ENG.BNS"},
-     {"bns2000/bs03eng_fresh.state", "bs03eng_fresh.state"}, "bns_english.state", "bns_english", BLX_CP850},
-    {"Braille 'n Speak 2000 (Slovak)", "bns-sk", EMU_BRAILLE_LITE, {"bns2000/BS2SLL.BNS", "BS2SLL.BNS"},
-     {"bns2000/bs2sll_fresh.state", "bs2sll_fresh.state"}, "bns_slovak.state", "bns_slovak", BLX_CP852},
-    /* Blazie's September 2000 German and Italian updates (an anonymous donation), menu numbers 18 and 19; their
-       factory states made by make_state (bl_state.c's recipes) */
-    {"Braille Lite 2000 (German)", "bl-de", EMU_BRAILLE_LITE, {"german/Lite2000.BNS", "Lite2000_de.BNS"},
-     {"german/lite2000_de_fresh.state", "lite2000_de_fresh.state"}, "german.state", "german", BLX_CP850},
-    {"Braille Lite 2000 (Italian)", "bl-it", EMU_BRAILLE_LITE, {"italian/Lite2000.BNS", "Lite2000_it.BNS"},
-     {"italian/lite2000_it_fresh.state", "lite2000_it_fresh.state"}, "italian.state", "italian", BLX_CP850},
-};
-#define N_KINDS ((int)(sizeof KINDS / sizeof KINDS[0]))
-#define N_FIRST_KINDS 4             /* the menu's 1-4; the kinds after them are 15 on, past the sound buffer's 17 */
+/* the units: emu_catalog.h's list, the one every shell reads (made once the firmware folder is known) -- the eight
+   the emulators always had, then the release units whose firmware is in the folder.  A unit with no factory state is a
+   cold start (the Type 'n Speak's cold reset asks how to set itself up: tns_setup.h, TNS_FIRST_START), or a release
+   unit whose factory state is made the first time it starts. */
+static emc_unit g_units[EMC_MAX];
+static int g_n_units;
+#define N_FIRST_KINDS 4             /* the menu's 1-4; the kinds after them are 15 on, past the sound buffer's 17:
+                                       the Braille 'n Speak 15, 16, German and Italian 18, 19, the release units 20 on */
 #define MENU_LATER_KINDS 15
 #define MENU_BUFFER 17              /* the sound buffer: after the settings 5-14 and the Braille 'n Speak's 15, 16 (it
                                        kept its number when German and Italian came: 18, 19) */
@@ -235,22 +209,7 @@ static void make_dirs(const char *path)
 
 static void saved_path(int kind, char *out, int cap)
 {
-    snprintf(out, (size_t)cap, "%s/%s", g_cfg_dir, KINDS[kind].saved);
-}
-
-/* the first of a kind's two names that is in the firmware folder ("" if neither) */
-static void fw_file(const char *const names[2], char *out, int cap)
-{
-    int i;
-    out[0] = 0;
-    for (i = 0; i < 2; i++)
-        if (names[i]) {
-            snprintf(out, (size_t)cap, "%s/%s", g_fw_dir, names[i]);
-            if (exists(out))
-                return;
-        }
-    if (names[0])
-        snprintf(out, (size_t)cap, "%s/%s", g_fw_dir, names[0]);   /* named in the error */
+    snprintf(out, (size_t)cap, "%s/%s", g_cfg_dir, g_units[kind].saved);
 }
 
 /* the menu's number for a kind (1-4, then 15 on), and the kind for a number (-1: none); a kind after the first four
@@ -263,17 +222,13 @@ static int kind_menu_number(int kind)
 
 static int kind_offered(int kind)
 {
-    char fw[PATH_MAX];
-    if (kind < N_FIRST_KINDS)
-        return 1;
-    fw_file(KINDS[kind].firmware, fw, sizeof fw);
-    return exists(fw);
+    return g_units[kind].always || g_units[kind].present;
 }
 
 static int kind_of_menu_number(int n)
 {
     int k;
-    for (k = 0; k < N_KINDS; k++)
+    for (k = 0; k < g_n_units; k++)
         if (kind_menu_number(k) == n && kind_offered(k))
             return k;
     return -1;
@@ -432,7 +387,7 @@ static void save_settings(void)
     char v[16];
     if (g_headless)
         return;
-    ini_set(g_ini, "unit", "kind", KINDS[g_kind].ini);
+    ini_set(g_ini, "unit", "kind", g_units[g_kind].ini);
     ini_set(g_ini, "unit", "quick_keys", g_quick ? "1" : "0");
     ini_set(g_ini, "sound", "idle", IDLE_NAMES[g_whine]);
     ini_set(g_ini, "sound", "keep_open", OPEN_NAMES[g_keep_open]);
@@ -508,7 +463,7 @@ static int offer_setup(int kind, const char *fw, const char *st)
     snprintf(before, sizeof before, "%s.before-setup", st);
     say("This %s was never set up: its file system and folders were not made when it first started (the 0.6 and "
         "0.7 previews' first start missed the unit's cold reset; or a setup question was answered n). On it a new "
-        "file can lose its first letter, and a file moved to flash is lost.", KINDS[kind].name);
+        "file can lose its first letter, and a file moved to flash is lost.", g_units[kind].name);
     say("Its files: %d in RAM%s.", r.ram_files, r.lost_flash ? ", and some it lost when moving them to flash (their "
         "text was never written: only their names are left)" : "");
     if (g_headless)
@@ -555,28 +510,44 @@ static int start_unit(int kind, const char *state_given)
 {
     char fw[PATH_MAX], st[PATH_MAX], err[300];
     const char *state = st;
+    int scratch = 0;                            /* st is a first start's file of its own, removed once read */
     emu_unit *u, *old;
     save_unit();                                /* first: the unit being left keeps its memory (it may be this kind) */
-    fw_file(KINDS[kind].firmware, fw, sizeof fw);
+    snprintf(fw, sizeof fw, "%s", g_units[kind].firmware);
     if (state_given)
         snprintf(st, sizeof st, "%s", state_given);
     else {
         saved_path(kind, st, sizeof st);
-        if (exists(st) && KINDS[kind].kind == EMU_TYPE_N_SPEAK && !offer_setup(kind, fw, st))
+        if (exists(st) && g_units[kind].kind == EMU_TYPE_N_SPEAK && !offer_setup(kind, fw, st))
             state = NULL;                       /* the factory state: the unit's cold reset, its own questions */
-        else if (!exists(st)) {                 /* the first time: the unit as it left the factory */
-            if (KINDS[kind].state[0])
-                fw_file(KINDS[kind].state, st, sizeof st);
+        else if (!exists(st) && emc_needs_factory(&g_units[kind])) {
+            /* a release unit's first start: its factory state made from its firmware, by its own recipe, as its
+               memory (headless with no memory kept: a file of its own, removed once the unit has read it) */
+            if (g_headless && !exists(g_cfg_dir)) {
+                snprintf(st, sizeof st, "/tmp/blazie-emu-%ld-%s", (long)getpid(), g_units[kind].saved);
+                scratch = 1;
+            }
+            say("Setting up the %s for its first start (a few seconds).", g_units[kind].name);
+            make_dirs(g_cfg_dir);
+            if (!emc_make_factory(&g_units[kind], st, NULL, NULL, err, sizeof err)) {
+                say("Could not set up the %s for its first start: %s", g_units[kind].name, err);
+                return 0;
+            }
+        } else if (!exists(st)) {               /* the first time: the unit as it left the factory */
+            if (g_units[kind].factory[0])
+                snprintf(st, sizeof st, "%s", g_units[kind].factory);
             else
                 state = NULL;                   /* a cold start */
         } else if (!g_headless)
             say("Its memory: %s", st);
     }
     if (g_headless)
-        say("starting %s from %s", KINDS[kind].id, state ? st : "cold");
-    u = emu_create(KINDS[kind].kind, fw, state, g_rate, g_whine, err, sizeof err);
+        say("starting %s from %s", g_units[kind].key, state ? st : "cold");
+    u = emu_create(g_units[kind].kind, fw, state, g_rate, g_whine, err, sizeof err);
+    if (scratch)
+        remove(st);
     if (!u) {
-        say("Could not start the %s: %s", KINDS[kind].name, err);
+        say("Could not start the %s: %s", g_units[kind].name, err);
         say("The firmware is looked for in %s (firmware_dir in %s, or --firmware).", g_fw_dir, g_ini_path);
         return 0;
     }
@@ -594,8 +565,8 @@ static int start_unit(int kind, const char *state_given)
     pthread_mutex_unlock(&g_lock);
     emu_destroy(old);
     if (!g_headless) {
-        say("%s is on.", KINDS[kind].name);
-        if (KINDS[kind].kind == EMU_TYPE_N_SPEAK && !state)
+        say("%s is on.", g_units[kind].name);
+        if (g_units[kind].kind == EMU_TYPE_N_SPEAK && !state)
             say("%s", TNS_FIRST_START);
         save_settings();
     }
@@ -904,7 +875,7 @@ static void tns_send(int code)
 /* one key, from the terminal or an input device */
 static void key_in(const key_event *e, double now)
 {
-    int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
+    int tns = g_units[g_kind].kind == EMU_TYPE_N_SPEAK;
     g_now_for_print = now;
     if (e->type != KE_UP && key_in_list(e, tns ? g_menu_tns : g_menu_bl, tns ? g_n_menu_tns : g_n_menu_bl)) {
         if (g_headless)
@@ -1135,7 +1106,7 @@ static void load_programs(void)
     if (bls_load(st, &u, err, sizeof err)) {
         fs = blf_open(u.model, u.ram, u.flash, u.flash_size, err, sizeof err);
         if (fs) {
-            got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 0, &r, err, sizeof err);
+            got = blx_add_cp(fs, g_units[g_kind].codepage, n, names, data, sizes, times, dates, 0, &r, err, sizeof err);
             if (got == BLX_ADD_EXISTS) {        /* names the unit has: asked once for the whole batch */
                 const char *p = r.log ? r.log : "";
                 say("The unit has files of these names already:");
@@ -1151,7 +1122,7 @@ static void load_programs(void)
                 if (!strcmp(line, "yes")) {
                     blx_report_free(&r);
                     blx_report_init(&r);
-                    got = blx_add_cp(fs, KINDS[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
+                    got = blx_add_cp(fs, g_units[g_kind].codepage, n, names, data, sizes, times, dates, 1, &r, err,
                                      sizeof err);
                 } else
                     snprintf(err, sizeof err, "not replaced");
@@ -1180,7 +1151,7 @@ static void load_programs(void)
     if (!ok)
         say("Nothing was loaded: %s. The unit's files are as they were.", err);
     else {
-        int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
+        int tns = g_units[g_kind].kind == EMU_TYPE_N_SPEAK;
         say("Loaded %d file%s into flash: %d added, %d replaced. Run a program with %s, its name, then %s; open a "
             "document with %s, its name, then %s. (The unit as it was before is kept in %s.before-import.)", n,
             n == 1 ? "" : "s", r.added, r.replaced, tns ? "F9 x" : "o-chord x", tns ? "Enter" : "e-chord",
@@ -1231,7 +1202,7 @@ static void menu(void)
         list = 0;
         say("Menu. Type a number and Enter; Enter alone goes back to the unit.");
         for (k = 0; k < N_FIRST_KINDS; k++)
-            say("  %d %s%s", kind_menu_number(k), KINDS[k].name, k == g_kind ? " (on now)" : "");
+            say("  %d %s%s", kind_menu_number(k), g_units[k].name, k == g_kind ? " (on now)" : "");
         say("  5 Back to the factory state (erases this unit's files)");
         say("  6 Sample rate: %d Hz", g_rate);
         say("  7 Idle channel sound: %s", IDLE_TEXT[g_whine]);
@@ -1244,17 +1215,17 @@ static void menu(void)
             ? "letters (each character its braille cell)" : "keys (F D S J K L)");
         say("  14 Keys (help)");
         say("  p Load programs and files into flash: programs and games (.bns), BASIC, text, braille; several at once");
-        for (k = N_FIRST_KINDS; k < N_KINDS; k++)   /* in number order: 15, 16, the sound buffer's 17, 18 on */
+        for (k = N_FIRST_KINDS; k < g_n_units; k++) /* in number order: 15, 16, the sound buffer's 17, 18 on */
             if (kind_offered(k) && kind_menu_number(k) < MENU_BUFFER)
-                say("  %d %s%s", kind_menu_number(k), KINDS[k].name, k == g_kind ? " (on now)" : "");
+                say("  %d %s%s", kind_menu_number(k), g_units[k].name, k == g_kind ? " (on now)" : "");
         {
             char b[80];
             buffer_line(b, sizeof b);
             say("  %d Sound buffer: %s", MENU_BUFFER, b);
         }
-        for (k = N_FIRST_KINDS; k < N_KINDS; k++)
+        for (k = N_FIRST_KINDS; k < g_n_units; k++)
             if (kind_offered(k) && kind_menu_number(k) > MENU_BUFFER)
-                say("  %d %s%s", kind_menu_number(k), KINDS[k].name, k == g_kind ? " (on now)" : "");
+                say("  %d %s%s", kind_menu_number(k), g_units[k].name, k == g_kind ? " (on now)" : "");
         say("  0 Exit (the unit's memory is saved)");
         read_line(line, sizeof line);
         if (!line[0])
@@ -1275,7 +1246,7 @@ chosen:
             emu_unit *old;
             say("Put the %s back as it left the factory? "
                 "Its files and settings are erased, and a firmware update it was given. Type yes:",
-                KINDS[g_kind].name);
+                g_units[g_kind].name);
             read_line(line, sizeof line);
             if (strcmp(line, "yes")) {
                 say("Kept.");
@@ -1384,7 +1355,7 @@ done:
     if (!g_quit) {
         bt_take(0);
         display_refresh(1);
-        say("Back to the %s.", KINDS[g_kind].name);
+        say("Back to the %s.", g_units[g_kind].name);
     }
 }
 
@@ -1745,13 +1716,15 @@ int main(int argc, char **argv)
     if (show)
         return show_keys();
 
+    g_n_units = emc_list(g_fw_dir, g_units, EMC_MAX);
     snprintf(v, sizeof v, "%s", ini_get(g_ini, "unit", "kind", "english"));
-    for (i = 0; i < N_KINDS; i++)
-        if (unit_id ? !strcmp(unit_id, KINDS[i].id) : !strcmp(v, KINDS[i].ini))
+    for (i = 0; i < g_n_units; i++)
+        if (unit_id ? !strcmp(unit_id, g_units[i].key) : !strcmp(v, g_units[i].ini))
             kind = i;
     if (kind < 0) {
         if (unit_id) {
-            fprintf(stderr, "blazie_emu: --unit bl-en, bl-es, bl-de, bl-it, tns-en, tns-es, bns-en or bns-sk\n");
+            fprintf(stderr, "blazie_emu: --unit bl-en, bl-es, bl-de, bl-it, tns-en, tns-es, bns-en, bns-sk, or a "
+                    "release's id whose firmware is in the firmware folder\n");
             return 2;
         }
         kind = 0;
@@ -1882,7 +1855,7 @@ int main(int argc, char **argv)
                         key_in(&ev[j], now);
                 } else {
                     int k = term_dec_feed(&g_term, b, (int)got, now, ev, 256), j;
-                    int tns = KINDS[g_kind].kind == EMU_TYPE_N_SPEAK;
+                    int tns = g_units[g_kind].kind == EMU_TYPE_N_SPEAK;
                     for (j = 0; j < k; j++)
                         if (key_in_list(&ev[j], tns ? g_menu_tns : g_menu_bl, tns ? g_n_menu_tns : g_n_menu_bl))
                             menu();

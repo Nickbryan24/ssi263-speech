@@ -55,10 +55,11 @@ BL_API int blv_state_check(const char *bns_path, const char *state_path);
 
 /* The list by release (bl_languages.txt, one row per firmware image; 0 .. blv_firmware_count() - 1), for the voices
    and the emulator alike: the release a .BNS holds (its image from 3000h) or -1; its stable id ("bl2_de_2000_09"),
-   language (BCP 47), model (bl_board.h BL_MODEL_*) and DOS code page (850, 852; 0 not yet read) -- NULL / -1 past the
+   name in the emulators' menus ("Braille Lite 2000 (German)"), language (BCP 47), model (bl_board.h BL_MODEL_*) and DOS code page (850, 852; 0 not yet read) -- NULL / -1 past the
    end; and its state, made by its own recipe (the shape and the answer its row names), as blv_make_state. */
 BL_API int blv_release_of(const char *bns_path);
 BL_API const char *blv_release_id(int release);
+BL_API const char *blv_release_name(int release);
 BL_API const char *blv_release_tag(int release);
 BL_API int blv_release_model(int release);
 BL_API int blv_release_code_page(int release);
