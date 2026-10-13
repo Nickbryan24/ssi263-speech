@@ -348,10 +348,10 @@ pi_all() {                          # armhf (needs no CI build) may already be r
     has() { echo " $ARCHES " | grep -q " $1 "; }
     [ -n "${1:-}" ] && wait "$1"
     [ -z "${1:-}" ] && has armhf && pi_arch armhf
-    xp=""
-    if has x86_64; then pi_arch x86_64 & xp=$!; fi
+    # one after the other: x86_64's qemu takes every core, and aarch64's gate has real-time checks (a key held
+    # through a restart, the GTK window) that failed beside it (0.8.0's first run; each passed alone)
     has aarch64 && pi_arch aarch64
-    [ -n "$xp" ] && wait "$xp"
+    has x86_64 && pi_arch x86_64
 }
 
 fetch() {

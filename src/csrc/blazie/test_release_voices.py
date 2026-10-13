@@ -21,8 +21,6 @@ import sys
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
 
-import numpy as np
-
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 sys.path.insert(0, HERE)
@@ -64,20 +62,34 @@ def speak(job):
     if not v:
         return k, "voice: " + err.value.decode(errors="replace"), 0, 0, 0
     lib.blv_speak(v, TEXT)
-    pcm, done, out, total = ctypes.POINTER(ctypes.c_short)(), ctypes.c_int(0), [], 0
+    pcm, done, y, total = ctypes.POINTER(ctypes.c_short)(), ctypes.c_int(0), [], 0
     while not done.value and total < 12 * RATE:
         n = lib.blv_render(v, ctypes.byref(pcm), ctypes.byref(done))
         if n:
-            out.append(np.ctypeslib.as_array(pcm, shape=(n,)).astype(float) / 32768)
+            y.extend(pcm[i] / 32768 for i in range(n))
             total += n
     lib.blv_destroy(v)
     os.remove(st)
-    y = np.concatenate(out) if out else np.zeros(1)
+    y = y or [0.0]
+    sq = [s * s for s in y]
+    return k, None, total / RATE if done.value else 99.0, speech_span(sq), (sum(sq) / len(sq)) ** 0.5
+
+
+def speech_span(sq):
+    """Seconds from the first to the last sample whose 10 ms RMS (a centred moving mean of the squares, numpy's
+    convolve "same") is over 0.01 -- in plain Python, so the test needs no numpy (the Pi's Debian has none)."""
     w = RATE // 100
-    env = np.sqrt(np.convolve(y * y, np.ones(w) / w, "same")) if len(y) > w else np.abs(y)
-    loud = np.flatnonzero(env > 0.01)
-    return k, None, total / RATE if done.value else 99.0, (loud[-1] - loud[0]) / RATE if len(loud) else 0.0, \
-        float(np.sqrt(np.mean(y * y)))
+    n = len(sq)
+    if n <= w:
+        loud = [i for i, s in enumerate(sq) if s ** 0.5 > 0.01]
+    else:
+        pre = [0.0]
+        for s in sq:
+            pre.append(pre[-1] + s)
+        h = (w - 1) // 2               # convolve "same": output i is the full output's i + (w-1)//2
+        loud = [i for i in range(n)
+                if (pre[min(n, i + h + 1)] - pre[max(0, i + h + 1 - w)]) / w > 0.0001]
+    return (loud[-1] - loud[0]) / RATE if loud else 0.0
 
 
 def main():

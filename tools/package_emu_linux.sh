@@ -38,7 +38,10 @@ cp -p "$PKG"/bin/blazie_* "$S/bin/"
 cp -p "$PKG/README-blazie-emu.md" "$PKG/LICENSE" "$S/"
 [ -f "$PKG/README-blazie-bt.md" ] && cp -p "$PKG/README-blazie-bt.md" "$S/"
 cp -p "$PKG/licenses/Casso-MIT.txt" "$PKG/licenses/MAME-Z180-core-BSD-3-Clause.txt" "$S/licenses/"
-(cd "$PKG/share/ssi263-speech" && tar -cf - --exclude=./speech-dispatcher .) | (cd "$S/share/ssi263-speech" && tar -xf -)
+# the package's Slovak voice files (0.8: the speech module's flat copies) stay out: the emulator's Braille 'n Speak
+# 2000 is the bns2000/ folder below, and nothing else may hold a Braille 'n Speak image
+(cd "$PKG/share/ssi263-speech" && tar -cf - --exclude=./speech-dispatcher --exclude=./BS2SLL.BNS \
+    --exclude=./bs2sll_fresh.state .) | (cd "$S/share/ssi263-speech" && tar -xf -)
 [ -d "$PKG/share/applications" ] && cp -pr "$PKG/share/applications" "$S/share/"
 mkdir -p "$S/share/ssi263-speech/bns2000"
 for fh in $BNS_FILES; do
