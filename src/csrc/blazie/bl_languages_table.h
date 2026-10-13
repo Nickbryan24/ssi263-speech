@@ -203,6 +203,12 @@ static const bl_release KNOWN[] = {
      "0b24ba60ba749214688bac563279c88dc82c67595a9d8dc47e889d63b8f95416",
      "Braille Lite 2000 (Russian)", "Braille Lite 2000 (Russian)", "BL2RUS.BNS",
      "Braille Lite Russian (BL2RUS.BNS): the December 28, 1998 revision"},
+    {"bns2_es_2000_09", BL_MODEL_BNS2000, "es", BLV_FW_NONE, NULL, BLV_SHAPE_SLOW, 0x0E,
+     0, BLV_LATIN1, 0, 0, 0, 261749,
+     "6e3275b7e7691e8dbb9ef7675b43ec29c8c69c83a77fdacf4f72d3de130856b4",
+     "29fba9d4c5f443722d337f41645c3d6bd197169acffac15e1690cb9a21bfda52",
+     "Braille 'n Speak 2000 (Spanish, September 2000)", NULL, "BS2SPA.BNS",
+     "Spanish BNS2000 revision A; direct firmware boot and file persistence manually verified; speech-box mode and accented encoding not verified"},
 };
 
 #endif
