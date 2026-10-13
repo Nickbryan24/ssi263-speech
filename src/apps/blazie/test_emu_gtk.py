@@ -430,7 +430,12 @@ def run_main(exe, fw, tmp, want):
             ok_btn = button(alert, "OK") if alert is not None else None
             if ok_btn is not None:
                 click(ok_btn)
-            ann = wait(lambda: said("Loaded ", n0), 10)
+            # a load is read out by its alert, so the app does not announce it too (set_status(0, ...): Orca would
+            # say it twice); the status bar keeps the summary -- what this check hears, with or without an ATK that
+            # announces (Debian 13's does: it waited for an announcement that never comes)
+            sb = find(app, "status bar")
+            ann = wait(lambda: said("Loaded ", n0) or ([name(sb)] if sb is not None and name(sb).startswith("Loaded ")
+                                                       else []), 10)
             check("load programs: chooser, the batch added, read out", item is not None and chooser is not None
                   and "Loaded 1 file into flash: 1 added" in text and "added tetris.bns to flash startup" in text
                   and "o-chord x" in text and bool(ann), "item %s; chooser %s; alert %r; announced %r" % (
