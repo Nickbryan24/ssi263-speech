@@ -252,8 +252,12 @@ def btspeak_session(exe, fw, cfg):
             pump(1.5)
             if len(conns) > 1:                 # Z-chord with dot 7: saved, and the program ends of itself
                 chord(SPACE, [DOT[1], DOT[3], DOT[5], DOT[6], DOT7])
-                pump(3.0)
-                ended = os.waitpid(pid, os.WNOHANG)[0] == pid
+                pump(3.0)                      # returns at once when the program closes its terminal ...
+                t0 = time.time()               # ... which can come a moment before its exit (armhf: every time)
+                while not ended and time.time() - t0 < 3.0:
+                    ended = os.waitpid(pid, os.WNOHANG)[0] == pid
+                    if not ended:
+                        time.sleep(0.05)
     finally:
         if not ended:
             try:

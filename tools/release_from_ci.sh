@@ -166,12 +166,13 @@ pi_verify() {                       # in $O, its assets: audit, GLIBC floor, con
 }
 
 # armhf's GTK window checks: the armhf Xvfb segfaults at start on the Pi 5's 16K-page kernel (a test host limit), so the
-# gate's three GTK window checks fail there for want of an X server.  When they are the gate's only failures, they run
+# gate's GTK window checks (the window, and the accessibility, held keys and two braille display controls) fail there
+# for want of an X server.  When they are the gate's only failures, they run
 # again against the arm64 chroot's Xvfb -- the program under test is still the armhf build -- with the gate's own marks
 # for the controls; if all hold, the gate's line becomes "tests superseded" with the reason (STATUS shows it).
 armhf_gtk() {                       # after the armhf run: $D its chroot, $CH its home, $H the two joined, $L, $AW
     others="$(grep '^FAIL' "$L/tests.log" | grep -v -E \
-        '^FAIL  emulator \(GTK\): (the window as Orca reads it|accessibility CONTROL|held keys CONTROL)')"
+        '^FAIL  emulator \(GTK\): (the window as Orca reads it|accessibility CONTROL|held keys CONTROL|braille display CONTROL)')"
     [ -z "$others" ] && grep -q '^tests exit=1$' "$L/EXITCODES" || return 0
     A64=/srv/arm64-bullseye
     sh "$AW/mkchroot.sh" arm64 "$A64" bullseye > "$L/chroot_arm64.log" 2>&1 || { echo "arm64 chroot FAILED"; return 0; }
@@ -194,6 +195,14 @@ armhf_gtk() {                       # after the armhf run: $D its chroot, $CH it
       control "emulator (GTK): held keys CONTROL (dots 1 and 4 swapped, must fail)" \
         "^FAIL +i-chord held through the restart +the unit asked \"initialize file system\": no" \
         "^gtk emulator: 1 of 1 FAILED$" -- gx env BLAZIE_KEYS_BREAK=1 sh -c "$T --only held"
+      # the braille display field's two controls (0.8), with linux_tests.sh's marks
+      control "emulator (GTK): braille display CONTROL (the field frozen, must fail)" \
+        "^ok +braille display field shown and focused" "^FAIL +braille display field: Alt\+Shift\+Right is the advance bar" \
+        "^gtk emulator: 1 of 5 FAILED$" -- gx env BLAZIE_GTK_BREAK=brlfrozen sh -c "$T --only braille"
+      control "emulator (GTK): braille display CONTROL (read-only and named, must fail)" \
+        "^FAIL +braille display field: editable to a screen reader" \
+        "^ok +braille display field: Alt\+Shift\+Right is the advance bar" \
+        "^gtk emulator: 1 of 5 FAILED$" -- gx env BLAZIE_GTK_BREAK=brlreadonly sh -c "$T --only braille"
     } > "$L/gtk_arm64_x_controls.log" 2>&1
     echo "gtk_arm64_x_controls exit=$fail" >> "$L/EXITCODES"
     sudo pkill -f "^Xvfb :57 "
