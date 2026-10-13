@@ -10,6 +10,7 @@
     firmware/spanish/  german/  italian/   each Braille Lite 2000's update file and factory state
     firmware/tns/      the Type 'n Speak's two
     firmware/bns2000/  the Braille 'n Speak 2000's, English and Slovak
+    firmware/bl2000/   the Braille Lite 2000's language updates (0.8): 17 firmware files and their states
     build-info.json    the version, the commit, every file's sha256
 
 The firmware folder is the person's own (never in the repository), laid out as firmware/blazie: each file is checked
@@ -90,6 +91,21 @@ def main():
              ("licenses/MAME-Z180-core-BSD-3-Clause.txt",
               os.path.join(ROOT, "src", "csrc", "cpu", "mame_z180", "LICENSE-BSD-3-Clause.txt"))]
     files += [("firmware/" + name, os.path.join(fw, name)) for name, _ in FIRMWARE]
+    # the Braille Lite 2000's language updates (0.8): firmware/bl2000/, each file byte for byte the published NVDA
+    # add-on's copy (the catalog finds them one folder down, as the Linux archive's share/ssi263-speech/bl2000/)
+    addon = os.path.join(ROOT, "nvda", "dist", "ssi263-speech-%s.nvda-addon" % version)
+    if not os.path.isfile(addon):
+        fail("no %s: its bl2000/ files are the ones this archive must carry" % addon)
+    with zipfile.ZipFile(addon) as z:
+        theirs = {n.rsplit("/", 1)[1]: hashlib.sha256(z.read(n)).hexdigest() for n in z.namelist()
+                  if "/_ssi263_blazie/bl2000/" in n and not n.endswith("/")}
+    ours = sorted(os.listdir(os.path.join(fw, "bl2000"))) if os.path.isdir(os.path.join(fw, "bl2000")) else []
+    if sorted(theirs) != [n for n in ours if n in theirs] or len(theirs) != 34:
+        fail("bl2000/: the add-on has %d files, the firmware folder %d of them" % (len(theirs), sum(n in theirs for n in ours)))
+    for n in sorted(theirs):
+        if sha256(os.path.join(fw, "bl2000", n)) != theirs[n]:
+            fail("bl2000/%s differs from the add-on's" % n)
+        files.append(("firmware/bl2000/" + n, os.path.join(fw, "bl2000", n)))
     for _, src in files:
         if not os.path.isfile(src):
             fail("missing " + src)
